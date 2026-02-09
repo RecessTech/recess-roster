@@ -15,16 +15,17 @@ export const db = {
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: true });
-    
+
     if (error) throw error;
-    
+
     // Transform snake_case to camelCase
     return (data || []).map(staff => ({
       id: staff.id,
       name: staff.name,
       hourlyRate: staff.hourly_rate,
       weekendRate: staff.weekend_rate,
-      employmentType: staff.employment_type
+      employmentType: staff.employment_type,
+      active: staff.active !== false // Default to true for existing records without the field
     }));
   },
 
@@ -52,11 +53,21 @@ export const db = {
   },
 
   async deleteStaff(staffId) {
+    // Soft-delete: mark as inactive instead of removing
     const { error } = await supabase
       .from('staff')
-      .delete()
+      .update({ active: false })
       .eq('id', staffId);
-    
+
+    if (error) throw error;
+  },
+
+  async restoreStaff(staffId) {
+    const { error } = await supabase
+      .from('staff')
+      .update({ active: true })
+      .eq('id', staffId);
+
     if (error) throw error;
   },
 
@@ -204,6 +215,85 @@ export const db = {
     }
     
     console.log(`✅ Successfully saved all ${scheduleArray.length} slots`);
+  },
+
+  // Delta-based save: only upsert/delete what actually changed
+  async saveSchedulesDelta(userId, newSchedule, previousSchedule) {
+    const toUpsert = [];
+    const toDeleteKeys = [];
+
+    // Find added or changed entries
+    for (const [key, value] of Object.entries(newSchedule)) {
+      const prev = previousSchedule[key];
+      if (!prev || prev.roleId !== value.roleId || prev.roleCode !== value.roleCode || prev.roleColor !== value.roleColor) {
+        const [dateKey, staffId, timeSlot] = key.split('|');
+        toUpsert.push({
+          user_id: userId,
+          date_key: dateKey,
+          staff_id: staffId,
+          time_slot: timeSlot,
+          role_id: value.roleId,
+          role_code: value.roleCode,
+          role_color: value.roleColor
+        });
+      }
+    }
+
+    // Find deleted entries
+    for (const key of Object.keys(previousSchedule)) {
+      if (!newSchedule[key]) {
+        toDeleteKeys.push(key);
+      }
+    }
+
+    if (toUpsert.length === 0 && toDeleteKeys.length === 0) {
+      console.log('💤 No changes to save');
+      return;
+    }
+
+    console.log(`💾 Delta save: ${toUpsert.length} upserts, ${toDeleteKeys.length} deletes`);
+
+    // Batch delete using OR filters (much faster than one-by-one)
+    if (toDeleteKeys.length > 0) {
+      const batchSize = 100;
+      for (let i = 0; i < toDeleteKeys.length; i += batchSize) {
+        const batch = toDeleteKeys.slice(i, i + batchSize);
+        // Build composite key filter for batch deletion
+        const conditions = batch.map(key => {
+          const [dateKey, staffId, timeSlot] = key.split('|');
+          return `and(date_key.eq.${dateKey},staff_id.eq.${staffId},time_slot.eq.${timeSlot})`;
+        });
+
+        const { error } = await supabase
+          .from('schedules')
+          .delete()
+          .eq('user_id', userId)
+          .or(conditions.join(','));
+
+        if (error) {
+          console.error('❌ Batch delete error:', error);
+          throw error;
+        }
+      }
+      console.log(`🗑️ Deleted ${toDeleteKeys.length} removed slots`);
+    }
+
+    // Batch upsert
+    if (toUpsert.length > 0) {
+      const batchSize = 500;
+      for (let i = 0; i < toUpsert.length; i += batchSize) {
+        const batch = toUpsert.slice(i, i + batchSize);
+        const { error } = await supabase
+          .from('schedules')
+          .upsert(batch, { onConflict: 'user_id,date_key,staff_id,time_slot' });
+
+        if (error) {
+          console.error('❌ Batch upsert error:', error);
+          throw error;
+        }
+      }
+      console.log(`✅ Upserted ${toUpsert.length} slots`);
+    }
   },
 
   // Settings operations

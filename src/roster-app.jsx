@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, Save, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, Save, AlertTriangle, ArchiveRestore } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db } from './supabaseClient';
 
@@ -95,6 +95,67 @@ const RosterApp = () => {
 
     const [saving, setSaving] = useState(false);
 
+  // Save queue system to prevent race conditions and data loss
+  const saveInProgressRef = useRef(false);
+  const pendingSaveRef = useRef(null);
+  const lastSavedScheduleRef = useRef(null);
+
+  const executeSave = useCallback(async (userId, scheduleToSave) => {
+    if (saveInProgressRef.current) {
+      // Queue this save for when the current one finishes
+      pendingSaveRef.current = scheduleToSave;
+      return;
+    }
+
+    saveInProgressRef.current = true;
+    setSaving(true);
+
+    try {
+      const scheduleSize = Object.keys(scheduleToSave).length;
+      if (scheduleSize === 0) {
+        console.warn('⚠️ Skipping auto-save: schedule is empty');
+        return;
+      }
+
+      // Backup to localStorage before saving
+      try {
+        const backup = {
+          schedule: scheduleToSave,
+          timestamp: new Date().toISOString(),
+          userId,
+          scheduleSize
+        };
+        localStorage.setItem('roster_backup', JSON.stringify(backup));
+      } catch (e) {
+        console.warn('Failed to backup to localStorage:', e);
+      }
+
+      // Compute delta against last saved state for efficient saving
+      const lastSaved = lastSavedScheduleRef.current;
+      if (lastSaved) {
+        await db.saveSchedulesDelta(userId, scheduleToSave, lastSaved);
+      } else {
+        await db.saveSchedules(userId, scheduleToSave);
+      }
+
+      lastSavedScheduleRef.current = scheduleToSave;
+      console.log(`✅ Auto-saved ${scheduleSize} schedule slots`);
+    } catch (error) {
+      console.error('❌ Error saving schedule:', error);
+      alert(`Failed to save schedule: ${error.message}`);
+    } finally {
+      saveInProgressRef.current = false;
+      setSaving(false);
+
+      // Process any queued save
+      if (pendingSaveRef.current) {
+        const nextSave = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+        executeSave(userId, nextSave);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     const loadData = async () => {
       if (!user) return;
@@ -171,7 +232,10 @@ const RosterApp = () => {
         } else {
           setSchedule(scheduleData);
         }
-        
+
+        // Track initial DB state so delta saves know what changed
+        lastSavedScheduleRef.current = scheduleData;
+
         if (orderData && orderData.length > 0) {
           setStaffOrder(orderData);
         }
@@ -214,10 +278,10 @@ const RosterApp = () => {
   useEffect(() => {
     if (!isLoaded || !user) return;
     // Staff saving is handled individually in add/update/delete functions
-    if (staffOrder.length === 0 && staff.length > 0) {
-      setStaffOrder(staff.map(s => s.id));
+    if (staffOrder.length === 0 && activeStaff.length > 0) {
+      setStaffOrder(activeStaff.map(s => s.id));
     }
-  }, [staff, isLoaded, user, staffOrder.length]);
+  }, [activeStaff, isLoaded, user, staffOrder.length]);
 
   // Reset selected staff when switching away from staff-view
   useEffect(() => {
@@ -227,46 +291,14 @@ const RosterApp = () => {
   }, [activeView]);
 
   useEffect(() => {
-    if (!isLoaded || !user || saving) return;
-    
-    const timeoutId = setTimeout(async () => {
-      try {
-        // SAFETY CHECK: Don't auto-save if schedule is empty or suspiciously small
-        const scheduleSize = Object.keys(schedule).length;
-        
-        if (scheduleSize === 0) {
-          console.warn('⚠️ Skipping auto-save: schedule is empty');
-          return;
-        }
-        
-        // BACKUP to localStorage before saving to database
-        try {
-          const backup = {
-            schedule,
-            timestamp: new Date().toISOString(),
-            userId: user.id,
-            scheduleSize
-          };
-          localStorage.setItem('roster_backup', JSON.stringify(backup));
-          console.log('💾 Backed up to localStorage');
-        } catch (e) {
-          console.warn('Failed to backup to localStorage:', e);
-        }
-        
-        setSaving(true);
-        await db.saveSchedules(user.id, schedule);
-        console.log(`✅ Auto-saved ${scheduleSize} schedule slots`);
-      } catch (error) {
-        console.error('❌ Error saving schedule:', error);
-        // Show user-visible error
-        alert(`Failed to save schedule: ${error.message}`);
-      } finally {
-        setSaving(false);
-      }
+    if (!isLoaded || !user) return;
+
+    const timeoutId = setTimeout(() => {
+      executeSave(user.id, schedule);
     }, 1000); // Debounce 1 second
-    
+
     return () => clearTimeout(timeoutId);
-  }, [schedule, isLoaded, user]); // Removed 'saving' from dependencies to prevent infinite loop
+  }, [schedule, isLoaded, user, executeSave]);
 
   useEffect(() => {
     if (!isLoaded || !user || staffOrder.length === 0) return;
@@ -628,7 +660,7 @@ const RosterApp = () => {
   const calculateDayStats = (dateKey) => {
     let totalHours = 0;
     let totalCost = 0;
-    staff.forEach(s => {
+    activeStaff.forEach(s => {
       const stats = calculateStaffDayStats(s.id, dateKey);
       totalHours += stats.hours;
       totalCost += stats.cost;
@@ -652,7 +684,7 @@ const RosterApp = () => {
     let offPeakHours = 0;
     let offPeakCost = 0;
 
-    staff.forEach(s => {
+    activeStaff.forEach(s => {
       staffBreakdown[s.id] = { name: s.name, hours: 0, cost: 0 };
     });
 
@@ -1642,35 +1674,49 @@ const RosterApp = () => {
   );
 };
   const deleteStaff = async (staffId) => {
-    if (!window.confirm('Delete this staff member? This will remove all their shifts.')) return;
-    
+    const staffMember = staff.find(s => s.id === staffId);
+    if (!window.confirm(`Archive ${staffMember?.name || 'this staff member'}? They will be removed from the current roster but their historical data will be preserved. You can restore them later from the archived staff list.`)) return;
+
     try {
       await db.deleteStaff(staffId);
-      setStaff(staff.filter(s => s.id !== staffId));
+      // Mark as inactive locally - don't remove schedule data
+      setStaff(staff.map(s => s.id === staffId ? { ...s, active: false } : s));
       setStaffOrder(staffOrder.filter(id => id !== staffId));
-      const newSchedule = {};
-      Object.keys(schedule).forEach(key => {
-        if (!key.includes(staffId)) newSchedule[key] = schedule[key];
-      });
-      setSchedule(newSchedule);
     } catch (error) {
-      console.error('Error deleting staff:', error);
-      alert('Error deleting staff member. Please try again.');
+      console.error('Error archiving staff:', error);
+      alert('Error archiving staff member. Please try again.');
     }
   };
 
+  const restoreStaff = async (staffId) => {
+    try {
+      await db.restoreStaff(staffId);
+      setStaff(staff.map(s => s.id === staffId ? { ...s, active: true } : s));
+      // Add back to staff order
+      if (!staffOrder.includes(staffId)) {
+        setStaffOrder([...staffOrder, staffId]);
+      }
+    } catch (error) {
+      console.error('Error restoring staff:', error);
+      alert('Error restoring staff member. Please try again.');
+    }
+  };
+
+  const activeStaff = useMemo(() => staff.filter(s => s.active !== false), [staff]);
+  const archivedStaff = useMemo(() => staff.filter(s => s.active === false), [staff]);
+
   const getOrderedStaff = () => {
     if (staffOrder.length === 0) {
-      if (staff.length > 0) setStaffOrder(staff.map(s => s.id));
-      return staff;
+      if (activeStaff.length > 0) setStaffOrder(activeStaff.map(s => s.id));
+      return activeStaff;
     }
     const ordered = [];
     staffOrder.forEach(id => {
-      const s = staff.find(st => st.id === id);
+      const s = activeStaff.find(st => st.id === id);
       if (s) ordered.push(s);
     });
-    // Add any staff not in the order (newly added)
-    staff.forEach(s => {
+    // Add any active staff not in the order (newly added)
+    activeStaff.forEach(s => {
       if (!ordered.find(o => o.id === s.id)) {
         ordered.push(s);
       }
@@ -3355,7 +3401,7 @@ const RosterApp = () => {
         // Skip if outside operational hours
         if (!isWithinOperationalHours(date, slot)) return;
         
-        const staffCount = staff.filter(s => {
+        const staffCount = activeStaff.filter(s => {
           const key = getScheduleKey(dateKey, s.id, slot);
           return schedule[key];
         }).length;
@@ -4690,7 +4736,7 @@ Key things to verify after rebuild:
                 onChange={(e) => setSelectedStaffId(e.target.value)}
                 className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:border-blue-500 focus:outline-none transition-all"
               >
-                {staff.map(s => (
+                {activeStaff.map(s => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
@@ -5026,7 +5072,7 @@ Key things to verify after rebuild:
         <StaffRosterView />
       ) : (
         <div className="p-6">
-        {staff.length === 0 && (
+        {activeStaff.length === 0 && (
           <div className="text-center py-16">
             <div className="bg-white rounded-2xl shadow-lg p-12 max-w-md mx-auto">
               <Users size={48} className="mx-auto text-blue-600 mb-4" />
@@ -5039,15 +5085,15 @@ Key things to verify after rebuild:
         {staff.length > 0 && (
           <div className="mb-6 bg-white rounded-xl shadow-sm border">
             <button onClick={() => setShowTeamMembers(!showTeamMembers)} className="w-full flex items-center justify-between p-5">
-              <h3 className="font-semibold">Team ({staff.length})</h3>
+              <h3 className="font-semibold">Team ({activeStaff.length}){archivedStaff.length > 0 && <span className="text-gray-400 font-normal ml-1">· {archivedStaff.length} archived</span>}</h3>
               {showTeamMembers ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
             </button>
             {showTeamMembers && (
               <div className="px-5 pb-5 space-y-2 border-t pt-4">
-                {staff.map(s => (
+                {activeStaff.map(s => (
                   <div key={s.id} className="flex justify-between p-3 bg-gray-50 rounded-lg">
                     <div>
-                      <span className="font-semibold">{s.name}</span> 
+                      <span className="font-semibold">{s.name}</span>
                       <span className="text-sm text-gray-600">
                         ${s.hourlyRate}/hr
                         {s.weekendRate && s.weekendRate !== s.hourlyRate && (
@@ -5058,16 +5104,33 @@ Key things to verify after rebuild:
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => { setEditingStaff(s); setShowStaffModal(true); }} className="p-2 hover:bg-gray-200 rounded"><Edit2 size={16} /></button>
-                      <button onClick={() => deleteStaff(s.id)} className="p-2 hover:bg-red-100 rounded"><Trash2 size={16} className="text-red-600" /></button>
+                      <button onClick={() => deleteStaff(s.id)} className="p-2 hover:bg-red-100 rounded" title="Archive staff"><Trash2 size={16} className="text-red-600" /></button>
                     </div>
                   </div>
                 ))}
+                {archivedStaff.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <h4 className="text-sm font-medium text-gray-500 mb-2">Archived Staff</h4>
+                    {archivedStaff.map(s => (
+                      <div key={s.id} className="flex justify-between p-3 bg-gray-100 rounded-lg opacity-70">
+                        <div>
+                          <span className="font-semibold text-gray-500">{s.name}</span>
+                          <span className="text-sm text-gray-400 ml-2">({s.employmentType})</span>
+                        </div>
+                        <button onClick={() => restoreStaff(s.id)} className="flex items-center gap-1 px-3 py-1 text-sm bg-blue-50 text-blue-600 hover:bg-blue-100 rounded" title="Restore staff">
+                          <ArchiveRestore size={14} />
+                          Restore
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
-        {staff.length > 0 && (
+        {activeStaff.length > 0 && (
           <div className="bg-white rounded-xl shadow-lg border overflow-auto" style={{ maxHeight: 'calc(100vh - 400px)' }}>
             <table className="border-collapse table-fixed" style={{ width: `${100 + (orderedStaff.length * dates.length * columnWidth)}px` }}>
               <thead className="sticky top-0 z-30 bg-white">
