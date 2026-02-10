@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, Save, AlertTriangle, ArchiveRestore } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, ArchiveRestore } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db } from './supabaseClient';
 
@@ -29,7 +29,7 @@ const RosterApp = () => {
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(2);
+  const [zoomLevel] = useState(2);
   const [columnWidth, setColumnWidth] = useState(70);
   const [timeInterval, setTimeInterval] = useState(15);
   const [showTeamMembers, setShowTeamMembers] = useState(true);
@@ -65,6 +65,7 @@ const RosterApp = () => {
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [templateMode, setTemplateMode] = useState(false); // When true, clicking applies template
+  // eslint-disable-next-line no-unused-vars
   const [showRolesModal, setShowRolesModal] = useState(false);
   const [staffSelectionView, setStaffSelectionView] = useState('cards'); // 'cards' or 'list'
   const [showTutorial, setShowTutorial] = useState(false);
@@ -273,7 +274,11 @@ const RosterApp = () => {
     };
     
     loadData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  const activeStaff = useMemo(() => staff.filter(s => s.active !== false), [staff]);
+  const archivedStaff = useMemo(() => staff.filter(s => s.active === false), [staff]);
 
   useEffect(() => {
     if (!isLoaded || !user) return;
@@ -615,6 +620,7 @@ const RosterApp = () => {
       document.removeEventListener('click', handleClick);
       document.removeEventListener('keydown', handleKeyDown);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyIndex, scheduleHistory]);
 
   const calculateStaffDayStats = (staffId, dateKey) => {
@@ -1602,6 +1608,7 @@ const RosterApp = () => {
     if (quickFillData?.startTime) {
       setEndTime(quickFillData.startTime);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quickFillData]);
 
   // Early return AFTER hooks
@@ -1701,9 +1708,6 @@ const RosterApp = () => {
       alert('Error restoring staff member. Please try again.');
     }
   };
-
-  const activeStaff = useMemo(() => staff.filter(s => s.active !== false), [staff]);
-  const archivedStaff = useMemo(() => staff.filter(s => s.active === false), [staff]);
 
   const getOrderedStaff = () => {
     if (staffOrder.length === 0) {
@@ -2774,6 +2778,7 @@ const RosterApp = () => {
       } else {
         setFormData({ projectedRevenue: '', otherRevenue: '', notes: '' });
       }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [revenueEditDate]);
 
     const handleSave = async () => {
@@ -3397,6 +3402,7 @@ const RosterApp = () => {
         const totalCost = days.reduce((sum, d) => sum + d.cost, 0);
         return { staff: s, days, totalHours, totalCost };
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [orderedStaff, dates, schedule]);
 
     const dailyTotals = useMemo(() => {
@@ -3407,21 +3413,11 @@ const RosterApp = () => {
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
         return { hours, cost, isWeekend };
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [timesheetData, dates]);
 
     const grandTotalHours = timesheetData.reduce((sum, row) => sum + row.totalHours, 0);
     const grandTotalCost = timesheetData.reduce((sum, row) => sum + row.totalCost, 0);
-
-    // Group staff by employment type
-    const employmentGroups = useMemo(() => {
-      const groups = {};
-      timesheetData.forEach(row => {
-        const type = row.staff.employmentType || 'Other';
-        if (!groups[type]) groups[type] = [];
-        groups[type].push(row);
-      });
-      return groups;
-    }, [timesheetData]);
 
     const formatValue = (hours, cost) => {
       if (timesheetMode === 'cost') return hours > 0 ? `${currency}${cost.toFixed(0)}` : '-';
@@ -4720,6 +4716,7 @@ const RosterApp = () => {
     );
   };
 
+  // eslint-disable-next-line no-unused-vars
   const exportContextForNextChat = () => {
     const context = {
       appDescription: "Recess - Staff Roster Management Application",
