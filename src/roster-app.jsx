@@ -2562,6 +2562,16 @@ const RosterApp = () => {
                 📅 My Schedule
               </button>
               <button
+                onClick={() => setActiveView('timesheet')}
+                className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  activeView === 'timesheet'
+                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-700'
+                }`}
+              >
+                Timesheet
+              </button>
+              <button
                 onClick={() => setShowHelpModal(true)}
                 className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium bg-purple-100 text-purple-700"
               >
@@ -3359,6 +3369,247 @@ const RosterApp = () => {
               >
                 🖨️ Print Schedule
               </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const TimesheetView = () => {
+    const [timesheetMode, setTimesheetMode] = useState('hours'); // 'hours' or 'cost'
+    const [copiedTimesheet, setCopiedTimesheet] = useState(false);
+    const currency = businessSettings.currency || '$';
+
+    const dayNames = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+
+    // Build timesheet data for each active staff member
+    const timesheetData = useMemo(() => {
+      return orderedStaff.map(s => {
+        const days = dates.map(date => {
+          const dateKey = formatDateKey(date);
+          const stats = calculateStaffDayStats(s.id, dateKey);
+          const dayOfWeek = date.getDay();
+          const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+          return { dateKey, hours: stats.hours, cost: stats.cost, isWeekend, date };
+        });
+        const totalHours = days.reduce((sum, d) => sum + d.hours, 0);
+        const totalCost = days.reduce((sum, d) => sum + d.cost, 0);
+        return { staff: s, days, totalHours, totalCost };
+      });
+    }, [orderedStaff, dates, schedule]);
+
+    const dailyTotals = useMemo(() => {
+      return dates.map((date, i) => {
+        const hours = timesheetData.reduce((sum, row) => sum + row.days[i].hours, 0);
+        const cost = timesheetData.reduce((sum, row) => sum + row.days[i].cost, 0);
+        const dayOfWeek = date.getDay();
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+        return { hours, cost, isWeekend };
+      });
+    }, [timesheetData, dates]);
+
+    const grandTotalHours = timesheetData.reduce((sum, row) => sum + row.totalHours, 0);
+    const grandTotalCost = timesheetData.reduce((sum, row) => sum + row.totalCost, 0);
+
+    // Group staff by employment type
+    const employmentGroups = useMemo(() => {
+      const groups = {};
+      timesheetData.forEach(row => {
+        const type = row.staff.employmentType || 'Other';
+        if (!groups[type]) groups[type] = [];
+        groups[type].push(row);
+      });
+      return groups;
+    }, [timesheetData]);
+
+    const formatValue = (hours, cost) => {
+      if (timesheetMode === 'cost') return hours > 0 ? `${currency}${cost.toFixed(0)}` : '-';
+      return hours > 0 ? `${hours.toFixed(1)}h` : '-';
+    };
+
+    const copyForPayroll = () => {
+      const weekRange = `${dates[0]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} - ${dates[dates.length - 1]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+
+      const header = `TIMESHEET: ${weekRange}\n\n`;
+      const colHeader = `${'Name'.padEnd(20)} ${'Type'.padEnd(8)} ${dayNames.map(d => d.padStart(7)).join(' ')}  ${'TOTAL'.padStart(7)}\n`;
+      const divider = '-'.repeat(colHeader.length) + '\n';
+
+      let body = '';
+      timesheetData.forEach(row => {
+        const name = row.staff.name.padEnd(20);
+        const type = (row.staff.employmentType || '').padEnd(8);
+        const days = row.days.map(d => {
+          const val = d.hours > 0 ? `${d.hours.toFixed(1)}h` : '-';
+          return val.padStart(7);
+        }).join(' ');
+        const total = `${row.totalHours.toFixed(1)}h`.padStart(7);
+        const cost = `${currency}${row.totalCost.toFixed(0)}`;
+        body += `${name} ${type} ${days}  ${total}  ${cost}\n`;
+      });
+
+      const footerDays = dailyTotals.map(d => `${d.hours.toFixed(1)}h`.padStart(7)).join(' ');
+      const footerTotal = `${grandTotalHours.toFixed(1)}h`.padStart(7);
+      const footer = `\n${'TOTAL'.padEnd(20)} ${''.padEnd(8)} ${footerDays}  ${footerTotal}  ${currency}${grandTotalCost.toFixed(0)}\n`;
+
+      navigator.clipboard.writeText(header + colHeader + divider + body + divider + footer);
+      setCopiedTimesheet(true);
+      setTimeout(() => setCopiedTimesheet(false), 2000);
+    };
+
+    const empTypeBadge = (type) => {
+      const colors = {
+        'FT': 'bg-blue-100 text-blue-700',
+        'PT': 'bg-amber-100 text-amber-700',
+        'Casual': 'bg-green-100 text-green-700'
+      };
+      return (
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${colors[type] || 'bg-gray-100 text-gray-600'}`}>
+          {type}
+        </span>
+      );
+    };
+
+    return (
+      <div className="p-6">
+        <div className="bg-white rounded-xl shadow-lg border overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-blue-50 to-orange-50 p-5 border-b flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Timesheet</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                {dates[0]?.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })} - {dates[dates.length - 1]?.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {/* Hours / Cost toggle */}
+              <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200">
+                <button
+                  onClick={() => setTimesheetMode('hours')}
+                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${timesheetMode === 'hours' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-600 hover:text-gray-800'}`}
+                >
+                  Hours
+                </button>
+                <button
+                  onClick={() => setTimesheetMode('cost')}
+                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${timesheetMode === 'cost' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-600 hover:text-gray-800'}`}
+                >
+                  Cost
+                </button>
+              </div>
+              {/* Copy for Payroll */}
+              <button
+                onClick={copyForPayroll}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  copiedTimesheet
+                    ? 'bg-green-500 text-white'
+                    : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white shadow-sm'
+                }`}
+              >
+                <Clipboard size={16} />
+                {copiedTimesheet ? 'Copied!' : 'Copy for Payroll'}
+              </button>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b-2 border-gray-200">
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-48">Name</th>
+                  <th className="text-center px-2 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-16">Type</th>
+                  {dates.map((date, i) => {
+                    const dayOfWeek = date.getDay();
+                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                    return (
+                      <th
+                        key={i}
+                        className={`text-center px-3 py-3 text-xs font-semibold uppercase tracking-wider w-20 ${isWeekend ? 'bg-amber-50 text-amber-700' : 'text-gray-500'}`}
+                      >
+                        <div>{dayNames[i] || date.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase()}</div>
+                        <div className="text-[10px] font-normal text-gray-400 mt-0.5">{date.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
+                      </th>
+                    );
+                  })}
+                  <th className="text-center px-4 py-3 text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50 w-24">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {timesheetData.map((row, rowIdx) => (
+                  <tr key={row.staff.id} className={`border-b border-gray-100 hover:bg-blue-50/30 transition-colors ${rowIdx % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
+                    <td className="px-5 py-3">
+                      <span className="font-semibold text-gray-900">{row.staff.name}</span>
+                    </td>
+                    <td className="text-center px-2 py-3">{empTypeBadge(row.staff.employmentType)}</td>
+                    {row.days.map((day, i) => (
+                      <td
+                        key={i}
+                        className={`text-center px-3 py-3 text-sm tabular-nums ${day.isWeekend ? 'bg-amber-50/50' : ''} ${day.hours > 0 ? 'text-gray-900 font-medium' : 'text-gray-300'}`}
+                      >
+                        {formatValue(day.hours, day.cost)}
+                      </td>
+                    ))}
+                    <td className="text-center px-4 py-3 bg-gray-50 font-bold text-gray-900 tabular-nums">
+                      {timesheetMode === 'cost'
+                        ? `${currency}${row.totalCost.toFixed(0)}`
+                        : `${row.totalHours.toFixed(1)}h`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                {/* Cost row */}
+                {timesheetMode === 'hours' && (
+                  <tr className="border-t border-gray-200 bg-blue-50/30">
+                    <td className="px-5 py-2 text-xs font-medium text-gray-500">Daily Cost</td>
+                    <td></td>
+                    {dailyTotals.map((d, i) => (
+                      <td key={i} className={`text-center px-3 py-2 text-xs tabular-nums text-gray-500 ${d.isWeekend ? 'bg-amber-50/30' : ''}`}>
+                        {d.hours > 0 ? `${currency}${d.cost.toFixed(0)}` : '-'}
+                      </td>
+                    ))}
+                    <td className="text-center px-4 py-2 bg-gray-50 text-xs font-semibold text-gray-600 tabular-nums">
+                      {currency}{grandTotalCost.toFixed(0)}
+                    </td>
+                  </tr>
+                )}
+                {/* Totals row */}
+                <tr className="border-t-2 border-gray-300 bg-gray-100">
+                  <td className="px-5 py-3 font-bold text-gray-900">Total</td>
+                  <td></td>
+                  {dailyTotals.map((d, i) => (
+                    <td key={i} className={`text-center px-3 py-3 font-bold tabular-nums ${d.isWeekend ? 'bg-amber-100/50 text-amber-800' : 'text-gray-900'}`}>
+                      {formatValue(d.hours, d.cost)}
+                    </td>
+                  ))}
+                  <td className="text-center px-4 py-3 bg-gray-200 font-bold text-gray-900 tabular-nums">
+                    {timesheetMode === 'cost'
+                      ? `${currency}${grandTotalCost.toFixed(0)}`
+                      : `${grandTotalHours.toFixed(1)}h`}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Summary cards */}
+          <div className="p-5 border-t bg-gray-50 grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-lg p-4 border">
+              <div className="text-xs font-medium text-gray-500 mb-1">Total Hours</div>
+              <div className="text-2xl font-bold text-gray-900">{grandTotalHours.toFixed(1)}h</div>
+            </div>
+            <div className="bg-white rounded-lg p-4 border">
+              <div className="text-xs font-medium text-gray-500 mb-1">Total Cost</div>
+              <div className="text-2xl font-bold text-gray-900">{currency}{grandTotalCost.toFixed(0)}</div>
+            </div>
+            <div className="bg-white rounded-lg p-4 border">
+              <div className="text-xs font-medium text-gray-500 mb-1">Avg Hours/Staff</div>
+              <div className="text-2xl font-bold text-gray-900">{orderedStaff.length > 0 ? (grandTotalHours / orderedStaff.length).toFixed(1) : '0'}h</div>
+            </div>
+            <div className="bg-white rounded-lg p-4 border">
+              <div className="text-xs font-medium text-gray-500 mb-1">Avg Cost/Hour</div>
+              <div className="text-2xl font-bold text-gray-900">{grandTotalHours > 0 ? `${currency}${(grandTotalCost / grandTotalHours).toFixed(2)}` : '-'}</div>
             </div>
           </div>
         </div>
@@ -4997,8 +5248,14 @@ Key things to verify after rebuild:
               >
                 Staff View
               </button>
-              <button 
-                onClick={() => setActiveView('analytics')} 
+              <button
+                onClick={() => setActiveView('timesheet')}
+                className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${activeView === 'timesheet' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200'}`}
+              >
+                Timesheet
+              </button>
+              <button
+                onClick={() => setActiveView('analytics')}
                 className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${activeView === 'analytics' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200'}`}
               >
                 Analytics
@@ -5068,6 +5325,8 @@ Key things to verify after rebuild:
 
       {activeView === 'analytics' ? (
         <AnalyticsView />
+      ) : activeView === 'timesheet' ? (
+        <TimesheetView />
       ) : activeView === 'staff-view' ? (
         <StaffRosterView />
       ) : (
