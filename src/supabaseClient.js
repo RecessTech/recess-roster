@@ -74,34 +74,39 @@ export const db = {
   // Schedule operations
   async getSchedules(userId) {
     console.log('📥 Loading schedules...');
-    
+
     // Supabase has 1000 row default limit - must paginate
+    // CRITICAL: .order() is required for consistent pagination with .range()
+    // Without it, rows can shift between pages and be skipped or duplicated
     let allData = [];
     let page = 0;
     const pageSize = 1000;
     let hasMore = true;
-    
+
     while (hasMore) {
       const { data, error } = await supabase
         .from('schedules')
         .select('*')
         .eq('user_id', userId)
+        .order('date_key', { ascending: true })
+        .order('staff_id', { ascending: true })
+        .order('time_slot', { ascending: true })
         .range(page * pageSize, (page + 1) * pageSize - 1);
-      
+
       if (error) throw error;
-      
+
       if (data && data.length > 0) {
         allData = allData.concat(data);
         console.log(`📥 Loaded page ${page + 1}: ${data.length} slots (total: ${allData.length})`);
-        hasMore = data.length === pageSize; // Continue if we got a full page
+        hasMore = data.length === pageSize;
         page++;
       } else {
         hasMore = false;
       }
     }
-    
+
     console.log(`✅ Loaded all ${allData.length} schedule slots`);
-    
+
     // Convert to the format the app expects
     const scheduleObj = {};
     allData.forEach(item => {
@@ -112,7 +117,7 @@ export const db = {
         roleColor: item.role_color
       };
     });
-    
+
     return scheduleObj;
   },
 
@@ -130,28 +135,30 @@ export const db = {
         role_color: value.roleColor
       };
     });
-    
+
     if (scheduleArray.length === 0) {
       console.warn('⚠️ Attempted to save empty schedule - skipping');
       return;
     }
-    
+
     console.log(`💾 Saving ${scheduleArray.length} schedule slots...`);
-    
-    // SAFER APPROACH: Use upsert instead of delete-then-insert
-    // First, get ALL existing schedules (paginated to handle >1000)
+
+    // Get ALL existing schedule keys (paginated with deterministic ordering)
     let existing = [];
     let page = 0;
     const pageSize = 1000;
     let hasMore = true;
-    
+
     while (hasMore) {
       const { data } = await supabase
         .from('schedules')
         .select('date_key, staff_id, time_slot')
         .eq('user_id', userId)
+        .order('date_key', { ascending: true })
+        .order('staff_id', { ascending: true })
+        .order('time_slot', { ascending: true })
         .range(page * pageSize, (page + 1) * pageSize - 1);
-      
+
       if (data && data.length > 0) {
         existing = existing.concat(data);
         hasMore = data.length === pageSize;
@@ -160,60 +167,65 @@ export const db = {
         hasMore = false;
       }
     }
-    
+
     console.log(`📋 Found ${existing.length} existing slots`);
-    
+
     // Build set of keys we're keeping
     const newKeys = new Set(
       scheduleArray.map(s => `${s.date_key}|${s.staff_id}|${s.time_slot}`)
     );
-    
+
     // Find keys to delete (exist in DB but not in new schedule)
     const toDelete = existing.filter(row => {
       const key = `${row.date_key}|${row.staff_id}|${row.time_slot}`;
       return !newKeys.has(key);
     });
-    
-    // Delete removed slots in batches
+
+    // Batch delete using OR filters (not one-by-one)
     if (toDelete.length > 0) {
-      const batchSize = 500;
+      const batchSize = 100;
       for (let i = 0; i < toDelete.length; i += batchSize) {
         const batch = toDelete.slice(i, i + batchSize);
-        for (const row of batch) {
-          await supabase
-            .from('schedules')
-            .delete()
-            .eq('user_id', userId)
-            .eq('date_key', row.date_key)
-            .eq('staff_id', row.staff_id)
-            .eq('time_slot', row.time_slot);
+        const conditions = batch.map(row =>
+          `and(date_key.eq.${row.date_key},staff_id.eq.${row.staff_id},time_slot.eq.${row.time_slot})`
+        );
+
+        const { error } = await supabase
+          .from('schedules')
+          .delete()
+          .eq('user_id', userId)
+          .or(conditions.join(','));
+
+        if (error) {
+          console.error('❌ Batch delete error:', error);
+          throw error;
         }
       }
       console.log(`🗑️ Deleted ${toDelete.length} removed slots`);
     }
-    
-    // CRITICAL: Batch upserts to avoid 1000 row limit
-    const batchSize = 500; // Safe batch size
+
+    // Batch upserts
+    const batchSize = 500;
     let totalUpserted = 0;
-    
+
     for (let i = 0; i < scheduleArray.length; i += batchSize) {
       const batch = scheduleArray.slice(i, i + batchSize);
-      
+
       const { error: upsertError } = await supabase
         .from('schedules')
         .upsert(batch, {
           onConflict: 'user_id,date_key,staff_id,time_slot'
         });
-      
+
       if (upsertError) {
         console.error(`❌ Batch ${Math.floor(i / batchSize) + 1} error:`, upsertError);
         throw upsertError;
       }
-      
+
       totalUpserted += batch.length;
       console.log(`✅ Batch ${Math.floor(i / batchSize) + 1}: ${batch.length} slots (${totalUpserted}/${scheduleArray.length})`);
     }
-    
+
     console.log(`✅ Successfully saved all ${scheduleArray.length} slots`);
   },
 
