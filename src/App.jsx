@@ -2,6 +2,33 @@ import React from 'react';
 import { useAuth, Auth } from './Auth';
 import RosterApp from './roster-app';
 
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '40px', fontFamily: 'monospace', maxWidth: '800px', margin: '0 auto' }}>
+          <h1 style={{ color: '#dc2626' }}>Something went wrong</h1>
+          <pre style={{ background: '#fef2f2', padding: '20px', borderRadius: '8px', overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+            {this.state.error?.toString()}
+            {'\n\n'}
+            {this.state.error?.stack}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function App() {
   const { user, loading } = useAuth();
 
@@ -17,10 +44,18 @@ function App() {
   }
 
   if (!user) {
-    return <Auth />;
+    return (
+      <ErrorBoundary>
+        <Auth />
+      </ErrorBoundary>
+    );
   }
 
-  return <RosterApp />;
+  return (
+    <ErrorBoundary>
+      <RosterApp />
+    </ErrorBoundary>
+  );
 }
 
 export default App;
