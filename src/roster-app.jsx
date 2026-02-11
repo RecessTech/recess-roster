@@ -118,6 +118,13 @@ const RosterApp = () => {
         return;
       }
 
+      // Safety: if schedule shrank by more than 30% vs last save, warn and skip
+      const lastSavedSize = lastSavedScheduleRef.current ? Object.keys(lastSavedScheduleRef.current).length : 0;
+      if (lastSavedSize > 50 && scheduleSize < lastSavedSize * 0.7) {
+        console.error(`⚠️ Schedule shrank from ${lastSavedSize} to ${scheduleSize} slots (>${Math.round((1 - scheduleSize / lastSavedSize) * 100)}% loss). Skipping save as safety precaution.`);
+        return;
+      }
+
       // Backup to localStorage before saving
       try {
         const backup = {
