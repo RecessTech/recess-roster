@@ -529,7 +529,7 @@ const RosterApp = () => {
   };
   const getScheduleKey = (dateKey, staffId, timeSlot) => `${dateKey}|${staffId}|${timeSlot}`;
 
-  const handleMouseDown = (dateKey, staffId, timeSlot) => {
+  const handleMouseDown = (e, dateKey, staffId, timeSlot) => {
     // Template mode: apply template instead of painting
     if (templateMode && selectedTemplate) {
       applyTemplate(selectedTemplate, dateKey, staffId);
@@ -537,6 +537,9 @@ const RosterApp = () => {
     }
 
     if (!selectedRole) return;
+
+    // Prevent text selection while painting
+    e.preventDefault();
     
     setSchedule(prevSchedule => {
       // Save current state to history BEFORE making changes
@@ -584,23 +587,25 @@ const RosterApp = () => {
 
   const handleMouseEnter = (dateKey, staffId, timeSlot) => {
     if (!isDragging || !selectedRole) return;
-    
-    const newSchedule = { ...schedule };
-    
-    if (selectedRole.id === 'eraser') {
-      // Eraser: only erase the specific slot
-      const key = getScheduleKey(dateKey, staffId, timeSlot);
-      delete newSchedule[key];
-    } else {
-      // Paint: fill all sub-intervals within this time slot
-      const slotsToFill = getAllSubIntervals(timeSlot);
-      slotsToFill.forEach(slot => {
-        const key = getScheduleKey(dateKey, staffId, slot);
-        newSchedule[key] = { roleId: selectedRole.id, roleCode: selectedRole.code, roleColor: selectedRole.color };
-      });
-    }
-    
-    setSchedule(newSchedule);
+
+    setSchedule(prevSchedule => {
+      const newSchedule = { ...prevSchedule };
+
+      if (selectedRole.id === 'eraser') {
+        // Eraser: only erase the specific slot
+        const key = getScheduleKey(dateKey, staffId, timeSlot);
+        delete newSchedule[key];
+      } else {
+        // Paint: fill all sub-intervals within this time slot
+        const slotsToFill = getAllSubIntervals(timeSlot);
+        slotsToFill.forEach(slot => {
+          const key = getScheduleKey(dateKey, staffId, slot);
+          newSchedule[key] = { roleId: selectedRole.id, roleCode: selectedRole.code, roleColor: selectedRole.color };
+        });
+      }
+
+      return newSchedule;
+    });
   };
 
   useEffect(() => {
@@ -5395,7 +5400,7 @@ Key things to verify after rebuild:
 
         {activeStaff.length > 0 && (
           <div className="bg-white rounded-xl shadow-lg border overflow-auto" style={{ maxHeight: 'calc(100vh - 400px)' }}>
-            <table className="border-collapse table-fixed" style={{ width: `${100 + (orderedStaff.length * dates.length * columnWidth)}px` }}>
+            <table className="border-collapse table-fixed" style={{ width: `${100 + (orderedStaff.length * dates.length * columnWidth)}px`, userSelect: isDragging ? 'none' : 'auto' }}>
               <thead className="sticky top-0 z-30 bg-white">
                 <tr className="bg-gray-100 border-b">
                   <th className="border-r-2 p-3 text-left text-sm font-semibold sticky left-0 bg-gray-100 z-40 w-20">Time</th>
@@ -5472,8 +5477,8 @@ Key things to verify after rebuild:
                             return (
                               <td 
                                 key={k}
-                                className={`border-r p-0 cursor-pointer ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-4 border-gray-400' : ''}`}
-                                onMouseDown={() => handleMouseDown(dk, s.id, t)}
+                                className={`border-r p-0 ${selectedRole ? (selectedRole.id === 'eraser' ? 'cursor-cell' : 'cursor-crosshair') : 'cursor-pointer'} ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-4 border-gray-400' : ''}`}
+                                onMouseDown={(e) => handleMouseDown(e, dk, s.id, t)}
                                 onMouseEnter={() => handleMouseEnter(dk, s.id, t)}
                                 onContextMenu={(e) => handleRightClick(e, dk, s.id, t)}
                                 style={{ backgroundColor: sh ? sh.roleColor : 'white', height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
