@@ -2659,7 +2659,7 @@ const RosterApp = () => {
                       </div>
                       <div className="text-right">
                         <div className="text-xs text-gray-600">This Week</div>
-                        <div className="font-bold text-blue-600">{weekStats.hours.toFixed(1)}h</div>
+                        <div className="font-bold text-blue-600">{weekStats.hours.toFixed(2)}h</div>
                       </div>
                     </div>
                   </div>
@@ -2751,7 +2751,7 @@ const RosterApp = () => {
               <div className="bg-blue-50 rounded-lg p-3">
                 <div className="text-xs text-blue-600 font-semibold">TOTAL HOURS</div>
                 <div className="text-2xl font-bold text-blue-700">
-                  {orderedStaff.reduce((sum, s) => sum + calculateStaffWeekStats(s.id).hours, 0).toFixed(1)}h
+                  {orderedStaff.reduce((sum, s) => sum + calculateStaffWeekStats(s.id).hours, 0).toFixed(2)}h
                 </div>
               </div>
               <div className="bg-green-50 rounded-lg p-3">
@@ -3019,7 +3019,7 @@ const RosterApp = () => {
                         <div className="space-y-1 text-sm">
                           <div className="flex justify-between">
                             <span className="text-gray-600">This Week:</span>
-                            <span className="font-semibold">{weekStats.hours.toFixed(1)}h</span>
+                            <span className="font-semibold">{weekStats.hours.toFixed(2)}h</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">Est. Pay:</span>
@@ -3070,7 +3070,7 @@ const RosterApp = () => {
                               }
                             </td>
                             <td className="px-4 py-4 text-right font-bold text-gray-800">
-                              {weekStats.hours.toFixed(1)}h
+                              {weekStats.hours.toFixed(2)}h
                             </td>
                             <td className="px-4 py-4 text-right font-bold text-green-600">
                               ${weekStats.cost.toFixed(0)}
@@ -3213,7 +3213,7 @@ const RosterApp = () => {
               </div>
               
               <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 text-center">
-                <div className="text-3xl font-bold">{weekStats.hours.toFixed(1)}</div>
+                <div className="text-3xl font-bold">{weekStats.hours.toFixed(2)}</div>
                 <div className="text-sm opacity-90">Hours This Week</div>
                 <div className="text-lg font-semibold mt-2">${weekStats.cost.toFixed(0)}</div>
                 <div className="text-xs opacity-90">Est. Pay</div>
@@ -3236,7 +3236,7 @@ const RosterApp = () => {
             <div className="bg-white rounded-xl shadow p-4 border border-gray-200">
               <div className="text-2xl font-bold text-orange-600">
                 {weekStats.hours > 0 
-                  ? (weekStats.hours / Object.keys(staffSchedule).length).toFixed(1)
+                  ? (weekStats.hours / Object.keys(staffSchedule).length).toFixed(2)
                   : '0.0'}h
               </div>
               <div className="text-sm text-gray-600">Avg Hours/Day</div>
@@ -3279,7 +3279,7 @@ const RosterApp = () => {
                         )}
                       </div>
                       <div className="text-right">
-                        <div className="text-xl font-bold text-gray-800">{dayStats.hours.toFixed(1)}h</div>
+                        <div className="text-xl font-bold text-gray-800">{dayStats.hours.toFixed(2)}h</div>
                         <div className="text-sm text-gray-600">${dayStats.cost.toFixed(0)}</div>
                       </div>
                     </div>
@@ -3363,7 +3363,7 @@ const RosterApp = () => {
                     text += '\n';
                   });
                   
-                  text += `Total: ${weekStats.hours.toFixed(1)} hours | $${weekStats.cost.toFixed(2)}`;
+                  text += `Total: ${weekStats.hours.toFixed(2)} hours | $${weekStats.cost.toFixed(2)}`;
                   
                   navigator.clipboard.writeText(text);
                   alert('Schedule copied to clipboard!');
@@ -3428,7 +3428,7 @@ const RosterApp = () => {
 
     const formatValue = (hours, cost) => {
       if (timesheetMode === 'cost') return hours > 0 ? `${currency}${cost.toFixed(0)}` : '-';
-      return hours > 0 ? `${hours.toFixed(1)}h` : '-';
+      return hours > 0 ? `${hours.toFixed(2)}h` : '-';
     };
 
     const copyForPayroll = () => {
@@ -3443,16 +3443,16 @@ const RosterApp = () => {
         const name = row.staff.name.padEnd(20);
         const type = (row.staff.employmentType || '').padEnd(8);
         const days = row.days.map(d => {
-          const val = d.hours > 0 ? `${d.hours.toFixed(1)}h` : '-';
+          const val = d.hours > 0 ? `${d.hours.toFixed(2)}h` : '-';
           return val.padStart(7);
         }).join(' ');
-        const total = `${row.totalHours.toFixed(1)}h`.padStart(7);
+        const total = `${row.totalHours.toFixed(2)}h`.padStart(7);
         const cost = `${currency}${row.totalCost.toFixed(0)}`;
         body += `${name} ${type} ${days}  ${total}  ${cost}\n`;
       });
 
-      const footerDays = dailyTotals.map(d => `${d.hours.toFixed(1)}h`.padStart(7)).join(' ');
-      const footerTotal = `${grandTotalHours.toFixed(1)}h`.padStart(7);
+      const footerDays = dailyTotals.map(d => `${d.hours.toFixed(2)}h`.padStart(7)).join(' ');
+      const footerTotal = `${grandTotalHours.toFixed(2)}h`.padStart(7);
       const footer = `\n${'TOTAL'.padEnd(20)} ${''.padEnd(8)} ${footerDays}  ${footerTotal}  ${currency}${grandTotalCost.toFixed(0)}\n`;
 
       navigator.clipboard.writeText(header + colHeader + divider + body + divider + footer);
@@ -3556,7 +3556,7 @@ const RosterApp = () => {
                     <td className="text-center px-4 py-3 bg-gray-50 font-bold text-gray-900 tabular-nums">
                       {timesheetMode === 'cost'
                         ? `${currency}${row.totalCost.toFixed(0)}`
-                        : `${row.totalHours.toFixed(1)}h`}
+                        : `${row.totalHours.toFixed(2)}h`}
                     </td>
                   </tr>
                 ))}
@@ -3589,7 +3589,7 @@ const RosterApp = () => {
                   <td className="text-center px-4 py-3 bg-gray-200 font-bold text-gray-900 tabular-nums">
                     {timesheetMode === 'cost'
                       ? `${currency}${grandTotalCost.toFixed(0)}`
-                      : `${grandTotalHours.toFixed(1)}h`}
+                      : `${grandTotalHours.toFixed(2)}h`}
                   </td>
                 </tr>
               </tfoot>
@@ -3600,7 +3600,7 @@ const RosterApp = () => {
           <div className="p-5 border-t bg-gray-50 grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white rounded-lg p-4 border">
               <div className="text-xs font-medium text-gray-500 mb-1">Total Hours</div>
-              <div className="text-2xl font-bold text-gray-900">{grandTotalHours.toFixed(1)}h</div>
+              <div className="text-2xl font-bold text-gray-900">{grandTotalHours.toFixed(2)}h</div>
             </div>
             <div className="bg-white rounded-lg p-4 border">
               <div className="text-xs font-medium text-gray-500 mb-1">Total Cost</div>
@@ -3608,7 +3608,7 @@ const RosterApp = () => {
             </div>
             <div className="bg-white rounded-lg p-4 border">
               <div className="text-xs font-medium text-gray-500 mb-1">Avg Hours/Staff</div>
-              <div className="text-2xl font-bold text-gray-900">{orderedStaff.length > 0 ? (grandTotalHours / orderedStaff.length).toFixed(1) : '0'}h</div>
+              <div className="text-2xl font-bold text-gray-900">{orderedStaff.length > 0 ? (grandTotalHours / orderedStaff.length).toFixed(2) : '0'}h</div>
             </div>
             <div className="bg-white rounded-lg p-4 border">
               <div className="text-xs font-medium text-gray-500 mb-1">Avg Cost/Hour</div>
@@ -3743,14 +3743,14 @@ const RosterApp = () => {
           <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-lg">
             <div className="text-sm opacity-90 mb-1">Total Week Cost</div>
             <div className="text-3xl font-bold">${weekStats.totalCost.toFixed(0)}</div>
-            <div className="text-xs opacity-75 mt-1">{weekStats.totalHours.toFixed(1)} hours</div>
+            <div className="text-xs opacity-75 mt-1">{weekStats.totalHours.toFixed(2)} hours</div>
             <div className="text-xs opacity-75">${insights.avgCostPerHour.toFixed(2)}/hr avg</div>
           </div>
           
           <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl p-5 text-white shadow-lg">
             <div className="text-sm opacity-90 mb-1">Average Daily</div>
             <div className="text-3xl font-bold">${(weekStats.totalCost / dates.length).toFixed(0)}</div>
-            <div className="text-xs opacity-75 mt-1">{(weekStats.totalHours / dates.length).toFixed(1)} hrs/day</div>
+            <div className="text-xs opacity-75 mt-1">{(weekStats.totalHours / dates.length).toFixed(2)} hrs/day</div>
             <div className="text-xs opacity-75">{dates.length} days</div>
           </div>
           
@@ -3763,7 +3763,7 @@ const RosterApp = () => {
 
           <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-5 text-white shadow-lg">
             <div className="text-sm opacity-90 mb-1">Avg Shift Length</div>
-            <div className="text-3xl font-bold">{insights.avgShiftLength.toFixed(1)}h</div>
+            <div className="text-3xl font-bold">{insights.avgShiftLength.toFixed(2)}h</div>
             <div className="text-xs opacity-75 mt-1">{allShifts.length} total shifts</div>
             <div className="text-xs opacity-75">{(insights.avgShiftLength * insights.avgCostPerHour).toFixed(0)} avg cost/shift</div>
           </div>
@@ -3816,7 +3816,7 @@ const RosterApp = () => {
                   <div className="text-sm font-semibold text-blue-800">Weekday</div>
                   <div className="text-2xl font-bold text-blue-600">${weekStats.weekdayCost.toFixed(0)}</div>
                 </div>
-                <div className="text-xs text-blue-700">{weekStats.weekdayHours.toFixed(1)}h · ${weekStats.weekdayHours > 0 ? (weekStats.weekdayCost / weekStats.weekdayHours).toFixed(2) : 0}/hr</div>
+                <div className="text-xs text-blue-700">{weekStats.weekdayHours.toFixed(2)}h · ${weekStats.weekdayHours > 0 ? (weekStats.weekdayCost / weekStats.weekdayHours).toFixed(2) : 0}/hr</div>
               </div>
               
               <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
@@ -3824,7 +3824,7 @@ const RosterApp = () => {
                   <div className="text-sm font-semibold text-orange-800">Weekend</div>
                   <div className="text-2xl font-bold text-orange-600">${weekStats.weekendCost.toFixed(0)}</div>
                 </div>
-                <div className="text-xs text-orange-700">{weekStats.weekendHours.toFixed(1)}h · ${weekStats.weekendHours > 0 ? (weekStats.weekendCost / weekStats.weekendHours).toFixed(2) : 0}/hr</div>
+                <div className="text-xs text-orange-700">{weekStats.weekendHours.toFixed(2)}h · ${weekStats.weekendHours > 0 ? (weekStats.weekendCost / weekStats.weekendHours).toFixed(2) : 0}/hr</div>
               </div>
 
               {weekStats.weekendCost > 0 && weekStats.weekdayCost > 0 && (
@@ -3848,7 +3848,7 @@ const RosterApp = () => {
                   <div className="text-sm font-semibold text-orange-800">Peak (12-2pm)</div>
                   <div className="text-2xl font-bold text-orange-600">${weekStats.peakCost.toFixed(0)}</div>
                 </div>
-                <div className="text-xs text-orange-700">{weekStats.peakHours.toFixed(1)}h · ${weekStats.peakCostPerHour.toFixed(2)}/hr</div>
+                <div className="text-xs text-orange-700">{weekStats.peakHours.toFixed(2)}h · ${weekStats.peakCostPerHour.toFixed(2)}/hr</div>
               </div>
               
               <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -3856,7 +3856,7 @@ const RosterApp = () => {
                   <div className="text-sm font-semibold text-gray-800">Off-Peak</div>
                   <div className="text-2xl font-bold text-gray-600">${weekStats.offPeakCost.toFixed(0)}</div>
                 </div>
-                <div className="text-xs text-gray-700">{weekStats.offPeakHours.toFixed(1)}h · ${weekStats.offPeakCostPerHour.toFixed(2)}/hr</div>
+                <div className="text-xs text-gray-700">{weekStats.offPeakHours.toFixed(2)}h · ${weekStats.offPeakCostPerHour.toFixed(2)}/hr</div>
               </div>
 
               <div className="p-3 bg-orange-50 rounded-lg text-center border border-orange-200">
@@ -3907,7 +3907,7 @@ const RosterApp = () => {
                         }`}
                         style={{ width: `${Math.max(weekStats.totalCost > 0 ? (day.cost / weekStats.totalCost) * 100 : 0, 5)}%` }}
                       >
-                        {day.hours.toFixed(1)}h
+                        {day.hours.toFixed(2)}h
                       </div>
                     </div>
                     <div className="text-right w-24">
@@ -3945,14 +3945,14 @@ const RosterApp = () => {
                 {[...sortedStaff].sort((a, b) => b.hours - a.hours)[0]?.name || 'N/A'}
               </div>
               <div className="text-sm text-gray-500">
-                {[...sortedStaff].sort((a, b) => b.hours - a.hours)[0]?.hours.toFixed(1) || 0}h
+                {[...sortedStaff].sort((a, b) => b.hours - a.hours)[0]?.hours.toFixed(2) || 0}h
               </div>
             </div>
 
             <div className="bg-white rounded-xl p-5 shadow-lg border-2 border-gray-100">
               <div className="text-sm text-gray-600 mb-1">Average Cost/Staff</div>
               <div className="text-2xl font-bold text-gray-800">${avgStaffCost.toFixed(0)}</div>
-              <div className="text-sm text-gray-500">{(weekStats.totalHours / sortedStaff.length).toFixed(1)}h avg</div>
+              <div className="text-sm text-gray-500">{(weekStats.totalHours / sortedStaff.length).toFixed(2)}h avg</div>
             </div>
           </div>
 
@@ -3966,7 +3966,7 @@ const RosterApp = () => {
                   <div key={util.name} className="p-4 bg-gray-50 rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <div className="font-semibold text-gray-800">{util.name}</div>
-                      <div className="text-lg font-bold text-blue-600">{util.rate.toFixed(1)}%</div>
+                      <div className="text-lg font-bold text-blue-600">{util.rate.toFixed(2)}%</div>
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
@@ -4004,7 +4004,7 @@ const RosterApp = () => {
                   <div className="w-8 text-center font-bold text-gray-400">#{idx + 1}</div>
                   <div className="flex-1">
                     <div className="font-semibold text-gray-800">{staffData.name}</div>
-                    <div className="text-xs text-gray-500">{staffData.hours.toFixed(1)}h · ${staffData.hours > 0 ? (staffData.cost / staffData.hours).toFixed(2) : '0.00'}/hr avg</div>
+                    <div className="text-xs text-gray-500">{staffData.hours.toFixed(2)}h · ${staffData.hours > 0 ? (staffData.cost / staffData.hours).toFixed(2) : '0.00'}/hr avg</div>
                   </div>
                   <div className="flex-1 flex items-center gap-2">
                     <div className="flex-1 bg-gray-200 rounded-full h-4 overflow-hidden">
@@ -4016,7 +4016,7 @@ const RosterApp = () => {
                   </div>
                   <div className="text-right w-24">
                     <div className="text-lg font-bold text-gray-800">${staffData.cost.toFixed(0)}</div>
-                    <div className="text-xs text-gray-500">{weekStats.totalCost > 0 ? ((staffData.cost / weekStats.totalCost) * 100).toFixed(1) : 0}%</div>
+                    <div className="text-xs text-gray-500">{weekStats.totalCost > 0 ? ((staffData.cost / weekStats.totalCost) * 100).toFixed(2) : 0}%</div>
                   </div>
                 </div>
               ))}
@@ -4048,7 +4048,7 @@ const RosterApp = () => {
                   </>
                 )}
               </div>
-              <div className="text-sm text-gray-500">{sortedRoles[0]?.hours.toFixed(1) || 0}h</div>
+              <div className="text-sm text-gray-500">{sortedRoles[0]?.hours.toFixed(2) || 0}h</div>
             </div>
             
             <div className="bg-white rounded-xl p-5 shadow-lg border-2 border-gray-100">
@@ -4100,7 +4100,7 @@ const RosterApp = () => {
                       </div>
                       <div>
                         <div className="font-bold text-gray-800">{roleData.name}</div>
-                        <div className="text-xs text-gray-500">{weekStats.totalHours > 0 ? ((roleData.hours / weekStats.totalHours) * 100).toFixed(1) : 0}% of total</div>
+                        <div className="text-xs text-gray-500">{weekStats.totalHours > 0 ? ((roleData.hours / weekStats.totalHours) * 100).toFixed(2) : 0}% of total</div>
                       </div>
                     </div>
                   </div>
@@ -4112,7 +4112,7 @@ const RosterApp = () => {
                     </div>
                     <div className="p-3 bg-white rounded-lg">
                       <div className="text-xs text-gray-500 mb-1">Total Hours</div>
-                      <div className="text-xl font-bold text-gray-800">{roleData.hours.toFixed(1)}h</div>
+                      <div className="text-xl font-bold text-gray-800">{roleData.hours.toFixed(2)}h</div>
                     </div>
                     <div className="p-3 bg-white rounded-lg col-span-2">
                       <div className="text-xs text-gray-500 mb-1">Average Cost per Hour</div>
@@ -4123,7 +4123,7 @@ const RosterApp = () => {
                   <div className="mt-3 pt-3 border-t border-gray-200">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-gray-600">Share of total costs</span>
-                      <span className="font-bold text-gray-800">{weekStats.totalCost > 0 ? ((roleData.cost / weekStats.totalCost) * 100).toFixed(1) : 0}%</span>
+                      <span className="font-bold text-gray-800">{weekStats.totalCost > 0 ? ((roleData.cost / weekStats.totalCost) * 100).toFixed(2) : 0}%</span>
                     </div>
                     <div className="mt-2 bg-gray-200 rounded-full h-2 overflow-hidden">
                       <div 
@@ -4317,7 +4317,7 @@ const RosterApp = () => {
             }`}>
               <div className="text-sm opacity-90 mb-1">Labor %</div>
               <div className="text-3xl font-bold">
-                {weekLaborPercentage > 0 ? `${weekLaborPercentage.toFixed(1)}%` : 'N/A'}
+                {weekLaborPercentage > 0 ? `${weekLaborPercentage.toFixed(2)}%` : 'N/A'}
               </div>
               <div className="text-xs opacity-75 mt-1">
                 {weekLaborPercentage > 0 ? 'of revenue' : 'Add revenue data'}
@@ -4394,7 +4394,7 @@ const RosterApp = () => {
                         <td className="px-4 py-3 text-center">
                           {day.laborPercentage > 0 ? (
                             <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold border-2 ${getColorClasses(color)}`}>
-                              {day.laborPercentage.toFixed(1)}%
+                              {day.laborPercentage.toFixed(2)}%
                             </span>
                           ) : (
                             <span className="text-gray-400 text-sm">-</span>
@@ -4423,7 +4423,7 @@ const RosterApp = () => {
                         <span className={`inline-block px-4 py-1.5 rounded-full text-base font-bold border-2 ${
                           getColorClasses(getLaborPercentageColor(weekLaborPercentage))
                         }`}>
-                          {weekLaborPercentage.toFixed(1)}%
+                          {weekLaborPercentage.toFixed(2)}%
                         </span>
                       ) : (
                         <span className="text-gray-400">-</span>
@@ -4536,7 +4536,7 @@ const RosterApp = () => {
                       </div>
                       <div className="text-right">
                         <div className="text-2xl font-bold text-orange-600">
-                          {avgPeakStaff.toFixed(1)}
+                          {avgPeakStaff.toFixed(2)}
                         </div>
                         <div className="text-xs text-gray-500">
                           {minPeakStaff}-{maxPeakStaff} range
@@ -5500,7 +5500,7 @@ Key things to verify after rebuild:
                           const st = calculateStaffDayStats(s.id, dk);
                           return (
                             <td key={`${dk}-${s.id}`} className={`border-r p-1 text-center text-xs ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-4 border-gray-400' : ''}`} style={{ width: '120px', maxWidth: '120px', minWidth: '120px' }}>
-                              <div>{st.hours.toFixed(1)}h</div>
+                              <div>{st.hours.toFixed(2)}h</div>
                               <div>${st.cost.toFixed(0)}</div>
                             </td>
                           );
