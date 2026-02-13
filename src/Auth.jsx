@@ -39,13 +39,12 @@ export const Auth = ({ onAuthenticated }) => {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        // Try to get any public settings (you may need to adjust this query)
         const { data, error } = await supabase
           .from('settings')
           .select('business_name, logo_url')
           .limit(1)
           .single();
-        
+
         if (data && !error) {
           setBusinessSettings({
             businessName: data.business_name || 'Recess Roster',
@@ -53,11 +52,10 @@ export const Auth = ({ onAuthenticated }) => {
           });
         }
       } catch (error) {
-        // Silently fail - just use defaults
         console.log('Could not load public settings, using defaults');
       }
     };
-    
+
     loadSettings();
   }, []);
 
@@ -73,16 +71,16 @@ export const Auth = ({ onAuthenticated }) => {
           email,
           password,
         });
-        
+
         if (error) throw error;
-        
+
         setMessage('Check your email for the confirmation link!');
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
-        
+
         if (error) throw error;
       }
     } catch (error) {
@@ -93,42 +91,39 @@ export const Auth = ({ onAuthenticated }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-orange-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+    <div className="min-h-screen bg-surface-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-modal p-8 w-full max-w-sm animate-fade-in">
         <div className="text-center mb-8">
-          {/* Logo Display - shows custom logo if available, otherwise default icon */}
           {businessSettings.logoUrl ? (
             <div className="relative">
-              <img 
-                src={businessSettings.logoUrl} 
+              <img
+                src={businessSettings.logoUrl}
                 alt={`${businessSettings.businessName} Logo`}
-                className="h-20 w-20 mx-auto mb-4 object-contain"
+                className="h-16 w-16 mx-auto mb-4 object-contain rounded-lg"
                 onError={(e) => {
-                  // If logo fails to load, hide it and show default icon
                   e.target.style.display = 'none';
                   const fallback = e.target.nextElementSibling;
                   if (fallback) fallback.style.display = 'flex';
                 }}
               />
-              {/* Fallback icon (hidden unless image fails) */}
-              <div style={{ display: 'none' }} className="bg-gradient-to-br from-orange-500 to-orange-600 w-16 h-16 rounded-xl mx-auto mb-4 flex items-center justify-center shadow-lg">
-                <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div style={{ display: 'none' }} className="bg-brand-500 w-12 h-12 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                 </svg>
               </div>
             </div>
           ) : (
-            <div className="bg-gradient-to-br from-orange-500 to-orange-600 w-16 h-16 rounded-xl mx-auto mb-4 flex items-center justify-center shadow-lg">
-              <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="bg-brand-500 w-12 h-12 rounded-lg mx-auto mb-4 flex items-center justify-center">
+              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
             </div>
           )}
-          
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-orange-500 bg-clip-text text-transparent mb-2">
+
+          <h1 className="text-xl font-semibold text-gray-900 mb-1">
             {businessSettings.businessName}
           </h1>
-          <p className="text-gray-600 text-sm">Staff Management System</p>
+          <p className="text-sm text-gray-500">Staff Management System</p>
         </div>
 
         {error && (
@@ -145,7 +140,7 @@ export const Auth = ({ onAuthenticated }) => {
 
         <form onSubmit={handleAuth} className="space-y-4">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
               Email
             </label>
             <input
@@ -153,13 +148,13 @@ export const Auth = ({ onAuthenticated }) => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+              className="input-base"
               placeholder="your@email.com"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
               Password
             </label>
             <input
@@ -168,21 +163,21 @@ export const Auth = ({ onAuthenticated }) => {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
-              placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+              className="input-base"
+              placeholder="Enter password"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-blue-600 to-orange-500 hover:from-blue-500 hover:to-orange-400 text-white font-semibold py-3 rounded-xl transition-all shadow-lg disabled:opacity-50"
+            className="btn-primary w-full py-2.5"
           >
             {loading ? 'Loading...' : isSignUp ? 'Sign Up' : 'Sign In'}
           </button>
         </form>
 
-        <div className="mt-6 text-center">
+        <div className="mt-5 text-center">
           <button
             onClick={() => setIsSignUp(!isSignUp)}
             className="text-sm text-blue-600 hover:text-blue-700 font-medium"
@@ -191,8 +186,8 @@ export const Auth = ({ onAuthenticated }) => {
           </button>
         </div>
 
-        <div className="mt-8 pt-6 border-t border-gray-200">
-          <p className="text-xs text-gray-500 text-center">
+        <div className="mt-6 pt-5 border-t border-gray-100">
+          <p className="text-xs text-gray-400 text-center">
             Secure authentication powered by Supabase
           </p>
         </div>

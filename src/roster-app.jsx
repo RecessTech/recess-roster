@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, ArchiveRestore } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, ArchiveRestore, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db } from './supabaseClient';
+import toast, { Toaster } from 'react-hot-toast';
 
 const RosterApp = () => {
   const { user } = useAuth();
@@ -150,7 +151,7 @@ const RosterApp = () => {
       console.log(`✅ Auto-saved ${scheduleSize} schedule slots`);
     } catch (error) {
       console.error('❌ Error saving schedule:', error);
-      alert(`Failed to save schedule: ${error.message}`);
+      toast.error(`Failed to save schedule: ${error.message}`);
     } finally {
       saveInProgressRef.current = false;
       setSaving(false);
@@ -223,7 +224,7 @@ const RosterApp = () => {
                 if (shouldRestore) {
                   console.log('🔄 Restoring from localStorage backup');
                   setSchedule(backup.schedule);
-                  alert('✅ Schedule restored from backup! Click the green SAVE button to save to database.');
+                  toast.success('Schedule restored from backup!');
                 } else {
                   setSchedule(scheduleData);
                 }
@@ -854,13 +855,13 @@ const RosterApp = () => {
         setEditingStaff(null);
       } catch (error) {
         console.error('Error saving staff:', error);
-        alert('Error saving staff member. Please try again.');
+        toast.error('Error saving staff member. Please try again.');
       }
     };
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 w-full max-w-md">
+      <div className="modal-overlay">
+        <div className="modal-container max-w-md">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold">{editingStaff ? 'Edit' : 'Add'} Staff</h2>
             <button onClick={() => { setShowStaffModal(false); setEditingStaff(null); }}><X size={24} /></button>
@@ -926,8 +927,8 @@ const RosterApp = () => {
     const [tempEnd, setTempEnd] = useState(endHour);
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 w-full max-w-md">
+      <div className="modal-overlay">
+        <div className="modal-container max-w-md">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold">Time Range</h2>
             <button onClick={() => setShowTimeSettings(false)}><X size={24} /></button>
@@ -1518,9 +1519,9 @@ const RosterApp = () => {
     };
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl">
-          <div className="bg-gradient-to-r from-blue-600 to-orange-500 px-8 py-6 flex justify-between items-center">
+      <div className="modal-overlay">
+        <div className="modal-container max-w-3xl max-h-[90vh]">
+          <div className="modal-header flex justify-between items-center">
             <div>
               <h2 className="text-2xl font-bold text-white">Business Settings</h2>
               <p className="text-blue-50 text-sm mt-1">Configure your operational hours and coverage requirements</p>
@@ -1603,7 +1604,7 @@ const RosterApp = () => {
             </button>
             <button
               onClick={handleSave}
-              className="px-6 py-2 bg-gradient-to-r from-blue-600 to-orange-500 hover:from-blue-500 hover:to-orange-400 text-white rounded-xl font-semibold transition-all shadow-lg"
+              className="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-semibold transition-colors"
             >
               Save Settings
             </button>
@@ -1651,8 +1652,8 @@ const RosterApp = () => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+    <div className="modal-overlay">
+      <div className="modal-container max-w-md">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold">Quick Fill Shift</h2>
           <button onClick={() => { setShowQuickFillModal(false); setQuickFillData(null); }}>
@@ -1703,7 +1704,7 @@ const RosterApp = () => {
       setStaffOrder(staffOrder.filter(id => id !== staffId));
     } catch (error) {
       console.error('Error archiving staff:', error);
-      alert('Error archiving staff member. Please try again.');
+      toast.error('Error archiving staff member.');
     }
   };
 
@@ -1717,7 +1718,7 @@ const RosterApp = () => {
       }
     } catch (error) {
       console.error('Error restoring staff:', error);
-      alert('Error restoring staff member. Please try again.');
+      toast.error('Error restoring staff member.');
     }
   };
 
@@ -1896,8 +1897,8 @@ const RosterApp = () => {
     };
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 w-full max-w-md">
+      <div className="modal-overlay">
+        <div className="modal-container max-w-md">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold">Save Shift Template</h2>
             <button onClick={() => { setShowTemplateModal(false); setSelectedTemplate(null); }}>
@@ -2236,7 +2237,7 @@ const RosterApp = () => {
           {/* Progress bar */}
           <div className="w-full bg-gray-200 rounded-full h-2 mb-6">
             <div 
-              className="bg-gradient-to-r from-blue-600 to-orange-500 h-2 rounded-full transition-all duration-300"
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
               style={{ width: `${((tutorialStep + 1) / tutorialSteps.length) * 100}%` }}
             />
           </div>
@@ -2258,7 +2259,7 @@ const RosterApp = () => {
                   setTutorialStep(tutorialStep + 1);
                 }
               }}
-              className="flex-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-orange-500 hover:from-blue-500 hover:to-orange-400 text-white rounded-xl font-semibold transition-all shadow-lg"
+              className="flex-1 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-semibold transition-colors"
             >
               {isLastStep ? "Let's Go!" : 'Next'}
             </button>
@@ -2280,9 +2281,9 @@ const RosterApp = () => {
     if (!showHelpModal) return null;
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl">
-          <div className="bg-gradient-to-r from-blue-600 to-orange-500 px-8 py-6 flex justify-between items-center">
+      <div className="modal-overlay">
+        <div className="modal-container max-w-4xl max-h-[90vh]">
+          <div className="modal-header flex justify-between items-center">
             <div>
               <h2 className="text-2xl font-bold text-white">Help & Support</h2>
               <p className="text-blue-50 text-sm mt-1">Guides, FAQs, and quick tips</p>
@@ -2379,7 +2380,7 @@ const RosterApp = () => {
                     setShowTutorial(true);
                     setTutorialStep(0);
                   }}
-                  className="w-full mt-4 px-4 py-3 bg-gradient-to-r from-blue-600 to-orange-500 hover:from-blue-500 hover:to-orange-400 text-white rounded-xl font-semibold transition-all"
+                  className="w-full mt-4 px-4 py-3 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-semibold transition-colors"
                 >
                   🎓 Replay Tutorial
                 </button>
@@ -2481,7 +2482,7 @@ const RosterApp = () => {
             <p className="text-sm text-gray-600">Need more help? Check the full documentation.</p>
             <button
               onClick={() => setShowHelpModal(false)}
-              className="px-6 py-2 bg-gradient-to-r from-blue-600 to-orange-500 text-white rounded-xl font-semibold hover:from-blue-500 hover:to-orange-400 transition-all"
+              className="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-semibold transition-colors"
             >
               Got it!
             </button>
@@ -2571,7 +2572,7 @@ const RosterApp = () => {
                 onClick={() => setActiveView('staff-view')}
                 className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                   activeView === 'staff-view'
-                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'bg-gray-100 text-gray-700'
                 }`}
               >
@@ -2581,7 +2582,7 @@ const RosterApp = () => {
                 onClick={() => setActiveView('timesheet')}
                 className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                   activeView === 'timesheet'
-                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'bg-gray-100 text-gray-700'
                 }`}
               >
@@ -2815,7 +2816,7 @@ const RosterApp = () => {
         setRevenueEditDate(null);
       } catch (error) {
         console.error('Error saving revenue:', error);
-        alert('Failed to save revenue data');
+        toast.error('Failed to save revenue data');
       }
     };
 
@@ -2836,7 +2837,7 @@ const RosterApp = () => {
         setRevenueEditDate(null);
       } catch (error) {
         console.error('Error deleting revenue:', error);
-        alert('Failed to delete revenue data');
+        toast.error('Failed to delete revenue data');
       }
     };
 
@@ -2844,8 +2845,8 @@ const RosterApp = () => {
     const totalRevenue = (parseFloat(formData.projectedRevenue) || 0) + (parseFloat(formData.otherRevenue) || 0);
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+      <div className="modal-overlay">
+        <div className="modal-container max-w-md">
           <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-5 flex justify-between items-center rounded-t-2xl">
             <div>
               <h2 className="text-xl font-bold text-white">Revenue Entry</h2>
@@ -3371,9 +3372,9 @@ const RosterApp = () => {
                   text += `Total: ${weekStats.hours.toFixed(2)} hours | $${weekStats.cost.toFixed(2)}`;
                   
                   navigator.clipboard.writeText(text);
-                  alert('Schedule copied to clipboard!');
+                  toast.success('Schedule copied to clipboard!');
                 }}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all shadow-md hover:shadow-lg"
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
               >
                 📋 Copy as Text
               </button>
@@ -3382,7 +3383,7 @@ const RosterApp = () => {
                   // Print-friendly view
                   window.print();
                 }}
-                className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-all shadow-md hover:shadow-lg"
+                className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
               >
                 🖨️ Print Schedule
               </button>
@@ -3511,7 +3512,7 @@ const RosterApp = () => {
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                   copiedTimesheet
                     ? 'bg-green-500 text-white'
-                    : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white shadow-sm'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
                 }`}
               >
                 <Clipboard size={16} />
@@ -3745,32 +3746,32 @@ const RosterApp = () => {
       <div className="space-y-6">
         {/* Key Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-lg">
-            <div className="text-sm opacity-90 mb-1">Total Week Cost</div>
-            <div className="text-3xl font-bold">${weekStats.totalCost.toFixed(0)}</div>
-            <div className="text-xs opacity-75 mt-1">{weekStats.totalHours.toFixed(2)} hours</div>
-            <div className="text-xs opacity-75">${insights.avgCostPerHour.toFixed(2)}/hr avg</div>
-          </div>
-          
-          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl p-5 text-white shadow-lg">
-            <div className="text-sm opacity-90 mb-1">Average Daily</div>
-            <div className="text-3xl font-bold">${(weekStats.totalCost / dates.length).toFixed(0)}</div>
-            <div className="text-xs opacity-75 mt-1">{(weekStats.totalHours / dates.length).toFixed(2)} hrs/day</div>
-            <div className="text-xs opacity-75">{dates.length} days</div>
-          </div>
-          
-          <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-5 text-white shadow-lg">
-            <div className="text-sm opacity-90 mb-1">Active Staff</div>
-            <div className="text-3xl font-bold">{weekStats.staffBreakdown.length}</div>
-            <div className="text-xs opacity-75 mt-1">of {staff.length} total</div>
-            <div className="text-xs opacity-75">{insights.totalShifts} shifts</div>
+          <div className="metric-card">
+            <div className="text-sm text-gray-500 mb-1">Total Week Cost</div>
+            <div className="text-3xl font-bold text-gray-900">${weekStats.totalCost.toFixed(0)}</div>
+            <div className="text-xs text-gray-400 mt-1">{weekStats.totalHours.toFixed(2)} hours</div>
+            <div className="text-xs text-gray-400">${insights.avgCostPerHour.toFixed(2)}/hr avg</div>
           </div>
 
-          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-5 text-white shadow-lg">
-            <div className="text-sm opacity-90 mb-1">Avg Shift Length</div>
-            <div className="text-3xl font-bold">{insights.avgShiftLength.toFixed(2)}h</div>
-            <div className="text-xs opacity-75 mt-1">{allShifts.length} total shifts</div>
-            <div className="text-xs opacity-75">{(insights.avgShiftLength * insights.avgCostPerHour).toFixed(0)} avg cost/shift</div>
+          <div className="metric-card">
+            <div className="text-sm text-gray-500 mb-1">Average Daily</div>
+            <div className="text-3xl font-bold text-gray-900">${(weekStats.totalCost / dates.length).toFixed(0)}</div>
+            <div className="text-xs text-gray-400 mt-1">{(weekStats.totalHours / dates.length).toFixed(2)} hrs/day</div>
+            <div className="text-xs text-gray-400">{dates.length} days</div>
+          </div>
+
+          <div className="metric-card">
+            <div className="text-sm text-gray-500 mb-1">Active Staff</div>
+            <div className="text-3xl font-bold text-gray-900">{weekStats.staffBreakdown.length}</div>
+            <div className="text-xs text-gray-400 mt-1">of {staff.length} total</div>
+            <div className="text-xs text-gray-400">{insights.totalShifts} shifts</div>
+          </div>
+
+          <div className="metric-card">
+            <div className="text-sm text-gray-500 mb-1">Avg Shift Length</div>
+            <div className="text-3xl font-bold text-gray-900">{insights.avgShiftLength.toFixed(2)}h</div>
+            <div className="text-xs text-gray-400 mt-1">{allShifts.length} total shifts</div>
+            <div className="text-xs text-gray-400">{(insights.avgShiftLength * insights.avgCostPerHour).toFixed(0)} avg cost/shift</div>
           </div>
         </div>
 
@@ -4245,7 +4246,7 @@ const RosterApp = () => {
           setEditValue('');
         } catch (error) {
           console.error('Error saving revenue:', error);
-          alert('Failed to save. Please try again.');
+          toast.error('Failed to save. Please try again.');
         } finally {
           setIsSaving(false);
         }
@@ -4626,8 +4627,8 @@ const RosterApp = () => {
             onClick={() => setAnalyticsTab('overview')}
             className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
               analyticsTab === 'overview'
-                ? 'bg-gradient-to-r from-blue-600 to-orange-500 text-white shadow-md'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'tab-active'
+                : 'tab-inactive'
             }`}
           >
             📊 Overview
@@ -4636,8 +4637,8 @@ const RosterApp = () => {
             onClick={() => setAnalyticsTab('staff')}
             className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
               analyticsTab === 'staff'
-                ? 'bg-gradient-to-r from-blue-600 to-orange-500 text-white shadow-md'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'tab-active'
+                : 'tab-inactive'
             }`}
           >
             👥 Staff
@@ -4646,8 +4647,8 @@ const RosterApp = () => {
             onClick={() => setAnalyticsTab('roles')}
             className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
               analyticsTab === 'roles'
-                ? 'bg-gradient-to-r from-blue-600 to-orange-500 text-white shadow-md'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'tab-active'
+                : 'tab-inactive'
             }`}
           >
             🎭 Roles
@@ -4656,8 +4657,8 @@ const RosterApp = () => {
             onClick={() => setAnalyticsTab('coverage')}
             className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
               analyticsTab === 'coverage'
-                ? 'bg-gradient-to-r from-blue-600 to-orange-500 text-white shadow-md'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'tab-active'
+                : 'tab-inactive'
             }`}
           >
             📍 Coverage
@@ -4666,8 +4667,8 @@ const RosterApp = () => {
             onClick={() => setAnalyticsTab('revenue')}
             className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
               analyticsTab === 'revenue'
-                ? 'bg-gradient-to-r from-blue-600 to-orange-500 text-white shadow-md'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'tab-active'
+                : 'tab-inactive'
             }`}
           >
             💰 Revenue
@@ -4686,42 +4687,32 @@ const RosterApp = () => {
 
   const ClearConfirmModal = () => {
     if (!clearTarget) return null;
-    
-    const targetDate = clearTarget.type === 'day' 
+
+    const targetDate = clearTarget.type === 'day'
       ? dates.find(d => formatDateKey(d) === clearTarget.dateKey)
       : null;
-    
+
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold text-gray-900">Confirm Clear</h2>
-            <button onClick={() => { setShowClearModal(false); setClearTarget(null); }}>
-              <X size={24} />
+      <div className="modal-overlay">
+        <div className="modal-container max-w-sm">
+          <div className="modal-header">
+            <h2 className="text-lg font-semibold text-gray-900">Confirm Clear</h2>
+            <button onClick={() => { setShowClearModal(false); setClearTarget(null); }} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+              <X size={18} className="text-gray-400" />
             </button>
           </div>
-          <div className="mb-6">
-            <p className="text-gray-700">
-              {clearTarget.type === 'day' 
-                ? `Are you sure you want to clear all shifts for ${targetDate?.toLocaleDateString('en-AU', { weekday: 'long', month: 'short', day: 'numeric' })}?`
-                : `Are you sure you want to clear all shifts for the entire week (${dates[0]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })} - ${dates[dates.length - 1]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })})?`
+          <div className="modal-body">
+            <p className="text-sm text-gray-600">
+              {clearTarget.type === 'day'
+                ? `Clear all shifts for ${targetDate?.toLocaleDateString('en-AU', { weekday: 'long', month: 'short', day: 'numeric' })}?`
+                : `Clear all shifts for the week (${dates[0]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })} - ${dates[dates.length - 1]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })})?`
               }
             </p>
-            <p className="text-sm text-red-600 mt-2 font-semibold">This action cannot be undone.</p>
+            <p className="text-xs text-red-500 mt-2">This action cannot be undone.</p>
           </div>
-          <div className="flex gap-2">
-            <button 
-              onClick={confirmClear}
-              className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg font-semibold transition-all"
-            >
-              Clear Shifts
-            </button>
-            <button 
-              onClick={() => { setShowClearModal(false); setClearTarget(null); }}
-              className="px-6 py-2.5 border-2 border-gray-300 hover:bg-gray-100 rounded-lg font-semibold transition-all"
-            >
-              Cancel
-            </button>
+          <div className="modal-footer">
+            <button onClick={() => { setShowClearModal(false); setClearTarget(null); }} className="btn-secondary">Cancel</button>
+            <button onClick={confirmClear} className="btn-danger">Clear Shifts</button>
           </div>
         </div>
       </div>
@@ -4973,28 +4964,25 @@ Key things to verify after rebuild:
     };
     
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl">
-          <div className="bg-gradient-to-r from-blue-600 to-orange-500 px-8 py-6 flex justify-between items-center">
+      <div className="modal-overlay">
+        <div className="modal-container max-w-4xl max-h-[90vh]">
+          <div className="modal-header">
             <div>
-              <h2 className="text-2xl font-bold text-white">Export Staff Schedules</h2>
-              <p className="text-blue-50 text-sm mt-1">Select a team member to view and copy their schedule</p>
+              <h2 className="text-lg font-semibold text-gray-900">Export Staff Schedules</h2>
+              <p className="text-sm text-gray-500 mt-0.5">Select a team member to view and copy their schedule</p>
             </div>
-            <button 
-              onClick={() => setShowExportModal(false)}
-              className="text-white hover:bg-white/20 rounded-full p-2 transition-all"
-            >
-              <X size={24} />
+            <button onClick={() => setShowExportModal(false)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+              <X size={18} className="text-gray-400" />
             </button>
           </div>
           
-          <div className="p-8 overflow-auto" style={{ maxHeight: 'calc(90vh - 100px)' }}>
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-3">Team Member</label>
-              <select 
-                value={selectedStaffId} 
+          <div className="p-6 overflow-auto" style={{ maxHeight: 'calc(90vh - 100px)' }}>
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Team Member</label>
+              <select
+                value={selectedStaffId}
                 onChange={(e) => setSelectedStaffId(e.target.value)}
-                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:border-blue-500 focus:outline-none transition-all"
+                className="input-base"
               >
                 {activeStaff.map(s => (
                   <option key={s.id} value={s.id}>{s.name}</option>
@@ -5132,206 +5120,175 @@ Key things to verify after rebuild:
 
   return (
 
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-orange-50">
-      <div className="bg-white border-b-2 border-gray-200 shadow-lg sticky top-0 z-40 backdrop-blur-sm">
-        <div className="px-6 py-6">
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-4">
-              {businessSettings.logoUrl ? (
-                <div className="bg-white p-2 rounded-xl shadow-lg border-2 border-gray-200">
-                  <img 
-                    src={businessSettings.logoUrl} 
-                    alt={`${businessSettings.businessName} Logo`}
-                    className="h-12 w-12 object-contain"
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                      e.target.nextElementSibling.style.display = 'flex';
-                    }}
-                  />
-                  <div style={{ display: 'none' }} className="bg-gradient-to-br from-orange-500 to-orange-600 p-3 rounded-lg">
-                    <Users size={24} className="text-white" />
+    <div className="min-h-screen bg-surface-50 flex">
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          duration: 3000,
+          style: { background: '#1e293b', color: '#fff', fontSize: '14px', borderRadius: '8px', padding: '12px 16px' },
+          success: { iconTheme: { primary: '#22c55e', secondary: '#fff' } },
+          error: { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
+        }}
+      />
+
+      {/* Sidebar */}
+      <aside className="w-16 bg-white border-r border-gray-200 flex flex-col items-center py-4 gap-1 sticky top-0 h-screen z-50 shrink-0">
+        <div className="mb-4">
+          {businessSettings.logoUrl ? (
+            <img src={businessSettings.logoUrl} alt="" className="h-9 w-9 rounded-lg object-contain" onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }} />
+          ) : null}
+          <div className={`bg-brand-500 p-2 rounded-lg ${businessSettings.logoUrl ? 'hidden' : ''}`}>
+            <Users size={20} className="text-white" />
+          </div>
+        </div>
+
+        <nav className="flex flex-col gap-1 flex-1">
+          <button onClick={() => setActiveView('roster')} className={`p-3 rounded-lg transition-colors group relative ${activeView === 'roster' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`} title="Grid View">
+            <CalendarDays size={20} />
+            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Grid View</span>
+          </button>
+          <button onClick={() => setActiveView('staff-view')} className={`p-3 rounded-lg transition-colors group relative ${activeView === 'staff-view' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`} title="Staff View">
+            <Users size={20} />
+            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Staff View</span>
+          </button>
+          <button onClick={() => setActiveView('timesheet')} className={`p-3 rounded-lg transition-colors group relative ${activeView === 'timesheet' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`} title="Timesheet">
+            <FileSpreadsheet size={20} />
+            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Timesheet</span>
+          </button>
+          <button onClick={() => setActiveView('analytics')} className={`p-3 rounded-lg transition-colors group relative ${activeView === 'analytics' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`} title="Analytics">
+            <BarChart3 size={20} />
+            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Analytics</span>
+          </button>
+        </nav>
+
+        <div className="flex flex-col gap-1 mt-auto">
+          <button onClick={() => setShowSettingsModal(true)} className="p-3 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors group relative" title="Settings">
+            <Settings size={20} />
+            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Settings</span>
+          </button>
+          <button onClick={() => setShowHelpModal(true)} className="p-3 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors group relative" title="Help">
+            <HelpCircle size={20} />
+            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Help</span>
+          </button>
+          <button onClick={signOut} className="p-3 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors group relative" title="Sign Out">
+            <LogOut size={20} />
+            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Sign Out</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <div className="flex-1 min-w-0">
+        {/* Top bar */}
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
+          <div className="px-6 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <h1 className="text-lg font-semibold text-gray-900">{businessSettings.businessName}</h1>
+                <span className="text-sm text-gray-400">|</span>
+                <span className="text-sm text-gray-500 capitalize">{activeView === 'roster' ? 'Grid View' : activeView === 'staff-view' ? 'Staff View' : activeView}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg">
+                  <button onClick={undo} disabled={historyIndex <= 0} className={`p-1.5 rounded transition-colors ${historyIndex > 0 ? 'hover:bg-white text-gray-600' : 'text-gray-300 cursor-not-allowed'}`} title="Undo (Ctrl+Z)">
+                    <Undo2 size={16} />
+                  </button>
+                  <button onClick={redo} disabled={historyIndex >= scheduleHistory.length - 1} className={`p-1.5 rounded transition-colors ${historyIndex < scheduleHistory.length - 1 ? 'hover:bg-white text-gray-600' : 'text-gray-300 cursor-not-allowed'}`} title="Redo (Ctrl+Shift+Z)">
+                    <Redo2 size={16} />
+                  </button>
+                </div>
+                <button onClick={() => setShowTimeSettings(true)} className="btn-ghost flex items-center gap-1.5 text-xs py-1.5 px-2.5">
+                  <Clock size={14} />
+                  <span>{startHour.toString().padStart(2, '0')}:00-{endHour.toString().padStart(2, '0')}:00</span>
+                </button>
+                <button onClick={() => setShowExportModal(true)} className="btn-ghost flex items-center gap-1.5 text-xs py-1.5 px-2.5">
+                  <Clipboard size={14} />
+                  <span>Export</span>
+                </button>
+                <button
+                  onClick={() => { setShowTemplateMenu(true); if (templateMode) { setTemplateMode(false); setSelectedTemplate(null); } }}
+                  className={`flex items-center gap-1.5 text-xs py-1.5 px-2.5 rounded-lg transition-colors ${templateMode ? 'bg-purple-600 text-white' : 'btn-ghost'}`}
+                >
+                  <Copy size={14} />
+                  <span>{templateMode ? `Template: ${selectedTemplate?.name}` : 'Templates'}</span>
+                </button>
+                <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium ${saving ? 'text-blue-600' : 'text-green-600'}`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${saving ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`}></div>
+                  {saving ? 'Saving...' : 'Saved'}
+                </div>
+                <button onClick={() => setShowStaffModal(true)} className="btn-primary flex items-center gap-1.5 text-xs py-1.5 px-3">
+                  <Users size={14} />
+                  <span>Add Staff</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Toolbar row */}
+          <div className="px-6 py-2 border-t border-gray-100 flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              {/* View mode */}
+              <div className="flex bg-gray-100 p-0.5 rounded-lg">
+                {[1, 3, 7].map(m => <button key={m} onClick={() => setViewMode(m)} className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{m}D</button>)}
+              </div>
+              {/* Time interval */}
+              <div className="flex bg-gray-100 p-0.5 rounded-lg">
+                {[15, 30, 60].map(i => <button key={i} onClick={() => setTimeInterval(i)} className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${timeInterval === i ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{i === 60 ? '1h' : `${i}m`}</button>)}
+              </div>
+              {/* Column width */}
+              <div className="flex items-center bg-gray-100 p-0.5 rounded-lg">
+                <button onClick={() => setColumnWidth(Math.max(60, columnWidth - 10))} className="px-2 py-1.5 rounded text-xs text-gray-500 hover:text-gray-700 transition-colors">-</button>
+                <span className="px-1.5 text-xs text-gray-400 min-w-[36px] text-center">{columnWidth}px</span>
+                <button onClick={() => setColumnWidth(Math.min(200, columnWidth + 10))} className="px-2 py-1.5 rounded text-xs text-gray-500 hover:text-gray-700 transition-colors">+</button>
+              </div>
+            </div>
+
+            <div className="h-4 w-px bg-gray-200 mx-1"></div>
+
+            {/* Paint mode / Template mode */}
+            <div className="flex items-center gap-1.5 overflow-x-auto">
+              {templateMode ? (
+                <>
+                  <span className="text-xs font-medium text-purple-600 whitespace-nowrap">Template:</span>
+                  <div className="px-2.5 py-1.5 rounded-lg border border-purple-300 bg-purple-50 text-purple-700 text-xs font-medium">
+                    {selectedTemplate?.name} ({selectedTemplate?.startTime} - {selectedTemplate?.endTime})
                   </div>
-                </div>
+                  <button onClick={() => { setTemplateMode(false); setSelectedTemplate(null); }} className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-red-600 hover:bg-red-50 transition-colors">Cancel</button>
+                </>
               ) : (
-                <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-3 rounded-xl shadow-lg">
-                  <Users size={28} className="text-white" />
-                </div>
+                <>
+                  <span className="text-xs font-medium text-gray-500 whitespace-nowrap">Paint:</span>
+                  {roles.map(r => (
+                    <button
+                      key={r.id}
+                      onClick={() => setSelectedRole(r)}
+                      style={{ backgroundColor: selectedRole?.id === r.id ? r.color : 'transparent', color: selectedRole?.id === r.id ? 'white' : r.color, borderColor: r.color }}
+                      className="px-2.5 py-1 rounded-lg border text-xs font-bold transition-colors"
+                    >
+                      {r.code}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setSelectedRole({ id: 'eraser', code: 'X', color: '#ef4444' })}
+                    className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition-colors ${selectedRole?.id === 'eraser' ? 'bg-red-600 text-white border-red-600' : 'border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-500'}`}
+                  >
+                    Eraser
+                  </button>
+                </>
               )}
-              <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-orange-500 bg-clip-text text-transparent tracking-tight">{businessSettings.businessName}</h1>
-                <p className="text-sm text-gray-600 mt-0.5">Staff Roster Management</p>
-              </div>
             </div>
-            <div className="flex gap-3">
-              <div className="flex gap-1 bg-gray-100 p-1 rounded-lg border border-gray-300">
-                <button 
-                  onClick={undo} 
-                  disabled={historyIndex <= 0}
-                  className={`p-2 rounded transition-all ${historyIndex > 0 ? 'hover:bg-gray-200 text-gray-700' : 'text-gray-300 cursor-not-allowed'}`}
-                  title="Undo (Ctrl+Z)"
-                >
-                  <Undo2 size={18} />
-                </button>
-                <button 
-                  onClick={redo} 
-                  disabled={historyIndex >= scheduleHistory.length - 1}
-                  className={`p-2 rounded transition-all ${historyIndex < scheduleHistory.length - 1 ? 'hover:bg-gray-200 text-gray-700' : 'text-gray-300 cursor-not-allowed'}`}
-                  title="Redo (Ctrl+Shift+Z)"
-                >
-                  <Redo2 size={18} />
-                </button>
-              </div>
-              <button onClick={() => setShowTimeSettings(true)} className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg border border-gray-300">
-                <Clock size={18} />
-                <span className="font-medium">{startHour.toString().padStart(2, '0')}:00 - {endHour.toString().padStart(2, '0')}:00</span>
-              </button>
-              <button onClick={() => setShowSettingsModal(true)} className="flex items-center gap-2 bg-purple-100 hover:bg-purple-200 text-purple-700 px-5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg border border-purple-300">
-                <span className="text-lg">⚙️</span>
-                <span className="font-medium">Settings</span>
-              </button>
-              <button onClick={() => setShowExportModal(true)} className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-400 hover:to-orange-500 text-white px-5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg">
-                <Clipboard size={18} />
-                <span className="font-medium">Export Schedules</span>
-              </button>
-              <button 
-                onClick={() => {
-                  setShowTemplateMenu(true);
-                  if (templateMode) {
-                    setTemplateMode(false);
-                    setSelectedTemplate(null);
-                  }
-                }} 
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg ${
-                  templateMode 
-                    ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white' 
-                    : 'bg-purple-100 hover:bg-purple-200 text-purple-700 border border-purple-300'
-                }`}
-              >
-                <Copy size={18} />
-                <span className="font-medium">
-                  {templateMode ? `Apply: ${selectedTemplate?.name}` : 'Templates'}
-                </span>
-              </button>
-              <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 transition-all ${
-                saving 
-                  ? 'bg-blue-50 border-blue-500 text-blue-700' 
-                  : 'bg-green-50 border-green-500 text-green-700'
-              }`}>
-                <div className={`w-2 h-2 rounded-full ${saving ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`}></div>
-                <span className="text-sm font-semibold">
-                  {saving ? 'Saving...' : 'Auto-saved'}
-                </span>
-                <span className="text-xs opacity-75">
-                  {Object.keys(schedule).length} slots
-                </span>
-              </div>
-              <button onClick={() => setShowStaffModal(true)} className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white px-5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg">
-                <Users size={18} />
-                <span className="font-medium">Add Staff</span>
-              </button>
-              <button 
-                onClick={() => setShowHelpModal(true)} 
-                className="flex items-center gap-2 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-400 hover:to-purple-500 text-white px-5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg"
-                title="Help & Tutorials"
-              >
-                <span className="text-lg font-bold">?</span>
-                <span className="font-medium">Help</span>
-              </button>
-              <button onClick={signOut} className="flex items-center gap-2 bg-gray-100 hover:bg-red-50 text-gray-700 hover:text-red-600 px-5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-lg border border-gray-300 hover:border-red-300" title="Sign Out">
-                <LogOut size={18} />
-                <span className="font-medium">Sign Out</span>
-              </button>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <div className="flex gap-2 bg-gray-100 p-1.5 rounded-xl border border-gray-300 shadow-sm">
-              <button 
-                onClick={() => setActiveView('roster')} 
-                className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${activeView === 'roster' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200'}`}
-              >
-                Grid View
-              </button>
-              <button 
-                onClick={() => setActiveView('staff-view')} 
-                className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${activeView === 'staff-view' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200'}`}
-              >
-                Staff View
-              </button>
-              <button
-                onClick={() => setActiveView('timesheet')}
-                className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${activeView === 'timesheet' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200'}`}
-              >
-                Timesheet
-              </button>
-              <button
-                onClick={() => setActiveView('analytics')}
-                className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${activeView === 'analytics' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200'}`}
-              >
-                Analytics
-              </button>
-            </div>
-            <div className="flex gap-2 bg-gray-100 p-1.5 rounded-xl border border-gray-300 shadow-sm">
-              {[1, 3, 7].map(m => <button key={m} onClick={() => setViewMode(m)} className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${viewMode === m ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200'}`}>{m}D</button>)}
-            </div>
-            <div className="flex gap-2 bg-gray-100 p-1.5 rounded-xl border border-gray-300 shadow-sm">
-              {[15, 30, 60].map(i => <button key={i} onClick={() => setTimeInterval(i)} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${timeInterval === i ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200'}`}>{i === 60 ? '1h' : `${i}m`}</button>)}
-            </div>
-            <div className="flex gap-2 bg-gray-100 p-1.5 rounded-xl border border-gray-300 shadow-sm">
-              <button 
-                onClick={() => setColumnWidth(Math.max(60, columnWidth - 10))} 
-                className="px-3 py-2 rounded-lg text-sm font-medium transition-all text-gray-700 hover:text-gray-900 hover:bg-gray-200"
-                title="Narrow columns"
-              >
-                ←
-              </button>
-              <span className="px-3 py-2 text-xs font-semibold text-gray-600 flex items-center">{columnWidth}px</span>
-              <button 
-                onClick={() => setColumnWidth(Math.min(200, columnWidth + 10))} 
-                className="px-3 py-2 rounded-lg text-sm font-medium transition-all text-gray-700 hover:text-gray-900 hover:bg-gray-200"
-                title="Widen columns"
-              >
-                →
-              </button>
-            </div>
-            <div className="flex gap-2 ml-auto">
-              <button onClick={() => setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() - 7)))} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg border border-gray-300 transition-all shadow-sm">←</button>
-              <span className="text-sm px-4 py-2 bg-white border-2 border-gray-300 rounded-lg text-gray-700 font-medium shadow-sm">{dates[0]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })} - {dates[dates.length - 1]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</span>
-              <button onClick={() => setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() + 7)))} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg border border-gray-300 transition-all shadow-sm">→</button>
-              <button onClick={() => setCurrentDate(new Date())} className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-lg transition-all shadow-md">Today</button>
-              <button onClick={clearWeek} className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg border border-red-300 transition-all shadow-sm font-semibold">Clear Week</button>
+
+            <div className="flex items-center gap-1.5 ml-auto">
+              <button onClick={() => setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() - 7)))} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors text-xs">←</button>
+              <span className="text-xs px-2.5 py-1.5 bg-gray-100 rounded-lg text-gray-600 font-medium">{dates[0]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })} – {dates[dates.length - 1]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</span>
+              <button onClick={() => setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() + 7)))} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors text-xs">→</button>
+              <button onClick={() => setCurrentDate(new Date())} className="btn-primary text-xs py-1.5 px-2.5">Today</button>
+              <button onClick={clearWeek} className="text-xs py-1.5 px-2.5 rounded-lg text-red-600 hover:bg-red-50 font-medium transition-colors">Clear Week</button>
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="bg-white border-b-2 border-gray-200 shadow-md sticky top-[140px] z-30 px-6 py-4 backdrop-blur-sm">
-        <div className="flex items-center gap-3 overflow-x-auto">
-          {templateMode ? (
-            <>
-              <span className="text-sm font-semibold text-purple-700 whitespace-nowrap">Template Mode:</span>
-              <div className="px-4 py-2.5 rounded-xl border-2 border-purple-600 bg-purple-100 text-purple-700 text-sm font-bold">
-                {selectedTemplate?.name} ({selectedTemplate?.startTime} - {selectedTemplate?.endTime})
-              </div>
-              <button 
-                onClick={() => {
-                  setTemplateMode(false);
-                  setSelectedTemplate(null);
-                }} 
-                className="px-4 py-2.5 rounded-xl border-2 border-gray-300 text-gray-600 hover:border-red-500 hover:text-red-600 text-sm font-bold transition-all"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="text-sm font-semibold text-gray-700 whitespace-nowrap">Paint Mode:</span>
-              {roles.map(r => <button key={r.id} onClick={() => setSelectedRole(r)} style={{ backgroundColor: selectedRole?.id === r.id ? r.color : 'transparent', color: selectedRole?.id === r.id ? 'white' : r.color, borderColor: r.color }} className="px-4 py-2.5 rounded-xl border-2 text-sm font-bold transition-all hover:scale-105 shadow-sm">{r.code}</button>)}
-              <button onClick={() => setSelectedRole({ id: 'eraser', code: 'X', color: '#ef4444' })} className={`px-4 py-2.5 rounded-xl border-2 text-sm font-bold transition-all hover:scale-105 shadow-sm ${selectedRole?.id === 'eraser' ? 'bg-red-600 text-white border-red-600' : 'border-gray-300 text-gray-600 hover:border-red-500'}`}>Eraser</button>
-            </>
-          )}
-        </div>
-      </div>
-
+      <div className="view-transition">
       {activeView === 'analytics' ? (
         <AnalyticsView />
       ) : activeView === 'timesheet' ? (
@@ -5341,52 +5298,51 @@ Key things to verify after rebuild:
       ) : (
         <div className="p-6">
         {activeStaff.length === 0 && (
-          <div className="text-center py-16">
-            <div className="bg-white rounded-2xl shadow-lg p-12 max-w-md mx-auto">
-              <Users size={48} className="mx-auto text-blue-600 mb-4" />
-              <h3 className="text-xl font-bold mb-3">No Staff Yet</h3>
-              <button onClick={() => setShowStaffModal(true)} className="bg-blue-600 text-white px-8 py-3 rounded-lg">Add Staff</button>
+          <div className="text-center py-20">
+            <div className="card p-12 max-w-sm mx-auto animate-fade-in">
+              <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center mx-auto mb-4">
+                <Users size={24} className="text-blue-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No Staff Yet</h3>
+              <p className="text-sm text-gray-500 mb-5">Add your first team member to start building schedules.</p>
+              <button onClick={() => setShowStaffModal(true)} className="btn-primary w-full">Add Staff</button>
             </div>
           </div>
         )}
 
         {staff.length > 0 && (
-          <div className="mb-6 bg-white rounded-xl shadow-sm border">
-            <button onClick={() => setShowTeamMembers(!showTeamMembers)} className="w-full flex items-center justify-between p-5">
-              <h3 className="font-semibold">Team ({activeStaff.length}){archivedStaff.length > 0 && <span className="text-gray-400 font-normal ml-1">· {archivedStaff.length} archived</span>}</h3>
-              {showTeamMembers ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+          <div className="mb-4 card">
+            <button onClick={() => setShowTeamMembers(!showTeamMembers)} className="w-full flex items-center justify-between p-4">
+              <h3 className="text-sm font-medium text-gray-700">Team ({activeStaff.length}){archivedStaff.length > 0 && <span className="text-gray-400 font-normal ml-1">· {archivedStaff.length} archived</span>}</h3>
+              {showTeamMembers ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
             </button>
             {showTeamMembers && (
-              <div className="px-5 pb-5 space-y-2 border-t pt-4">
+              <div className="px-4 pb-4 space-y-1 border-t border-gray-100 pt-3">
                 {activeStaff.map(s => (
-                  <div key={s.id} className="flex justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <span className="font-semibold">{s.name}</span>
-                      <span className="text-sm text-gray-600">
-                        ${s.hourlyRate}/hr
-                        {s.weekendRate && s.weekendRate !== s.hourlyRate && (
-                          <span className="ml-1">· ${s.weekendRate}/hr (weekend)</span>
-                        )}
-                        {' '}({s.employmentType})
-                      </span>
+                  <div key={s.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 transition-colors group">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-xs font-semibold text-blue-600">
+                        {s.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-gray-900">{s.name}</span>
+                        <span className="text-xs text-gray-400 ml-2">${s.hourlyRate}/hr · {s.employmentType}</span>
+                      </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => { setEditingStaff(s); setShowStaffModal(true); }} className="p-2 hover:bg-gray-200 rounded"><Edit2 size={16} /></button>
-                      <button onClick={() => deleteStaff(s.id)} className="p-2 hover:bg-red-100 rounded" title="Archive staff"><Trash2 size={16} className="text-red-600" /></button>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => { setEditingStaff(s); setShowStaffModal(true); }} className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors"><Edit2 size={14} className="text-gray-400" /></button>
+                      <button onClick={() => deleteStaff(s.id)} className="p-1.5 hover:bg-red-50 rounded-lg transition-colors" title="Archive"><Trash2 size={14} className="text-red-400" /></button>
                     </div>
                   </div>
                 ))}
                 {archivedStaff.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <h4 className="text-sm font-medium text-gray-500 mb-2">Archived Staff</h4>
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <h4 className="text-xs font-medium text-gray-400 mb-2 px-3">Archived</h4>
                     {archivedStaff.map(s => (
-                      <div key={s.id} className="flex justify-between p-3 bg-gray-100 rounded-lg opacity-70">
-                        <div>
-                          <span className="font-semibold text-gray-500">{s.name}</span>
-                          <span className="text-sm text-gray-400 ml-2">({s.employmentType})</span>
-                        </div>
-                        <button onClick={() => restoreStaff(s.id)} className="flex items-center gap-1 px-3 py-1 text-sm bg-blue-50 text-blue-600 hover:bg-blue-100 rounded" title="Restore staff">
-                          <ArchiveRestore size={14} />
+                      <div key={s.id} className="flex items-center justify-between py-2 px-3 rounded-lg">
+                        <span className="text-sm text-gray-400">{s.name} <span className="text-xs">({s.employmentType})</span></span>
+                        <button onClick={() => restoreStaff(s.id)} className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                          <ArchiveRestore size={12} />
                           Restore
                         </button>
                       </div>
@@ -5399,58 +5355,39 @@ Key things to verify after rebuild:
         )}
 
         {activeStaff.length > 0 && (
-          <div className="bg-white rounded-xl shadow-lg border overflow-auto" style={{ maxHeight: 'calc(100vh - 400px)' }}>
+          <div className="card overflow-auto" style={{ maxHeight: 'calc(100vh - 340px)' }}>
             <table className="border-collapse table-fixed" style={{ width: `${100 + (orderedStaff.length * dates.length * columnWidth)}px`, userSelect: isDragging ? 'none' : 'auto' }}>
               <thead className="sticky top-0 z-30 bg-white">
-                <tr className="bg-gray-100 border-b">
-                  <th className="border-r-2 p-3 text-left text-sm font-semibold sticky left-0 bg-gray-100 z-40 w-20">Time</th>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="border-r border-gray-200 p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-40 w-20">Time</th>
                   {dates.map((d, i) => (
-                    <th key={formatDateKey(d)} colSpan={orderedStaff.length} className={`p-3 text-center text-sm ${i < dates.length - 1 ? 'border-r-4 border-gray-400' : ''}`}>
-                      <div className="font-bold">{d.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase()}</div>
-                      <div className="text-xs text-gray-600">{d.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</div>
-                      <div className="text-xs text-blue-600">{calculateDayStats(formatDateKey(d)).totalHours.toFixed(2)}h · ${calculateDayStats(formatDateKey(d)).totalCost.toFixed(0)}</div>
-                      <div className="flex gap-1 justify-center mt-2">
-                        <button
-                          onClick={() => copyDay(formatDateKey(d))}
-                          className={`p-1 rounded hover:bg-blue-100 ${copiedDay === formatDateKey(d) ? 'bg-blue-200' : ''}`}
-                          title="Copy day"
-                        >
-                          <Copy size={14} />
-                        </button>
-                        <button
-                          onClick={() => pasteDay(formatDateKey(d))}
-                          className="p-1 rounded hover:bg-green-100"
-                          title="Paste day"
-                          disabled={!copiedDay}
-                        >
-                          <Clipboard size={14} />
-                        </button>
-                        <button
-                          onClick={() => clearDay(formatDateKey(d))}
-                          className="p-1 rounded hover:bg-red-100 text-red-600"
-                          title="Clear day"
-                        >
-                          <Trash size={14} />
-                        </button>
+                    <th key={formatDateKey(d)} colSpan={orderedStaff.length} className={`p-3 text-center ${i < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`}>
+                      <div className="text-xs font-semibold text-gray-700">{d.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase()}</div>
+                      <div className="text-xs text-gray-400">{d.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</div>
+                      <div className="text-xs text-blue-600 mt-0.5">{calculateDayStats(formatDateKey(d)).totalHours.toFixed(2)}h · ${calculateDayStats(formatDateKey(d)).totalCost.toFixed(0)}</div>
+                      <div className="flex gap-0.5 justify-center mt-1.5">
+                        <button onClick={() => copyDay(formatDateKey(d))} className={`p-1 rounded hover:bg-blue-50 transition-colors ${copiedDay === formatDateKey(d) ? 'bg-blue-100' : ''}`} title="Copy day"><Copy size={12} className="text-gray-400" /></button>
+                        <button onClick={() => pasteDay(formatDateKey(d))} className="p-1 rounded hover:bg-green-50 transition-colors" title="Paste day" disabled={!copiedDay}><Clipboard size={12} className="text-gray-400" /></button>
+                        <button onClick={() => clearDay(formatDateKey(d))} className="p-1 rounded hover:bg-red-50 transition-colors" title="Clear day"><Trash size={12} className="text-red-300" /></button>
                       </div>
                     </th>
                   ))}
                 </tr>
-                <tr className="bg-white border-b sticky top-[60px] z-30">
-                  <th className="border-r-2 sticky left-0 bg-white z-40 p-2 text-xs w-20">Drag →</th>
+                <tr className="bg-white border-b border-gray-200 sticky top-[60px] z-30">
+                  <th className="border-r border-gray-200 sticky left-0 bg-white z-40 p-2 text-xs text-gray-400 w-20"></th>
                   {dates.map((d, di) => (
                     <React.Fragment key={`s-${formatDateKey(d)}`}>
                       {orderedStaff.map((s, si) => (
-                        <th 
+                        <th
                           key={`${formatDateKey(d)}-${s.id}`}
-                          className={`border-r p-2 text-xs text-center cursor-move hover:bg-blue-50 ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-4 border-gray-400' : ''} ${draggedStaffId === s.id ? 'opacity-50' : ''}`}
+                          className={`border-r border-gray-100 p-1.5 text-xs text-center cursor-move hover:bg-blue-50 transition-colors ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''} ${draggedStaffId === s.id ? 'opacity-40' : ''}`}
                           style={{ width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
                           draggable
                           onDragStart={() => handleStaffDragStart(s.id)}
                           onDragOver={(e) => handleStaffDragOver(e, s.id)}
                           onDragEnd={handleStaffDragEnd}
                         >
-                          <div className="truncate">⋮⋮ {s.name.split(' ')[0]}</div>
+                          <div className="truncate text-gray-500 font-medium">{s.name.split(' ')[0]}</div>
                         </th>
                       ))}
                     </React.Fragment>
@@ -5461,8 +5398,8 @@ Key things to verify after rebuild:
                 {timeSlots.map(t => {
                   const isPeakHour = t >= '12:00' && t < '14:00';
                   return (
-                    <tr key={t} className={`border-b ${isPeakHour ? 'bg-orange-50' : 'hover:bg-blue-50'}`}>
-                      <td className={`border-r-2 p-2 text-xs font-semibold sticky left-0 z-10 w-20 ${isPeakHour ? 'bg-gradient-to-r from-orange-100 to-orange-50 border-l-4 border-l-orange-500' : 'bg-white'}`} style={{ height: `${rowHeight}px`, maxHeight: `${rowHeight}px` }}>
+                    <tr key={t} className={`border-b border-gray-50 ${isPeakHour ? 'bg-amber-50/30' : ''}`}>
+                      <td className={`border-r border-gray-200 p-2 text-xs sticky left-0 z-10 w-20 ${isPeakHour ? 'bg-amber-50 border-l-2 border-l-amber-400 font-medium text-amber-700' : 'bg-white text-gray-500'}`} style={{ height: `${rowHeight}px`, maxHeight: `${rowHeight}px` }}>
                         <div className="flex items-center justify-center h-full overflow-hidden">
                           <span>{t}</span>
                         </div>
@@ -5475,15 +5412,15 @@ Key things to verify after rebuild:
                             const k = getScheduleKey(dk, s.id, t);
                             const sh = schedule[k];
                             return (
-                              <td 
+                              <td
                                 key={k}
-                                className={`border-r p-0 ${selectedRole ? (selectedRole.id === 'eraser' ? 'cursor-cell' : 'cursor-crosshair') : 'cursor-pointer'} ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-4 border-gray-400' : ''}`}
+                                className={`border-r border-gray-50 p-0 ${selectedRole ? (selectedRole.id === 'eraser' ? 'cursor-cell' : 'cursor-crosshair') : 'cursor-pointer'} ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`}
                                 onMouseDown={(e) => handleMouseDown(e, dk, s.id, t)}
                                 onMouseEnter={() => handleMouseEnter(dk, s.id, t)}
                                 onContextMenu={(e) => handleRightClick(e, dk, s.id, t)}
-                                style={{ backgroundColor: sh ? sh.roleColor : 'white', height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
+                                style={{ backgroundColor: sh ? sh.roleColor : 'transparent', height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
                               >
-                                {sh && <div className="flex items-center justify-center text-white font-bold h-full" style={{ fontSize: zoomLevel === 1 ? '8px' : zoomLevel === 2 ? '10px' : '12px' }}>{sh.roleCode}</div>}
+                                {sh && <div className="flex items-center justify-center text-white font-semibold h-full" style={{ fontSize: zoomLevel === 1 ? '8px' : zoomLevel === 2 ? '10px' : '12px' }}>{sh.roleCode}</div>}
                               </td>
                             );
                           })}
@@ -5495,8 +5432,8 @@ Key things to verify after rebuild:
                 })}
               </tbody>
               <tfoot>
-                <tr className="bg-gray-100 font-semibold border-t-2">
-                  <td className="border-r-2 p-3 text-sm sticky left-0 bg-gray-100 z-20 w-20">Totals</td>
+                <tr className="bg-gray-50 border-t border-gray-200">
+                  <td className="border-r border-gray-200 p-2 text-xs font-medium text-gray-500 sticky left-0 bg-gray-50 z-20 w-20">Total</td>
                   {dates.map((d, di) => {
                     const dk = formatDateKey(d);
                     return (
@@ -5504,9 +5441,9 @@ Key things to verify after rebuild:
                         {orderedStaff.map((s, si) => {
                           const st = calculateStaffDayStats(s.id, dk);
                           return (
-                            <td key={`${dk}-${s.id}`} className={`border-r p-1 text-center text-xs ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-4 border-gray-400' : ''}`} style={{ width: '120px', maxWidth: '120px', minWidth: '120px' }}>
-                              <div>{st.hours.toFixed(2)}h</div>
-                              <div>${st.cost.toFixed(0)}</div>
+                            <td key={`${dk}-${s.id}`} className={`border-r border-gray-100 p-1 text-center text-xs ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`} style={{ width: '120px', maxWidth: '120px', minWidth: '120px' }}>
+                              <div className="font-medium text-gray-700">{st.hours.toFixed(2)}h</div>
+                              <div className="text-gray-400">${st.cost.toFixed(0)}</div>
                             </td>
                           );
                         })}
@@ -5521,6 +5458,8 @@ Key things to verify after rebuild:
       </div>
       )}
 
+      </div>
+
       {showStaffModal && <StaffModal key={editingStaff ? editingStaff.id : 'new'} />}
       {showTimeSettings && <TimeSettingsModal />}
       {showSettingsModal && <BusinessSettingsModal />}
@@ -5533,6 +5472,7 @@ Key things to verify after rebuild:
       <TutorialOverlay />
       <HelpModal />
       <ContextMenu />
+      </div>
     </div>
   );
 };
