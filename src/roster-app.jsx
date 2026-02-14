@@ -862,60 +862,60 @@ const RosterApp = () => {
     return (
       <div className="modal-overlay">
         <div className="modal-container max-w-md">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">{editingStaff ? 'Edit' : 'Add'} Staff</h2>
-            <button onClick={() => { setShowStaffModal(false); setEditingStaff(null); }}><X size={24} /></button>
+          <div className="modal-header">
+            <h2 className="text-lg font-semibold text-gray-900">{editingStaff ? 'Edit' : 'Add'} Staff</h2>
+            <button onClick={() => { setShowStaffModal(false); setEditingStaff(null); }} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><X size={18} className="text-gray-400" /></button>
           </div>
-          <div className="space-y-4">
+          <div className="modal-body space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Name</label>
-              <input 
-                type="text" 
-                value={formData.name} 
-                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))} 
-                className="w-full border rounded px-3 py-2"
+              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                className="input-base"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Weekday Hourly Rate ($)</label>
-              <input 
-                type="number" 
-                step="0.01" 
-                min="0" 
-                value={formData.hourlyRate} 
-                onChange={(e) => setFormData(prev => ({ ...prev, hourlyRate: e.target.value }))} 
-                className="w-full border rounded px-3 py-2" 
+              <label className="block text-sm font-medium text-gray-700 mb-1">Weekday Hourly Rate ($)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.hourlyRate}
+                onChange={(e) => setFormData(prev => ({ ...prev, hourlyRate: e.target.value }))}
+                className="input-base"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Weekend Hourly Rate ($)</label>
-              <input 
-                type="number" 
-                step="0.01" 
-                min="0" 
-                value={formData.weekendRate || ''} 
-                onChange={(e) => setFormData(prev => ({ ...prev, weekendRate: e.target.value }))} 
+              <label className="block text-sm font-medium text-gray-700 mb-1">Weekend Hourly Rate ($)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.weekendRate || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, weekendRate: e.target.value }))}
                 placeholder={`${formData.hourlyRate || '0'} (same as weekday)`}
-                className="w-full border rounded px-3 py-2" 
+                className="input-base"
               />
               <p className="text-xs text-gray-500 mt-1">Leave blank to use weekday rate</p>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Employment Type</label>
-              <select 
-                value={formData.employmentType} 
-                onChange={(e) => setFormData(prev => ({ ...prev, employmentType: e.target.value }))} 
-                className="w-full border rounded px-3 py-2"
+              <label className="block text-sm font-medium text-gray-700 mb-1">Employment Type</label>
+              <select
+                value={formData.employmentType}
+                onChange={(e) => setFormData(prev => ({ ...prev, employmentType: e.target.value }))}
+                className="input-base"
               >
                 <option value="FT">Full Time</option>
                 <option value="PT">Part Time</option>
                 <option value="Casual">Casual</option>
               </select>
             </div>
-            <div className="flex gap-2">
-              <button onClick={handleSave} className="flex-1 bg-blue-600 text-white py-2 rounded">{editingStaff ? 'Update' : 'Add'}</button>
-              <button onClick={() => { setShowStaffModal(false); setEditingStaff(null); }} className="px-4 py-2 border rounded">Cancel</button>
-            </div>
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => { setShowStaffModal(false); setEditingStaff(null); }} className="btn-secondary">Cancel</button>
+            <button onClick={handleSave} className="btn-primary">{editingStaff ? 'Update' : 'Add'} Staff</button>
           </div>
         </div>
       </div>
@@ -929,24 +929,27 @@ const RosterApp = () => {
     return (
       <div className="modal-overlay">
         <div className="modal-container max-w-md">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">Time Range</h2>
-            <button onClick={() => setShowTimeSettings(false)}><X size={24} /></button>
+          <div className="modal-header">
+            <h2 className="text-lg font-semibold text-gray-900">Time Range</h2>
+            <button onClick={() => setShowTimeSettings(false)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><X size={18} className="text-gray-400" /></button>
           </div>
-          <div className="space-y-4">
+          <div className="modal-body space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Start</label>
-              <select value={tempStart} onChange={(e) => setTempStart(parseInt(e.target.value))} className="w-full border rounded px-3 py-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Start</label>
+              <select value={tempStart} onChange={(e) => setTempStart(parseInt(e.target.value))} className="input-base">
                 {Array.from({ length: 24 }, (_, i) => <option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">End</label>
-              <select value={tempEnd} onChange={(e) => setTempEnd(parseInt(e.target.value))} className="w-full border rounded px-3 py-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">End</label>
+              <select value={tempEnd} onChange={(e) => setTempEnd(parseInt(e.target.value))} className="input-base">
                 {Array.from({ length: 24 }, (_, i) => <option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>)}
               </select>
             </div>
-            <button onClick={() => { setStartHour(tempStart); setEndHour(tempEnd); setShowTimeSettings(false); }} className="w-full bg-blue-600 text-white py-2 rounded">Apply</button>
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => setShowTimeSettings(false)} className="btn-secondary">Cancel</button>
+            <button onClick={() => { setStartHour(tempStart); setEndHour(tempEnd); setShowTimeSettings(false); }} className="btn-primary">Apply</button>
           </div>
         </div>
       </div>
@@ -1020,7 +1023,7 @@ const RosterApp = () => {
                           [day]: { ...tempSettings.operationalHours[day], open: e.target.value }
                         }
                       })}
-                      className="w-full border rounded px-3 py-2"
+                      className="input-base"
                     />
                   </div>
                   <div className="flex-1">
@@ -1035,7 +1038,7 @@ const RosterApp = () => {
                           [day]: { ...tempSettings.operationalHours[day], close: e.target.value }
                         }
                       })}
-                      className="w-full border rounded px-3 py-2"
+                      className="input-base"
                     />
                   </div>
                 </div>
@@ -1093,7 +1096,7 @@ const RosterApp = () => {
               max="10"
               value={tempSettings.minStaffCoverage}
               onChange={(e) => setTempSettings({ ...tempSettings, minStaffCoverage: parseInt(e.target.value) || 1 })}
-              className="w-full border rounded px-3 py-2"
+              className="input-base"
             />
             <p className="text-xs text-gray-600 mt-2">
               Minimum number of staff required per time slot during regular hours
@@ -1114,7 +1117,7 @@ const RosterApp = () => {
                     ...tempSettings,
                     peakHours: { ...tempSettings.peakHours, start: e.target.value }
                   })}
-                  className="w-full border rounded px-3 py-2"
+                  className="input-base"
                 />
               </div>
               <div className="flex-1">
@@ -1126,7 +1129,7 @@ const RosterApp = () => {
                     ...tempSettings,
                     peakHours: { ...tempSettings.peakHours, end: e.target.value }
                   })}
-                  className="w-full border rounded px-3 py-2"
+                  className="input-base"
                 />
               </div>
             </div>
@@ -1139,7 +1142,7 @@ const RosterApp = () => {
               max="20"
               value={tempSettings.minPeakStaffCoverage}
               onChange={(e) => setTempSettings({ ...tempSettings, minPeakStaffCoverage: parseInt(e.target.value) || 2 })}
-              className="w-full border rounded px-3 py-2"
+              className="input-base"
             />
             <p className="text-xs text-gray-600 mt-2">
               Minimum number of staff required during peak hours (e.g., lunch rush)
@@ -1184,7 +1187,7 @@ const RosterApp = () => {
                 type="text"
                 value={tempSettings.logoUrl}
                 onChange={(e) => setTempSettings(prev => ({ ...prev, logoUrl: e.target.value }))}
-                className="w-full border rounded px-3 py-2"
+                className="input-base"
                 placeholder="https://example.com/logo.png"
               />
               <p className="text-xs text-gray-600">
@@ -1204,7 +1207,7 @@ const RosterApp = () => {
               type="text"
               value={tempSettings.businessName}
               onChange={(e) => setTempSettings(prev => ({ ...prev, businessName: e.target.value }))}
-              className="w-full border rounded px-3 py-2"
+              className="input-base"
               placeholder="Your Business Name"
             />
             <p className="text-xs text-gray-600 mt-2">
@@ -1220,7 +1223,7 @@ const RosterApp = () => {
               type="text"
               value={tempSettings.currency}
               onChange={(e) => setTempSettings(prev => ({ ...prev, currency: e.target.value }))}
-              className="w-full border rounded px-3 py-2"
+              className="input-base"
               placeholder="$"
               maxLength="3"
             />
@@ -1236,7 +1239,7 @@ const RosterApp = () => {
             <select
               value={tempSettings.timezone}
               onChange={(e) => setTempSettings(prev => ({ ...prev, timezone: e.target.value }))}
-              className="w-full border rounded px-3 py-2"
+              className="input-base"
             >
               <option value="Australia/Sydney">Australia/Sydney (AEDT)</option>
               <option value="Australia/Melbourne">Australia/Melbourne (AEDT)</option>
@@ -1438,7 +1441,7 @@ const RosterApp = () => {
                   <button
                     onClick={handleUpdateRole}
                     disabled={!roleForm.name || !roleForm.code}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="btn-primary text-sm py-2"
                   >
                     Update Role
                   </button>
@@ -1456,7 +1459,7 @@ const RosterApp = () => {
                 <button
                   onClick={handleAddRole}
                   disabled={!roleForm.name || !roleForm.code}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="btn-primary text-sm py-2"
                 >
                   Add Role
                 </button>
@@ -1521,16 +1524,16 @@ const RosterApp = () => {
     return (
       <div className="modal-overlay">
         <div className="modal-container max-w-3xl max-h-[90vh]">
-          <div className="modal-header flex justify-between items-center">
+          <div className="modal-header">
             <div>
-              <h2 className="text-2xl font-bold text-white">Business Settings</h2>
-              <p className="text-blue-50 text-sm mt-1">Configure your operational hours and coverage requirements</p>
+              <h2 className="text-lg font-semibold text-gray-900">Business Settings</h2>
+              <p className="text-sm text-gray-500 mt-0.5">Configure your operational hours and coverage requirements</p>
             </div>
-            <button 
+            <button
               onClick={() => setShowSettingsModal(false)}
-              className="text-white hover:bg-white/20 rounded-full p-2 transition-all"
+              className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <X size={24} />
+              <X size={18} className="text-gray-400" />
             </button>
           </div>
 
@@ -1595,19 +1598,9 @@ const RosterApp = () => {
             {activeSettingsTab === 'roles' && <RolesTab />}
           </div>
 
-          <div className="px-8 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
-            <button
-              onClick={() => setShowSettingsModal(false)}
-              className="px-6 py-2 border-2 border-gray-300 rounded-xl font-semibold hover:bg-gray-100 transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              className="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-semibold transition-colors"
-            >
-              Save Settings
-            </button>
+          <div className="modal-footer">
+            <button onClick={() => setShowSettingsModal(false)} className="btn-secondary">Cancel</button>
+            <button onClick={handleSave} className="btn-primary">Save Settings</button>
           </div>
         </div>
       </div>
@@ -1654,40 +1647,36 @@ const RosterApp = () => {
   return (
     <div className="modal-overlay">
       <div className="modal-container max-w-md">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">Quick Fill Shift</h2>
-          <button onClick={() => { setShowQuickFillModal(false); setQuickFillData(null); }}>
-            <X size={24} />
+        <div className="modal-header">
+          <h2 className="text-lg font-semibold text-gray-900">Quick Fill Shift</h2>
+          <button onClick={() => { setShowQuickFillModal(false); setQuickFillData(null); }} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+            <X size={18} className="text-gray-400" />
           </button>
         </div>
 
-        <div className="space-y-4">
-          <div className="bg-blue-50 p-3 rounded">
-            <div className="text-sm font-medium">
+        <div className="modal-body space-y-4">
+          <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg">
+            <div className="text-sm font-medium text-gray-700">
               Role: <span style={{ backgroundColor: selectedRole.color }} className="px-2 py-1 rounded text-white ml-2">{selectedRole.code}</span>
             </div>
-            <div className="text-sm mt-2">Start: <strong>{quickFillData.startTime}</strong></div>
+            <div className="text-sm mt-2 text-gray-700">Start: <strong>{quickFillData.startTime}</strong></div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">End Time</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
             <select
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
-              className="w-full border rounded px-3 py-2"
+              className="input-base"
             >
               {availableEndTimes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
+        </div>
 
-          <div className="flex gap-2">
-            <button onClick={handleQuickFill} className="flex-1 bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
-              Fill Shift
-            </button>
-            <button onClick={() => { setShowQuickFillModal(false); setQuickFillData(null); }} className="px-4 py-2 border rounded">
-              Cancel
-            </button>
-          </div>
+        <div className="modal-footer">
+          <button onClick={() => { setShowQuickFillModal(false); setQuickFillData(null); }} className="btn-secondary">Cancel</button>
+          <button onClick={handleQuickFill} className="btn-primary">Fill Shift</button>
         </div>
       </div>
     </div>
@@ -1899,46 +1888,35 @@ const RosterApp = () => {
     return (
       <div className="modal-overlay">
         <div className="modal-container max-w-md">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">Save Shift Template</h2>
-            <button onClick={() => { setShowTemplateModal(false); setSelectedTemplate(null); }}>
-              <X size={24} />
+          <div className="modal-header">
+            <h2 className="text-lg font-semibold text-gray-900">Save Shift Template</h2>
+            <button onClick={() => { setShowTemplateModal(false); setSelectedTemplate(null); }} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+              <X size={18} className="text-gray-400" />
             </button>
           </div>
-          <div className="space-y-4">
+          <div className="modal-body space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Template Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Template Name</label>
               <input
                 type="text"
                 value={templateName}
                 onChange={(e) => setTemplateName(e.target.value)}
-                className="w-full border rounded px-3 py-2"
+                className="input-base"
                 placeholder="e.g., Morning Barista, Lunch Rush"
                 autoFocus
               />
             </div>
             {selectedTemplate && (
-              <div className="p-3 bg-gray-50 rounded text-sm">
-                <div className="font-semibold mb-1">Template Details:</div>
-                <div>Role: <span style={{ color: selectedTemplate.role.color }} className="font-bold">{selectedTemplate.role.name}</span></div>
-                <div>Time: {selectedTemplate.startTime} - {selectedTemplate.endTime}</div>
+              <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-sm">
+                <div className="font-semibold text-gray-700 mb-1">Template Details:</div>
+                <div className="text-gray-600">Role: <span style={{ color: selectedTemplate.role.color }} className="font-bold">{selectedTemplate.role.name}</span></div>
+                <div className="text-gray-600">Time: {selectedTemplate.startTime} - {selectedTemplate.endTime}</div>
               </div>
             )}
-            <div className="flex gap-2">
-              <button
-                onClick={handleSave}
-                disabled={!templateName.trim()}
-                className="flex-1 bg-blue-600 text-white py-2 rounded disabled:opacity-50"
-              >
-                Save Template
-              </button>
-              <button
-                onClick={() => { setShowTemplateModal(false); setSelectedTemplate(null); }}
-                className="px-4 py-2 border rounded"
-              >
-                Cancel
-              </button>
-            </div>
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => { setShowTemplateModal(false); setSelectedTemplate(null); }} className="btn-secondary">Cancel</button>
+            <button onClick={handleSave} disabled={!templateName.trim()} className="btn-primary">Save Template</button>
           </div>
         </div>
       </div>
@@ -1948,12 +1926,12 @@ const RosterApp = () => {
   // Template Menu/Picker
   const TemplateMenu = () => {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50" onClick={() => setShowTemplateMenu(false)}>
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
-          <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4 flex justify-between items-center">
-            <h2 className="text-xl font-bold text-white">Shift Templates</h2>
-            <button onClick={() => setShowTemplateMenu(false)} className="text-white hover:bg-white/20 rounded-full p-1">
-              <X size={24} />
+      <div className="modal-overlay" onClick={() => setShowTemplateMenu(false)}>
+        <div className="modal-container max-w-md max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header">
+            <h2 className="text-lg font-semibold text-gray-900">Shift Templates</h2>
+            <button onClick={() => setShowTemplateMenu(false)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+              <X size={18} className="text-gray-400" />
             </button>
           </div>
 
@@ -2283,16 +2261,16 @@ const RosterApp = () => {
     return (
       <div className="modal-overlay">
         <div className="modal-container max-w-4xl max-h-[90vh]">
-          <div className="modal-header flex justify-between items-center">
+          <div className="modal-header">
             <div>
-              <h2 className="text-2xl font-bold text-white">Help & Support</h2>
-              <p className="text-blue-50 text-sm mt-1">Guides, FAQs, and quick tips</p>
+              <h2 className="text-lg font-semibold text-gray-900">Help & Support</h2>
+              <p className="text-sm text-gray-500 mt-0.5">Guides, FAQs, and quick tips</p>
             </div>
-            <button 
+            <button
               onClick={() => setShowHelpModal(false)}
-              className="text-white hover:bg-white/20 rounded-full p-2 transition-all"
+              className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <X size={24} />
+              <X size={18} className="text-gray-400" />
             </button>
           </div>
 
@@ -2380,9 +2358,9 @@ const RosterApp = () => {
                     setShowTutorial(true);
                     setTutorialStep(0);
                   }}
-                  className="w-full mt-4 px-4 py-3 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-semibold transition-colors"
+                  className="btn-primary w-full mt-4"
                 >
-                  🎓 Replay Tutorial
+                  Replay Tutorial
                 </button>
               </div>
             )}
@@ -2478,14 +2456,9 @@ const RosterApp = () => {
             )}
           </div>
 
-          <div className="px-8 py-4 bg-gray-50 border-t border-gray-200 flex justify-between items-center">
-            <p className="text-sm text-gray-600">Need more help? Check the full documentation.</p>
-            <button
-              onClick={() => setShowHelpModal(false)}
-              className="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-semibold transition-colors"
-            >
-              Got it!
-            </button>
+          <div className="modal-footer justify-between">
+            <p className="text-sm text-gray-500">Need more help? Check the full documentation.</p>
+            <button onClick={() => setShowHelpModal(false)} className="btn-primary">Got it!</button>
           </div>
         </div>
       </div>
@@ -2544,13 +2517,13 @@ const RosterApp = () => {
     };
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-orange-50 pb-20">
+      <div className="min-h-screen bg-surface-50 pb-20">
         {/* Mobile Header */}
         <div className="bg-white border-b-2 border-gray-200 shadow-lg sticky top-0 z-40">
           <div className="px-4 py-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
-                <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-2 rounded-xl">
+                <div className="bg-brand-500 p-2 rounded-xl">
                   <Users size={20} className="text-white" />
                 </div>
                 <div>
@@ -2657,7 +2630,7 @@ const RosterApp = () => {
               return (
                 <div key={staffMember.id} className="bg-white rounded-xl shadow-lg overflow-hidden">
                   {/* Staff Header */}
-                  <div className="bg-gradient-to-r from-blue-50 to-orange-50 p-4 border-b border-gray-200">
+                  <div className="bg-gray-50 p-4 border-b border-gray-200">
                     <div className="flex items-center justify-between">
                       <div>
                         <h3 className="font-bold text-gray-800">{staffMember.name}</h3>
@@ -2847,111 +2820,87 @@ const RosterApp = () => {
     return (
       <div className="modal-overlay">
         <div className="modal-container max-w-md">
-          <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-5 flex justify-between items-center rounded-t-2xl">
+          <div className="modal-header">
             <div>
-              <h2 className="text-xl font-bold text-white">Revenue Entry</h2>
-              <p className="text-green-50 text-sm mt-1">
+              <h2 className="text-lg font-semibold text-gray-900">Revenue Entry</h2>
+              <p className="text-sm text-gray-500 mt-0.5">
                 {date?.toLocaleDateString('en-AU', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
               </p>
             </div>
-            <button 
+            <button
               onClick={() => {
                 setShowRevenueModal(false);
                 setRevenueEditDate(null);
               }}
-              className="text-white hover:bg-white/20 rounded-full p-2 transition-all"
+              className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <X size={20} />
+              <X size={18} className="text-gray-400" />
             </button>
           </div>
 
-          <div className="p-6 space-y-4">
-            {/* Projected Revenue */}
+          <div className="modal-body space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Projected Revenue
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Projected Revenue</label>
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
                 <input
                   type="number"
                   step="0.01"
                   value={formData.projectedRevenue}
                   onChange={(e) => setFormData(prev => ({ ...prev, projectedRevenue: e.target.value }))}
-                  className="w-full pl-8 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none text-lg"
+                  className="input-base pl-7"
                   placeholder="0.00"
                 />
               </div>
               <p className="text-xs text-gray-500 mt-1">Expected sales for this day</p>
             </div>
 
-            {/* Other Revenue */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Other Revenue
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Other Revenue</label>
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
                 <input
                   type="number"
                   step="0.01"
                   value={formData.otherRevenue}
                   onChange={(e) => setFormData(prev => ({ ...prev, otherRevenue: e.target.value }))}
-                  className="w-full pl-8 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none text-lg"
+                  className="input-base pl-7"
                   placeholder="0.00"
                 />
               </div>
               <p className="text-xs text-gray-500 mt-1">Delivery, catering, misc. revenue</p>
             </div>
 
-            {/* Total Revenue Display */}
             {totalRevenue > 0 && (
-              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl p-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <div className="text-sm text-gray-600 mb-1">Total Revenue</div>
                 <div className="text-3xl font-bold text-green-600">${totalRevenue.toFixed(2)}</div>
               </div>
             )}
 
-            {/* Notes */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Notes (Optional)
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Notes (Optional)</label>
               <textarea
                 value={formData.notes}
                 onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none resize-none"
+                className="input-base resize-none"
                 rows="3"
                 placeholder="e.g., Special event, catering order, etc."
               />
             </div>
+          </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-2">
-              {revenueEditDate && dailyRevenue[revenueEditDate] && (
-                <button
-                  onClick={handleDelete}
-                  className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl font-medium transition-all"
-                >
-                  Delete
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  setShowRevenueModal(false);
-                  setRevenueEditDate(null);
-                }}
-                className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-semibold transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                className="flex-1 px-4 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-xl font-semibold transition-all shadow-lg"
-              >
-                Save
-              </button>
-            </div>
+          <div className="modal-footer">
+            {revenueEditDate && dailyRevenue[revenueEditDate] && (
+              <button onClick={handleDelete} className="btn-danger mr-auto">Delete</button>
+            )}
+            <button
+              onClick={() => { setShowRevenueModal(false); setRevenueEditDate(null); }}
+              className="btn-secondary"
+            >
+              Cancel
+            </button>
+            <button onClick={handleSave} className="btn-primary">Save</button>
           </div>
         </div>
       </div>
@@ -3011,7 +2960,7 @@ const RosterApp = () => {
                       <button
                         key={s.id}
                         onClick={() => setSelectedStaffView(s.id)}
-                        className="bg-gradient-to-br from-blue-50 to-orange-50 hover:from-blue-100 hover:to-orange-100 border-2 border-gray-200 hover:border-blue-400 rounded-xl p-6 text-left transition-all shadow-sm hover:shadow-md"
+                        className="bg-white hover:bg-blue-50 border-2 border-gray-200 hover:border-blue-400 rounded-xl p-6 text-left transition-all shadow-sm hover:shadow-md"
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div>
@@ -3084,7 +3033,7 @@ const RosterApp = () => {
                             <td className="px-4 py-4 text-center">
                               <button
                                 onClick={() => setSelectedStaffView(s.id)}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-all"
+                                className="btn-primary text-sm py-2"
                               >
                                 View Schedule
                               </button>
@@ -3194,18 +3143,18 @@ const RosterApp = () => {
       <div className="p-6">
         <div className="max-w-5xl mx-auto">
           {/* Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-orange-500 rounded-2xl shadow-lg p-8 mb-6 text-white">
+          <div className="card p-8 mb-6">
             <button
               onClick={() => setSelectedStaffView(null)}
-              className="mb-4 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium transition-all"
+              className="mb-4 btn-ghost text-sm px-3 py-1.5"
             >
               ← Back to Staff List
             </button>
-            
+
             <div className="flex items-start justify-between">
               <div>
-                <h1 className="text-3xl font-bold mb-2">{selectedStaff.name}</h1>
-                <div className="flex gap-4 text-sm opacity-90">
+                <h1 className="text-2xl font-bold text-gray-900 mb-2">{selectedStaff.name}</h1>
+                <div className="flex gap-4 text-sm text-gray-500">
                   <span>{selectedStaff.employmentType}</span>
                   <span>•</span>
                   <span>Weekday: ${selectedStaff.hourlyRate}/hr</span>
@@ -3217,12 +3166,12 @@ const RosterApp = () => {
                   )}
                 </div>
               </div>
-              
-              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 text-center">
-                <div className="text-3xl font-bold">{weekStats.hours.toFixed(2)}</div>
-                <div className="text-sm opacity-90">Hours This Week</div>
-                <div className="text-lg font-semibold mt-2">${weekStats.cost.toFixed(0)}</div>
-                <div className="text-xs opacity-90">Est. Pay</div>
+
+              <div className="bg-blue-50 rounded-xl p-4 text-center border border-blue-200">
+                <div className="text-3xl font-bold text-blue-600">{weekStats.hours.toFixed(2)}</div>
+                <div className="text-sm text-gray-500">Hours This Week</div>
+                <div className="text-lg font-semibold text-gray-900 mt-2">${weekStats.cost.toFixed(0)}</div>
+                <div className="text-xs text-gray-500">Est. Pay</div>
               </div>
             </div>
           </div>
@@ -3272,7 +3221,7 @@ const RosterApp = () => {
                     dayShifts.length > 0 ? 'border-blue-200 hover:shadow-lg' : 'border-gray-200 opacity-60'
                   }`}
                 >
-                  <div className={`p-4 ${weekend ? 'bg-gradient-to-r from-orange-100 to-yellow-100' : 'bg-gradient-to-r from-blue-50 to-blue-100'}`}>
+                  <div className={`p-4 ${weekend ? 'bg-orange-50' : 'bg-blue-50'}`}>
                     <div className="flex items-center justify-between">
                       <div>
                         <h3 className="font-bold text-lg">
@@ -3374,18 +3323,18 @@ const RosterApp = () => {
                   navigator.clipboard.writeText(text);
                   toast.success('Schedule copied to clipboard!');
                 }}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                className="btn-primary"
               >
-                📋 Copy as Text
+                Copy as Text
               </button>
               <button
                 onClick={() => {
                   // Print-friendly view
                   window.print();
                 }}
-                className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
+                className="btn-secondary"
               >
-                🖨️ Print Schedule
+                Print Schedule
               </button>
             </div>
           </div>
@@ -3483,7 +3432,7 @@ const RosterApp = () => {
       <div className="p-6">
         <div className="bg-white rounded-xl shadow-lg border overflow-hidden">
           {/* Header */}
-          <div className="bg-gradient-to-r from-blue-50 to-orange-50 p-5 border-b flex flex-wrap items-center justify-between gap-4">
+          <div className="bg-gray-50 p-5 border-b flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-gray-900">Timesheet</h2>
               <p className="text-sm text-gray-600 mt-1">
@@ -3834,7 +3783,7 @@ const RosterApp = () => {
               </div>
 
               {weekStats.weekendCost > 0 && weekStats.weekdayCost > 0 && (
-                <div className="p-3 bg-gradient-to-r from-blue-50 to-orange-50 rounded-lg text-center border border-gray-200">
+                <div className="p-3 bg-gray-50 rounded-lg text-center border border-gray-200">
                   <div className="text-xs text-gray-600">Weekend premium</div>
                   <div className="text-xl font-bold text-orange-600">
                     +{((weekStats.weekendCost / (weekStats.weekendHours || 1) / (weekStats.weekdayCost / (weekStats.weekdayHours || 1)) - 1) * 100).toFixed(0)}%
@@ -3907,9 +3856,9 @@ const RosterApp = () => {
                     <div className="flex-1 bg-gray-200 rounded-full h-6 overflow-hidden">
                       <div 
                         className={`h-6 rounded-full flex items-center justify-end pr-2 text-xs font-bold text-white transition-all ${
-                          isHighest ? 'bg-gradient-to-r from-red-500 to-red-600' :
-                          isLowest ? 'bg-gradient-to-r from-green-500 to-green-600' :
-                          'bg-gradient-to-r from-blue-500 to-orange-500'
+                          isHighest ? 'bg-red-500' :
+                          isLowest ? 'bg-green-500' :
+                          'bg-blue-500'
                         }`}
                         style={{ width: `${Math.max(weekStats.totalCost > 0 ? (day.cost / weekStats.totalCost) * 100 : 0, 5)}%` }}
                       >
@@ -3978,10 +3927,10 @@ const RosterApp = () => {
                       <div className="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
                         <div 
                           className={`h-3 rounded-full transition-all ${
-                            util.rate > 75 ? 'bg-gradient-to-r from-red-500 to-red-600' :
-                            util.rate > 50 ? 'bg-gradient-to-r from-orange-500 to-orange-600' :
-                            util.rate > 25 ? 'bg-gradient-to-r from-blue-500 to-blue-600' :
-                            'bg-gradient-to-r from-green-500 to-green-600'
+                            util.rate > 75 ? 'bg-red-500' :
+                            util.rate > 50 ? 'bg-orange-500' :
+                            util.rate > 25 ? 'bg-blue-500' :
+                            'bg-green-500'
                           }`}
                           style={{ width: `${util.rate}%` }}
                         />
@@ -4015,7 +3964,7 @@ const RosterApp = () => {
                   <div className="flex-1 flex items-center gap-2">
                     <div className="flex-1 bg-gray-200 rounded-full h-4 overflow-hidden">
                       <div 
-                        className="h-4 bg-gradient-to-r from-blue-600 to-blue-400 rounded-full"
+                        className="h-4 bg-blue-500 rounded-full"
                         style={{ width: `${weekStats.totalCost > 0 ? (staffData.cost / weekStats.totalCost) * 100 : 0}%` }}
                       />
                     </div>
@@ -4300,40 +4249,42 @@ const RosterApp = () => {
         <div className="space-y-6">
           {/* Week Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-lg">
-              <div className="text-sm opacity-90 mb-1">Total Labor Cost</div>
-              <div className="text-3xl font-bold">${weekTotals.laborCost.toFixed(0)}</div>
-              <div className="text-xs opacity-75 mt-1">This week</div>
+            <div className="metric-card">
+              <div className="text-sm text-gray-500 mb-1">Total Labor Cost</div>
+              <div className="text-3xl font-bold text-gray-900">${weekTotals.laborCost.toFixed(0)}</div>
+              <div className="text-xs text-gray-400 mt-1">This week</div>
             </div>
 
-            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-5 text-white shadow-lg">
-              <div className="text-sm opacity-90 mb-1">Total Revenue</div>
-              <div className="text-3xl font-bold">${weekTotals.totalRevenue.toFixed(0)}</div>
-              <div className="text-xs opacity-75 mt-1">{weekTotals.daysWithRevenue} days tracked</div>
+            <div className="metric-card">
+              <div className="text-sm text-gray-500 mb-1">Total Revenue</div>
+              <div className="text-3xl font-bold text-green-600">${weekTotals.totalRevenue.toFixed(0)}</div>
+              <div className="text-xs text-gray-400 mt-1">{weekTotals.daysWithRevenue} days tracked</div>
             </div>
 
-            <div className={`rounded-xl p-5 shadow-lg ${
-              weekLaborPercentage === 0 
-                ? 'bg-gradient-to-br from-gray-400 to-gray-500 text-white'
-                : weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30)
-                ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white'
-                : weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30) + 10
-                ? 'bg-gradient-to-br from-orange-500 to-orange-600 text-white'
-                : 'bg-gradient-to-br from-red-500 to-red-600 text-white'
+            <div className={`metric-card ${
+              weekLaborPercentage === 0 ? '' :
+              weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30) ? 'border-green-200' :
+              weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30) + 10 ? 'border-orange-200' :
+              'border-red-200'
             }`}>
-              <div className="text-sm opacity-90 mb-1">Labor %</div>
-              <div className="text-3xl font-bold">
+              <div className="text-sm text-gray-500 mb-1">Labor %</div>
+              <div className={`text-3xl font-bold ${
+                weekLaborPercentage === 0 ? 'text-gray-400' :
+                weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30) ? 'text-green-600' :
+                weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30) + 10 ? 'text-orange-600' :
+                'text-red-600'
+              }`}>
                 {weekLaborPercentage > 0 ? `${weekLaborPercentage.toFixed(2)}%` : 'N/A'}
               </div>
-              <div className="text-xs opacity-75 mt-1">
+              <div className="text-xs text-gray-400 mt-1">
                 {weekLaborPercentage > 0 ? 'of revenue' : 'Add revenue data'}
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-5 text-white shadow-lg">
-              <div className="text-sm opacity-90 mb-1">Target Labor %</div>
-              <div className="text-3xl font-bold">{businessSettings.targetLaborPercentage || 30}%</div>
-              <div className="text-xs opacity-75 mt-1">Ideal target</div>
+            <div className="metric-card">
+              <div className="text-sm text-gray-500 mb-1">Target Labor %</div>
+              <div className="text-3xl font-bold text-purple-600">{businessSettings.targetLaborPercentage || 30}%</div>
+              <div className="text-xs text-gray-400 mt-1">Ideal target</div>
             </div>
           </div>
 
@@ -4352,9 +4303,9 @@ const RosterApp = () => {
 
           {/* Daily Breakdown */}
           <div className="bg-white rounded-xl shadow-lg border-2 border-gray-100 overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-600 to-green-600 px-6 py-4">
-              <h3 className="text-xl font-bold text-white">Daily Revenue & Labor Tracking</h3>
-              <p className="text-blue-50 text-sm mt-1">Track labor costs as a percentage of revenue</p>
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-gray-900">Daily Revenue & Labor Tracking</h3>
+              <p className="text-sm text-gray-500 mt-1">Track labor costs as a percentage of revenue</p>
             </div>
 
             <div className="overflow-x-auto">
@@ -4413,7 +4364,7 @@ const RosterApp = () => {
                     );
                   })}
                 </tbody>
-                <tfoot className="bg-gradient-to-r from-blue-50 to-green-50 border-t-2 border-gray-300">
+                <tfoot className="bg-gray-50 border-t-2 border-gray-300">
                   <tr className="font-bold">
                     <td className="px-4 py-4 text-gray-800">Week Total</td>
                     <td className="px-4 py-4 text-right text-gray-600">-</td>
@@ -4489,27 +4440,27 @@ const RosterApp = () => {
         <div className="space-y-6">
           {/* Coverage Summary */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-5 text-white shadow-lg">
-              <div className="text-sm opacity-90 mb-1">Critical Gaps</div>
-              <div className="text-3xl font-bold">{insights.coverageGaps.length}</div>
-              <div className="text-xs opacity-75">No staff scheduled</div>
-              <div className="text-xs opacity-90 mt-1">During operational hours</div>
-            </div>
-            
-            <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl p-5 text-white shadow-lg">
-              <div className="text-sm opacity-90 mb-1">Understaffed</div>
-              <div className="text-3xl font-bold">{insights.underStaffedSlots.length}</div>
-              <div className="text-xs opacity-75">Below minimum ({businessSettings.minStaffCoverage})</div>
-              <div className="text-xs opacity-90 mt-1">Peak min: {businessSettings.minPeakStaffCoverage}</div>
+            <div className="metric-card border-red-200">
+              <div className="text-sm text-gray-500 mb-1">Critical Gaps</div>
+              <div className="text-3xl font-bold text-red-600">{insights.coverageGaps.length}</div>
+              <div className="text-xs text-gray-400">No staff scheduled</div>
+              <div className="text-xs text-gray-400 mt-1">During operational hours</div>
             </div>
 
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-lg">
-              <div className="text-sm opacity-90 mb-1">Well Covered</div>
-              <div className="text-3xl font-bold">
+            <div className="metric-card border-orange-200">
+              <div className="text-sm text-gray-500 mb-1">Understaffed</div>
+              <div className="text-3xl font-bold text-orange-600">{insights.underStaffedSlots.length}</div>
+              <div className="text-xs text-gray-400">Below minimum ({businessSettings.minStaffCoverage})</div>
+              <div className="text-xs text-gray-400 mt-1">Peak min: {businessSettings.minPeakStaffCoverage}</div>
+            </div>
+
+            <div className="metric-card border-blue-200">
+              <div className="text-sm text-gray-500 mb-1">Well Covered</div>
+              <div className="text-3xl font-bold text-blue-600">
                 {dates.length * timeSlots.length - insights.coverageGaps.length - insights.underStaffedSlots.length}
               </div>
-              <div className="text-xs opacity-75">Meets minimum coverage</div>
-              <div className="text-xs opacity-90 mt-1">All operational slots</div>
+              <div className="text-xs text-gray-400">Meets minimum coverage</div>
+              <div className="text-xs text-gray-400 mt-1">All operational slots</div>
             </div>
           </div>
 
@@ -4992,7 +4943,7 @@ Key things to verify after rebuild:
 
             {selectedStaff && (
               <div>
-                <div className="bg-gradient-to-br from-blue-50 to-orange-50 rounded-2xl p-6 mb-6 border-2 border-blue-100">
+                <div className="bg-blue-50 rounded-2xl p-6 mb-6 border border-blue-200">
                   <div className="flex justify-between items-center mb-4">
                     <div>
                       <div className="text-sm font-medium text-gray-600 mb-1">Viewing schedule for</div>
@@ -5003,7 +4954,7 @@ Key things to verify after rebuild:
                     </div>
                     <div className="text-right">
                       <div className="text-sm font-medium text-gray-600 mb-1">Total Hours</div>
-                      <div className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-orange-500 bg-clip-text text-transparent">
+                      <div className="text-4xl font-bold text-blue-600">
                         {totalHours.toFixed(2)}h
                       </div>
                     </div>
@@ -5014,7 +4965,7 @@ Key things to verify after rebuild:
                     className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl font-semibold text-lg transition-all shadow-lg ${
                       copiedStaffId === selectedStaffId 
                         ? 'bg-green-500 text-white' 
-                        : 'bg-gradient-to-r from-blue-600 to-orange-500 hover:from-blue-500 hover:to-orange-400 text-white'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
                     }`}
                   >
                     <Clipboard size={20} />
