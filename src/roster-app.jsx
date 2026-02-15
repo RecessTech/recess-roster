@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, ArchiveRestore, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, ArchiveRestore, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
@@ -75,6 +75,7 @@ const RosterApp = () => {
   const [dailyRevenue, setDailyRevenue] = useState({}); // Keyed by date string YYYY-MM-DD
   const [showRevenueModal, setShowRevenueModal] = useState(false);
   const [revenueEditDate, setRevenueEditDate] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null); // { title, message, onConfirm, danger? }
   const [businessSettings, setBusinessSettings] = useState({
     businessName: 'Recess',
     logoUrl: '', // URL for business logo
@@ -979,7 +980,7 @@ const RosterApp = () => {
     const HoursTab = () => (
       <div className="space-y-4">
         <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <div className="text-sm font-semibold text-blue-800 mb-2">💡 Operational Hours</div>
+          <div className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-1.5"><Lightbulb size={14} /> Operational Hours</div>
           <div className="text-xs text-blue-700">
             Set your business hours for each day. Coverage gaps will only be flagged during these hours.
           </div>
@@ -1079,7 +1080,7 @@ const RosterApp = () => {
     const CoverageTab = () => (
       <div className="space-y-4">
         <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <div className="text-sm font-semibold text-blue-800 mb-2">📊 Coverage Requirements</div>
+          <div className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-1.5"><BarChart3 size={14} /> Coverage Requirements</div>
           <div className="text-xs text-blue-700">
             Set minimum staff requirements. The system will alert you when coverage falls below these levels.
           </div>
@@ -1155,7 +1156,7 @@ const RosterApp = () => {
     const GeneralTab = () => (
       <div className="space-y-4">
         <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <div className="text-sm font-semibold text-blue-800 mb-2">🏢 Business Information</div>
+          <div className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-1.5"><Settings size={14} /> Business Information</div>
           <div className="text-xs text-blue-700">
             Customize the app with your business details. This is useful when sharing with other businesses.
           </div>
@@ -1194,7 +1195,7 @@ const RosterApp = () => {
                 Enter a URL to your logo image. This will appear in the header and login page.
               </p>
               <p className="text-xs text-gray-500">
-                💡 Tip: Upload your logo to a service like Imgur, Cloudinary, or your own website, then paste the direct image URL here.
+                Tip: Upload your logo to a service like Imgur, Cloudinary, or your own website, then paste the direct image URL here.
               </p>
             </div>
           </div>
@@ -1259,7 +1260,7 @@ const RosterApp = () => {
     const FinancialTab = () => (
       <div className="space-y-4">
         <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-          <div className="text-sm font-semibold text-green-800 mb-2">💰 Financial Settings</div>
+          <div className="text-sm font-semibold text-green-800 mb-2 flex items-center gap-1.5"><DollarSign size={14} /> Financial Settings</div>
           <div className="text-xs text-green-700">
             Set your target labor cost percentage and other financial goals. These help track your business performance.
           </div>
@@ -1289,7 +1290,7 @@ const RosterApp = () => {
               Your ideal labor cost as a percentage of revenue. Industry standard for hospitality is 25-35%.
             </p>
             <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="text-xs font-semibold text-blue-800 mb-2">💡 Quick Guide:</div>
+              <div className="text-xs font-semibold text-blue-800 mb-2 flex items-center gap-1"><Lightbulb size={12} /> Quick Guide:</div>
               <div className="text-xs text-blue-700 space-y-1">
                 <div>• <strong>25-30%:</strong> Excellent - Very efficient operation</div>
                 <div>• <strong>30-35%:</strong> Good - Industry standard</div>
@@ -1299,9 +1300,9 @@ const RosterApp = () => {
             </div>
           </div>
 
-          <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
+          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
             <div className="flex items-start gap-3">
-              <div className="text-2xl">📊</div>
+              <BarChart3 size={24} className="text-blue-600" />
               <div>
                 <div className="text-sm font-semibold text-gray-800 mb-1">How to Use Labor Percentage Tracking</div>
                 <ol className="text-xs text-gray-700 space-y-1 ml-4 list-decimal">
@@ -1354,11 +1355,17 @@ const RosterApp = () => {
       };
 
       const handleDeleteRole = (roleId) => {
-        if (!window.confirm('Delete this role? This cannot be undone.')) return;
-        
-        const updatedRoles = roles.filter(r => r.id !== roleId);
-        setRoles(updatedRoles);
-        setTempSettings(prev => ({ ...prev, roles: updatedRoles }));
+        setConfirmDialog({
+          title: 'Delete Role',
+          message: 'Delete this role? This cannot be undone.',
+          danger: true,
+          confirmLabel: 'Delete',
+          onConfirm: () => {
+            const updatedRoles = roles.filter(r => r.id !== roleId);
+            setRoles(updatedRoles);
+            setTempSettings(prev => ({ ...prev, roles: updatedRoles }));
+          }
+        });
       };
 
       const predefinedColors = [
@@ -1379,7 +1386,7 @@ const RosterApp = () => {
       return (
         <div className="space-y-4">
           <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <div className="text-sm font-semibold text-blue-800 mb-2">🎭 Customize Roles</div>
+            <div className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-1.5"><Theater size={14} /> Customize Roles</div>
             <div className="text-xs text-blue-700">
               Add, edit, or remove roles to match your business. Roles appear as buttons when scheduling staff.
             </div>
@@ -1511,7 +1518,7 @@ const RosterApp = () => {
 
           <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
             <div className="flex items-start gap-2">
-              <span className="text-lg">⚠️</span>
+              <AlertTriangle size={18} className="text-amber-600 shrink-0" />
               <div className="text-xs text-amber-800">
                 <strong>Note:</strong> Deleting a role will not remove existing schedule entries using that role. They will still display with the original color.
               </div>
@@ -1546,7 +1553,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              🕐 Operational Hours
+              <Clock size={14} className="inline mr-1" /> Hours
             </button>
             <button
               onClick={() => setActiveSettingsTab('coverage')}
@@ -1556,7 +1563,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              📊 Coverage Rules
+              <BarChart3 size={14} className="inline mr-1" /> Coverage
             </button>
             <button
               onClick={() => setActiveSettingsTab('general')}
@@ -1566,7 +1573,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              🏢 General
+              <Settings size={14} className="inline mr-1" /> General
             </button>
             <button
               onClick={() => setActiveSettingsTab('financial')}
@@ -1576,7 +1583,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              💰 Financial
+              <DollarSign size={14} className="inline mr-1" /> Financial
             </button>
             <button
               onClick={() => setActiveSettingsTab('roles')}
@@ -1586,7 +1593,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              🎭 Roles
+              <Theater size={14} className="inline mr-1" /> Roles
             </button>
           </div>
           
@@ -1682,19 +1689,24 @@ const RosterApp = () => {
     </div>
   );
 };
-  const deleteStaff = async (staffId) => {
+  const deleteStaff = (staffId) => {
     const staffMember = staff.find(s => s.id === staffId);
-    if (!window.confirm(`Archive ${staffMember?.name || 'this staff member'}? They will be removed from the current roster but their historical data will be preserved. You can restore them later from the archived staff list.`)) return;
-
-    try {
-      await db.deleteStaff(staffId);
-      // Mark as inactive locally - don't remove schedule data
-      setStaff(staff.map(s => s.id === staffId ? { ...s, active: false } : s));
-      setStaffOrder(staffOrder.filter(id => id !== staffId));
-    } catch (error) {
-      console.error('Error archiving staff:', error);
-      toast.error('Error archiving staff member.');
-    }
+    setConfirmDialog({
+      title: 'Archive Staff',
+      message: `Archive ${staffMember?.name || 'this staff member'}? They will be removed from the current roster but their historical data will be preserved. You can restore them later from the archived staff list.`,
+      danger: true,
+      confirmLabel: 'Archive',
+      onConfirm: async () => {
+        try {
+          await db.deleteStaff(staffId);
+          setStaff(staff.map(s => s.id === staffId ? { ...s, active: false } : s));
+          setStaffOrder(staffOrder.filter(id => id !== staffId));
+        } catch (error) {
+          console.error('Error archiving staff:', error);
+          toast.error('Error archiving staff member.');
+        }
+      }
+    });
   };
 
   const restoreStaff = async (staffId) => {
@@ -1937,7 +1949,7 @@ const RosterApp = () => {
 
           {shiftTemplates.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
-              <div className="text-4xl mb-2">📋</div>
+              <ClipboardList size={32} className="text-gray-400 mb-2 mx-auto" />
               <p className="mb-2">No templates yet!</p>
               <p className="text-sm">Right-click on a shift to create your first template.</p>
             </div>
@@ -1975,9 +1987,13 @@ const RosterApp = () => {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (window.confirm(`Delete template "${template.name}"?`)) {
-                            deleteTemplate(template.id);
-                          }
+                          setConfirmDialog({
+                            title: 'Delete Template',
+                            message: `Delete template "${template.name}"?`,
+                            danger: true,
+                            confirmLabel: 'Delete',
+                            onConfirm: () => deleteTemplate(template.id)
+                          });
                         }}
                         className="p-2 hover:bg-red-100 rounded"
                         title="Delete template"
@@ -1992,7 +2008,7 @@ const RosterApp = () => {
           )}
 
           <div className="px-6 py-4 bg-gray-50 border-t text-sm text-gray-600">
-            💡 Click a template to enter apply mode, then click on the roster to place it.
+            Click a template to enter apply mode, then click on the roster to place it.
           </div>
         </div>
       </div>
@@ -2283,7 +2299,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              🚀 Quick Start
+              <Rocket size={14} className="inline mr-1" /> Quick Start
             </button>
             <button
               onClick={() => setActiveTab('faq')}
@@ -2293,7 +2309,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              ❓ FAQ
+              <HelpCircle size={14} className="inline mr-1" /> FAQ
             </button>
             <button
               onClick={() => setActiveTab('keyboard')}
@@ -2303,7 +2319,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              ⌨️ Shortcuts
+              <Keyboard size={14} className="inline mr-1" /> Shortcuts
             </button>
           </div>
 
@@ -2344,7 +2360,7 @@ const RosterApp = () => {
 
                 <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 mt-6">
                   <div className="flex items-start gap-3">
-                    <span className="text-2xl">✅</span>
+                    <CheckCircle size={22} className="text-green-500 shrink-0" />
                     <div>
                       <h4 className="font-bold text-green-800 mb-1">Auto-Save Enabled</h4>
                       <p className="text-sm text-green-700">Your schedule saves automatically every second. Look for the green "Auto-saved" indicator!</p>
@@ -2389,12 +2405,12 @@ const RosterApp = () => {
 
                 <details className="bg-gray-50 rounded-lg p-4 cursor-pointer">
                   <summary className="font-semibold text-gray-800">How do I customize roles?</summary>
-                  <p className="mt-2 text-gray-700">Go to <strong>Settings → 🎭 Roles</strong> tab. You can add, edit, or delete roles to match your business.</p>
+                  <p className="mt-2 text-gray-700">Go to <strong>Settings → Roles</strong> tab. You can add, edit, or delete roles to match your business.</p>
                 </details>
 
                 <details className="bg-gray-50 rounded-lg p-4 cursor-pointer">
                   <summary className="font-semibold text-gray-800">How do I track labor costs?</summary>
-                  <p className="mt-2 text-gray-700">Go to <strong>Analytics → 💰 Revenue</strong> tab. Enter daily revenue and see your labor cost percentage automatically calculated.</p>
+                  <p className="mt-2 text-gray-700">Go to <strong>Analytics → Revenue</strong> tab. Enter daily revenue and see your labor cost percentage automatically calculated.</p>
                 </details>
 
                 <details className="bg-gray-50 rounded-lg p-4 cursor-pointer">
@@ -2445,7 +2461,7 @@ const RosterApp = () => {
 
                 <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 mt-6">
                   <div className="flex items-start gap-3">
-                    <span className="text-2xl">💡</span>
+                    <Lightbulb size={22} className="text-amber-500 shrink-0" />
                     <div>
                       <h4 className="font-bold text-blue-800 mb-1">Pro Tip</h4>
                       <p className="text-sm text-blue-700">Click and drag to paint multiple shifts at once! Much faster than clicking each cell individually.</p>
@@ -2565,7 +2581,7 @@ const RosterApp = () => {
                 onClick={() => setShowHelpModal(true)}
                 className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium bg-purple-100 text-purple-700"
               >
-                ❓ Help
+                Help
               </button>
             </div>
           </div>
@@ -2793,25 +2809,30 @@ const RosterApp = () => {
       }
     };
 
-    const handleDelete = async () => {
-      if (!revenueEditDate || !window.confirm('Delete revenue entry for this day?')) return;
-      
-      try {
-        await db.deleteRevenue(user.id, revenueEditDate);
+    const handleDelete = () => {
+      if (!revenueEditDate) return;
+      setConfirmDialog({
+        title: 'Delete Revenue',
+        message: 'Delete revenue entry for this day?',
+        danger: true,
+        confirmLabel: 'Delete',
+        onConfirm: async () => {
+          try {
+            await db.deleteRevenue(user.id, revenueEditDate);
+            setDailyRevenue(prev => {
+              const updated = { ...prev };
+              delete updated[revenueEditDate];
+              return updated;
+            });
         
-        // Update local state
-        setDailyRevenue(prev => {
-          const updated = { ...prev };
-          delete updated[revenueEditDate];
-          return updated;
-        });
-        
-        setShowRevenueModal(false);
-        setRevenueEditDate(null);
-      } catch (error) {
-        console.error('Error deleting revenue:', error);
-        toast.error('Failed to delete revenue data');
-      }
+            setShowRevenueModal(false);
+            setRevenueEditDate(null);
+          } catch (error) {
+            console.error('Error deleting revenue:', error);
+            toast.error('Failed to delete revenue data');
+          }
+        }
+      });
     };
 
     const date = revenueEditDate ? new Date(revenueEditDate) : null;
@@ -2945,7 +2966,7 @@ const RosterApp = () => {
                     title="List view"
                   >
                     <span className="flex items-center gap-2">
-                      📋 List
+                      List
                     </span>
                   </button>
                 </div>
@@ -3726,9 +3747,9 @@ const RosterApp = () => {
 
         {/* Alerts and Warnings */}
         {(insights.coverageGaps.length > 0 || insights.underStaffedSlots.length > 0 || insights.overStaffedSlots.length > 0) && (
-          <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-gray-100">
+          <div className="card p-6">
             <h3 className="text-lg font-bold mb-4 text-gray-800 flex items-center gap-2">
-              <span className="text-2xl">⚠️</span>
+              <AlertTriangle size={20} className="text-amber-500" />
               Coverage Alerts
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -3763,7 +3784,7 @@ const RosterApp = () => {
         {/* Cost Analysis */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Weekend vs Weekday */}
-          <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-gray-100">
+          <div className="card p-6">
             <h3 className="text-lg font-bold mb-4 text-gray-800">Weekend vs Weekday</h3>
             <div className="space-y-3">
               <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
@@ -3795,7 +3816,7 @@ const RosterApp = () => {
           </div>
 
           {/* Peak vs Off-Peak */}
-          <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-gray-100">
+          <div className="card p-6">
             <h3 className="text-lg font-bold mb-4 text-gray-800">Peak vs Off-Peak</h3>
             <div className="space-y-3">
               <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
@@ -3826,7 +3847,7 @@ const RosterApp = () => {
         </div>
 
         {/* Daily Breakdown with Chart */}
-        <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-gray-100">
+        <div className="card p-6">
           <h3 className="text-lg font-bold mb-4 text-gray-800">Daily Breakdown</h3>
           <div className="space-y-2">
             {weekStats.dailyBreakdown.map((day) => {
@@ -3845,8 +3866,8 @@ const RosterApp = () => {
                   <div className="w-24">
                     <div className="font-semibold text-sm text-gray-800 flex items-center gap-1">
                       {day.date.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase()}
-                      {isHighest && <span className="text-red-500">📈</span>}
-                      {isLowest && <span className="text-green-500">📉</span>}
+                      {isHighest && <TrendingUp size={14} className="text-red-500" />}
+                      {isLowest && <TrendingDown size={14} className="text-green-500" />}
                     </div>
                     <div className="text-xs text-gray-500">
                       {day.date.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}
@@ -3888,13 +3909,13 @@ const RosterApp = () => {
         <div className="space-y-6">
           {/* Staff Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-xl p-5 shadow-lg border-2 border-gray-100">
+            <div className="card p-5">
               <div className="text-sm text-gray-600 mb-1">Most Expensive Staff</div>
               <div className="text-2xl font-bold text-gray-800">{sortedStaff[0]?.name || 'N/A'}</div>
               <div className="text-sm text-gray-500">${sortedStaff[0]?.cost.toFixed(0) || 0}</div>
             </div>
             
-            <div className="bg-white rounded-xl p-5 shadow-lg border-2 border-gray-100">
+            <div className="card p-5">
               <div className="text-sm text-gray-600 mb-1">Most Hours</div>
               <div className="text-2xl font-bold text-gray-800">
                 {[...sortedStaff].sort((a, b) => b.hours - a.hours)[0]?.name || 'N/A'}
@@ -3904,7 +3925,7 @@ const RosterApp = () => {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl p-5 shadow-lg border-2 border-gray-100">
+            <div className="card p-5">
               <div className="text-sm text-gray-600 mb-1">Average Cost/Staff</div>
               <div className="text-2xl font-bold text-gray-800">${avgStaffCost.toFixed(0)}</div>
               <div className="text-sm text-gray-500">{(weekStats.totalHours / sortedStaff.length).toFixed(2)}h avg</div>
@@ -3912,7 +3933,7 @@ const RosterApp = () => {
           </div>
 
           {/* Staff Utilization */}
-          <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-gray-100">
+          <div className="card p-6">
             <h3 className="text-lg font-bold mb-4 text-gray-800">Staff Utilization Rate</h3>
             <div className="space-y-3">
               {Object.values(insights.utilizationRate)
@@ -3940,10 +3961,10 @@ const RosterApp = () => {
                       </div>
                     </div>
                     <div className="mt-2 text-xs text-gray-500">
-                      {util.rate > 75 && '⚠️ High utilization - consider adding breaks'}
-                      {util.rate > 50 && util.rate <= 75 && '✅ Good utilization'}
-                      {util.rate > 25 && util.rate <= 50 && '📊 Moderate utilization'}
-                      {util.rate <= 25 && '💡 Low utilization - could schedule more hours'}
+                      {util.rate > 75 && 'High utilization - consider adding breaks'}
+                      {util.rate > 50 && util.rate <= 75 && 'Good utilization'}
+                      {util.rate > 25 && util.rate <= 50 && 'Moderate utilization'}
+                      {util.rate <= 25 && 'Low utilization - could schedule more hours'}
                     </div>
                   </div>
                 ))}
@@ -3951,7 +3972,7 @@ const RosterApp = () => {
           </div>
 
           {/* Staff Cost Breakdown */}
-          <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-gray-100">
+          <div className="card p-6">
             <h3 className="text-lg font-bold mb-4 text-gray-800">Staff Cost Breakdown</h3>
             <div className="space-y-2">
               {sortedStaff.map((staffData, idx) => (
@@ -3988,7 +4009,7 @@ const RosterApp = () => {
         <div className="space-y-6">
           {/* Role Summary */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-xl p-5 shadow-lg border-2 border-gray-100">
+            <div className="card p-5">
               <div className="text-sm text-gray-600 mb-1">Most Used Role</div>
               <div className="text-2xl font-bold text-gray-800 flex items-center gap-2">
                 {sortedRoles[0] && (
@@ -4006,7 +4027,7 @@ const RosterApp = () => {
               <div className="text-sm text-gray-500">{sortedRoles[0]?.hours.toFixed(2) || 0}h</div>
             </div>
             
-            <div className="bg-white rounded-xl p-5 shadow-lg border-2 border-gray-100">
+            <div className="card p-5">
               <div className="text-sm text-gray-600 mb-1">Most Expensive Role</div>
               <div className="text-2xl font-bold text-gray-800 flex items-center gap-2">
                 {[...sortedRoles].sort((a, b) => b.cost - a.cost)[0] && (
@@ -4024,7 +4045,7 @@ const RosterApp = () => {
               <div className="text-sm text-gray-500">${[...sortedRoles].sort((a, b) => b.cost - a.cost)[0]?.cost.toFixed(0) || 0}</div>
             </div>
 
-            <div className="bg-white rounded-xl p-5 shadow-lg border-2 border-gray-100">
+            <div className="card p-5">
               <div className="text-sm text-gray-600 mb-1">Active Roles</div>
               <div className="text-2xl font-bold text-gray-800">{sortedRoles.length}</div>
               <div className="text-sm text-gray-500">of {roles.length} total</div>
@@ -4291,7 +4312,7 @@ const RosterApp = () => {
           {/* Info Card */}
           <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
             <div className="flex items-start gap-3">
-              <div className="text-2xl">💡</div>
+              <Lightbulb size={20} className="text-blue-600 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <h4 className="font-semibold text-blue-900 mb-1">Managing Labor Costs</h4>
                 <p className="text-sm text-blue-700">
@@ -4302,7 +4323,7 @@ const RosterApp = () => {
           </div>
 
           {/* Daily Breakdown */}
-          <div className="bg-white rounded-xl shadow-lg border-2 border-gray-100 overflow-hidden">
+          <div className="card overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200">
               <h3 className="text-lg font-bold text-gray-900">Daily Revenue & Labor Tracking</h3>
               <p className="text-sm text-gray-500 mt-1">Track labor costs as a percentage of revenue</p>
@@ -4394,7 +4415,7 @@ const RosterApp = () => {
           </div>
 
           {/* Labor Percentage Guide */}
-          <div className="bg-white rounded-xl shadow-lg border-2 border-gray-100 p-6">
+          <div className="card p-6">
             <h3 className="text-lg font-bold mb-4 text-gray-800">Understanding Labor Percentage</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-3">
@@ -4465,7 +4486,7 @@ const RosterApp = () => {
           </div>
 
           {/* Peak Hour Coverage */}
-          <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-gray-100">
+          <div className="card p-6">
             <h3 className="text-lg font-bold mb-4 text-gray-800 flex items-center gap-2">
               <span className="bg-orange-100 text-orange-600 px-3 py-1 rounded-lg text-sm font-bold">PEAK</span>
               Peak Hour Coverage (12pm - 2pm)
@@ -4533,9 +4554,9 @@ const RosterApp = () => {
 
           {/* Critical Gaps Details */}
           {insights.coverageGaps.length > 0 && (
-            <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-red-200">
+            <div className="card p-6 border-red-200">
               <h3 className="text-lg font-bold mb-4 text-red-800 flex items-center gap-2">
-                <span className="text-2xl">🚨</span>
+                <CircleAlert size={20} className="text-red-600" />
                 Critical Coverage Gaps
               </h3>
               <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -4573,7 +4594,7 @@ const RosterApp = () => {
     return (
       <div className="p-6">
         {/* Tab Navigation */}
-        <div className="bg-white rounded-xl shadow-lg border-2 border-gray-100 p-2 mb-6 flex gap-2 overflow-x-auto">
+        <div className="card p-2 mb-6 flex gap-2 overflow-x-auto">
           <button
             onClick={() => setAnalyticsTab('overview')}
             className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
@@ -4582,7 +4603,7 @@ const RosterApp = () => {
                 : 'tab-inactive'
             }`}
           >
-            📊 Overview
+            <BarChart3 size={14} className="inline mr-1" /> Overview
           </button>
           <button
             onClick={() => setAnalyticsTab('staff')}
@@ -4592,7 +4613,7 @@ const RosterApp = () => {
                 : 'tab-inactive'
             }`}
           >
-            👥 Staff
+            <Users size={14} className="inline mr-1" /> Staff
           </button>
           <button
             onClick={() => setAnalyticsTab('roles')}
@@ -4602,7 +4623,7 @@ const RosterApp = () => {
                 : 'tab-inactive'
             }`}
           >
-            🎭 Roles
+            <Theater size={14} className="inline mr-1" /> Roles
           </button>
           <button
             onClick={() => setAnalyticsTab('coverage')}
@@ -4612,7 +4633,7 @@ const RosterApp = () => {
                 : 'tab-inactive'
             }`}
           >
-            📍 Coverage
+            <MapPin size={14} className="inline mr-1" /> Coverage
           </button>
           <button
             onClick={() => setAnalyticsTab('revenue')}
@@ -4622,7 +4643,7 @@ const RosterApp = () => {
                 : 'tab-inactive'
             }`}
           >
-            💰 Revenue
+            <DollarSign size={14} className="inline mr-1" /> Revenue
           </button>
         </div>
 
@@ -4664,6 +4685,31 @@ const RosterApp = () => {
           <div className="modal-footer">
             <button onClick={() => { setShowClearModal(false); setClearTarget(null); }} className="btn-secondary">Cancel</button>
             <button onClick={confirmClear} className="btn-danger">Clear Shifts</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const ConfirmDialog = () => {
+    if (!confirmDialog) return null;
+    return (
+      <div className="modal-overlay">
+        <div className="modal-container max-w-sm">
+          <div className="modal-header">
+            <h2 className="text-lg font-semibold text-gray-900">{confirmDialog.title}</h2>
+            <button onClick={() => setConfirmDialog(null)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+              <X size={18} className="text-gray-400" />
+            </button>
+          </div>
+          <div className="modal-body">
+            <p className="text-sm text-gray-600">{confirmDialog.message}</p>
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => setConfirmDialog(null)} className="btn-secondary">Cancel</button>
+            <button onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }} className={confirmDialog.danger ? 'btn-danger' : 'btn-primary'}>
+              {confirmDialog.confirmLabel || 'Confirm'}
+            </button>
           </div>
         </div>
       </div>
@@ -5041,7 +5087,7 @@ Key things to verify after rebuild:
 
                 <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-200">
                   <div className="flex items-start gap-3">
-                    <div className="text-blue-600 mt-0.5">💡</div>
+                    <Lightbulb size={18} className="text-blue-600 mt-0.5 shrink-0" />
                     <div>
                       <div className="font-semibold text-blue-900 mb-1">How to use</div>
                       <div className="text-sm text-blue-800">
@@ -5423,6 +5469,7 @@ Key things to verify after rebuild:
       <TutorialOverlay />
       <HelpModal />
       <ContextMenu />
+      <ConfirmDialog />
       </div>
     </div>
   );

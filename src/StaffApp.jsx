@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, User, LogOut, CheckCircle, XCircle, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { supabase } from './supabaseClient';
+import toast from 'react-hot-toast';
 
 const StaffApp = () => {
   const { user, profile, staffId } = useAuth();
@@ -160,7 +161,7 @@ const StaffApp = () => {
       }));
     } catch (error) {
       console.error('Error setting availability:', error);
-      alert('Failed to update availability');
+      toast.error('Failed to update availability');
     }
   };
 
