@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, ArchiveRestore, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, ArchiveRestore, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
@@ -75,6 +75,7 @@ const RosterApp = () => {
   const [dailyRevenue, setDailyRevenue] = useState({}); // Keyed by date string YYYY-MM-DD
   const [showRevenueModal, setShowRevenueModal] = useState(false);
   const [revenueEditDate, setRevenueEditDate] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null); // { title, message, onConfirm, danger? }
   const [businessSettings, setBusinessSettings] = useState({
     businessName: 'Recess',
     logoUrl: '', // URL for business logo
@@ -862,60 +863,60 @@ const RosterApp = () => {
     return (
       <div className="modal-overlay">
         <div className="modal-container max-w-md">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">{editingStaff ? 'Edit' : 'Add'} Staff</h2>
-            <button onClick={() => { setShowStaffModal(false); setEditingStaff(null); }}><X size={24} /></button>
+          <div className="modal-header">
+            <h2 className="text-lg font-semibold text-gray-900">{editingStaff ? 'Edit' : 'Add'} Staff</h2>
+            <button onClick={() => { setShowStaffModal(false); setEditingStaff(null); }} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><X size={18} className="text-gray-400" /></button>
           </div>
-          <div className="space-y-4">
+          <div className="modal-body space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Name</label>
-              <input 
-                type="text" 
-                value={formData.name} 
-                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))} 
-                className="w-full border rounded px-3 py-2"
+              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                className="input-base"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Weekday Hourly Rate ($)</label>
-              <input 
-                type="number" 
-                step="0.01" 
-                min="0" 
-                value={formData.hourlyRate} 
-                onChange={(e) => setFormData(prev => ({ ...prev, hourlyRate: e.target.value }))} 
-                className="w-full border rounded px-3 py-2" 
+              <label className="block text-sm font-medium text-gray-700 mb-1">Weekday Hourly Rate ($)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.hourlyRate}
+                onChange={(e) => setFormData(prev => ({ ...prev, hourlyRate: e.target.value }))}
+                className="input-base"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Weekend Hourly Rate ($)</label>
-              <input 
-                type="number" 
-                step="0.01" 
-                min="0" 
-                value={formData.weekendRate || ''} 
-                onChange={(e) => setFormData(prev => ({ ...prev, weekendRate: e.target.value }))} 
+              <label className="block text-sm font-medium text-gray-700 mb-1">Weekend Hourly Rate ($)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.weekendRate || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, weekendRate: e.target.value }))}
                 placeholder={`${formData.hourlyRate || '0'} (same as weekday)`}
-                className="w-full border rounded px-3 py-2" 
+                className="input-base"
               />
               <p className="text-xs text-gray-500 mt-1">Leave blank to use weekday rate</p>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Employment Type</label>
-              <select 
-                value={formData.employmentType} 
-                onChange={(e) => setFormData(prev => ({ ...prev, employmentType: e.target.value }))} 
-                className="w-full border rounded px-3 py-2"
+              <label className="block text-sm font-medium text-gray-700 mb-1">Employment Type</label>
+              <select
+                value={formData.employmentType}
+                onChange={(e) => setFormData(prev => ({ ...prev, employmentType: e.target.value }))}
+                className="input-base"
               >
                 <option value="FT">Full Time</option>
                 <option value="PT">Part Time</option>
                 <option value="Casual">Casual</option>
               </select>
             </div>
-            <div className="flex gap-2">
-              <button onClick={handleSave} className="flex-1 bg-blue-600 text-white py-2 rounded">{editingStaff ? 'Update' : 'Add'}</button>
-              <button onClick={() => { setShowStaffModal(false); setEditingStaff(null); }} className="px-4 py-2 border rounded">Cancel</button>
-            </div>
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => { setShowStaffModal(false); setEditingStaff(null); }} className="btn-secondary">Cancel</button>
+            <button onClick={handleSave} className="btn-primary">{editingStaff ? 'Update' : 'Add'} Staff</button>
           </div>
         </div>
       </div>
@@ -929,24 +930,27 @@ const RosterApp = () => {
     return (
       <div className="modal-overlay">
         <div className="modal-container max-w-md">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">Time Range</h2>
-            <button onClick={() => setShowTimeSettings(false)}><X size={24} /></button>
+          <div className="modal-header">
+            <h2 className="text-lg font-semibold text-gray-900">Time Range</h2>
+            <button onClick={() => setShowTimeSettings(false)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><X size={18} className="text-gray-400" /></button>
           </div>
-          <div className="space-y-4">
+          <div className="modal-body space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Start</label>
-              <select value={tempStart} onChange={(e) => setTempStart(parseInt(e.target.value))} className="w-full border rounded px-3 py-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Start</label>
+              <select value={tempStart} onChange={(e) => setTempStart(parseInt(e.target.value))} className="input-base">
                 {Array.from({ length: 24 }, (_, i) => <option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">End</label>
-              <select value={tempEnd} onChange={(e) => setTempEnd(parseInt(e.target.value))} className="w-full border rounded px-3 py-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">End</label>
+              <select value={tempEnd} onChange={(e) => setTempEnd(parseInt(e.target.value))} className="input-base">
                 {Array.from({ length: 24 }, (_, i) => <option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>)}
               </select>
             </div>
-            <button onClick={() => { setStartHour(tempStart); setEndHour(tempEnd); setShowTimeSettings(false); }} className="w-full bg-blue-600 text-white py-2 rounded">Apply</button>
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => setShowTimeSettings(false)} className="btn-secondary">Cancel</button>
+            <button onClick={() => { setStartHour(tempStart); setEndHour(tempEnd); setShowTimeSettings(false); }} className="btn-primary">Apply</button>
           </div>
         </div>
       </div>
@@ -976,7 +980,7 @@ const RosterApp = () => {
     const HoursTab = () => (
       <div className="space-y-4">
         <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <div className="text-sm font-semibold text-blue-800 mb-2">💡 Operational Hours</div>
+          <div className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-1.5"><Lightbulb size={14} /> Operational Hours</div>
           <div className="text-xs text-blue-700">
             Set your business hours for each day. Coverage gaps will only be flagged during these hours.
           </div>
@@ -1020,7 +1024,7 @@ const RosterApp = () => {
                           [day]: { ...tempSettings.operationalHours[day], open: e.target.value }
                         }
                       })}
-                      className="w-full border rounded px-3 py-2"
+                      className="input-base"
                     />
                   </div>
                   <div className="flex-1">
@@ -1035,7 +1039,7 @@ const RosterApp = () => {
                           [day]: { ...tempSettings.operationalHours[day], close: e.target.value }
                         }
                       })}
-                      className="w-full border rounded px-3 py-2"
+                      className="input-base"
                     />
                   </div>
                 </div>
@@ -1076,7 +1080,7 @@ const RosterApp = () => {
     const CoverageTab = () => (
       <div className="space-y-4">
         <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <div className="text-sm font-semibold text-blue-800 mb-2">📊 Coverage Requirements</div>
+          <div className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-1.5"><BarChart3 size={14} /> Coverage Requirements</div>
           <div className="text-xs text-blue-700">
             Set minimum staff requirements. The system will alert you when coverage falls below these levels.
           </div>
@@ -1093,7 +1097,7 @@ const RosterApp = () => {
               max="10"
               value={tempSettings.minStaffCoverage}
               onChange={(e) => setTempSettings({ ...tempSettings, minStaffCoverage: parseInt(e.target.value) || 1 })}
-              className="w-full border rounded px-3 py-2"
+              className="input-base"
             />
             <p className="text-xs text-gray-600 mt-2">
               Minimum number of staff required per time slot during regular hours
@@ -1114,7 +1118,7 @@ const RosterApp = () => {
                     ...tempSettings,
                     peakHours: { ...tempSettings.peakHours, start: e.target.value }
                   })}
-                  className="w-full border rounded px-3 py-2"
+                  className="input-base"
                 />
               </div>
               <div className="flex-1">
@@ -1126,7 +1130,7 @@ const RosterApp = () => {
                     ...tempSettings,
                     peakHours: { ...tempSettings.peakHours, end: e.target.value }
                   })}
-                  className="w-full border rounded px-3 py-2"
+                  className="input-base"
                 />
               </div>
             </div>
@@ -1139,7 +1143,7 @@ const RosterApp = () => {
               max="20"
               value={tempSettings.minPeakStaffCoverage}
               onChange={(e) => setTempSettings({ ...tempSettings, minPeakStaffCoverage: parseInt(e.target.value) || 2 })}
-              className="w-full border rounded px-3 py-2"
+              className="input-base"
             />
             <p className="text-xs text-gray-600 mt-2">
               Minimum number of staff required during peak hours (e.g., lunch rush)
@@ -1152,7 +1156,7 @@ const RosterApp = () => {
     const GeneralTab = () => (
       <div className="space-y-4">
         <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <div className="text-sm font-semibold text-blue-800 mb-2">🏢 Business Information</div>
+          <div className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-1.5"><Settings size={14} /> Business Information</div>
           <div className="text-xs text-blue-700">
             Customize the app with your business details. This is useful when sharing with other businesses.
           </div>
@@ -1184,14 +1188,14 @@ const RosterApp = () => {
                 type="text"
                 value={tempSettings.logoUrl}
                 onChange={(e) => setTempSettings(prev => ({ ...prev, logoUrl: e.target.value }))}
-                className="w-full border rounded px-3 py-2"
+                className="input-base"
                 placeholder="https://example.com/logo.png"
               />
               <p className="text-xs text-gray-600">
                 Enter a URL to your logo image. This will appear in the header and login page.
               </p>
               <p className="text-xs text-gray-500">
-                💡 Tip: Upload your logo to a service like Imgur, Cloudinary, or your own website, then paste the direct image URL here.
+                Tip: Upload your logo to a service like Imgur, Cloudinary, or your own website, then paste the direct image URL here.
               </p>
             </div>
           </div>
@@ -1204,7 +1208,7 @@ const RosterApp = () => {
               type="text"
               value={tempSettings.businessName}
               onChange={(e) => setTempSettings(prev => ({ ...prev, businessName: e.target.value }))}
-              className="w-full border rounded px-3 py-2"
+              className="input-base"
               placeholder="Your Business Name"
             />
             <p className="text-xs text-gray-600 mt-2">
@@ -1220,7 +1224,7 @@ const RosterApp = () => {
               type="text"
               value={tempSettings.currency}
               onChange={(e) => setTempSettings(prev => ({ ...prev, currency: e.target.value }))}
-              className="w-full border rounded px-3 py-2"
+              className="input-base"
               placeholder="$"
               maxLength="3"
             />
@@ -1236,7 +1240,7 @@ const RosterApp = () => {
             <select
               value={tempSettings.timezone}
               onChange={(e) => setTempSettings(prev => ({ ...prev, timezone: e.target.value }))}
-              className="w-full border rounded px-3 py-2"
+              className="input-base"
             >
               <option value="Australia/Sydney">Australia/Sydney (AEDT)</option>
               <option value="Australia/Melbourne">Australia/Melbourne (AEDT)</option>
@@ -1256,7 +1260,7 @@ const RosterApp = () => {
     const FinancialTab = () => (
       <div className="space-y-4">
         <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-          <div className="text-sm font-semibold text-green-800 mb-2">💰 Financial Settings</div>
+          <div className="text-sm font-semibold text-green-800 mb-2 flex items-center gap-1.5"><DollarSign size={14} /> Financial Settings</div>
           <div className="text-xs text-green-700">
             Set your target labor cost percentage and other financial goals. These help track your business performance.
           </div>
@@ -1286,7 +1290,7 @@ const RosterApp = () => {
               Your ideal labor cost as a percentage of revenue. Industry standard for hospitality is 25-35%.
             </p>
             <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="text-xs font-semibold text-blue-800 mb-2">💡 Quick Guide:</div>
+              <div className="text-xs font-semibold text-blue-800 mb-2 flex items-center gap-1"><Lightbulb size={12} /> Quick Guide:</div>
               <div className="text-xs text-blue-700 space-y-1">
                 <div>• <strong>25-30%:</strong> Excellent - Very efficient operation</div>
                 <div>• <strong>30-35%:</strong> Good - Industry standard</div>
@@ -1296,9 +1300,9 @@ const RosterApp = () => {
             </div>
           </div>
 
-          <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
+          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
             <div className="flex items-start gap-3">
-              <div className="text-2xl">📊</div>
+              <BarChart3 size={24} className="text-blue-600" />
               <div>
                 <div className="text-sm font-semibold text-gray-800 mb-1">How to Use Labor Percentage Tracking</div>
                 <ol className="text-xs text-gray-700 space-y-1 ml-4 list-decimal">
@@ -1351,11 +1355,17 @@ const RosterApp = () => {
       };
 
       const handleDeleteRole = (roleId) => {
-        if (!window.confirm('Delete this role? This cannot be undone.')) return;
-        
-        const updatedRoles = roles.filter(r => r.id !== roleId);
-        setRoles(updatedRoles);
-        setTempSettings(prev => ({ ...prev, roles: updatedRoles }));
+        setConfirmDialog({
+          title: 'Delete Role',
+          message: 'Delete this role? This cannot be undone.',
+          danger: true,
+          confirmLabel: 'Delete',
+          onConfirm: () => {
+            const updatedRoles = roles.filter(r => r.id !== roleId);
+            setRoles(updatedRoles);
+            setTempSettings(prev => ({ ...prev, roles: updatedRoles }));
+          }
+        });
       };
 
       const predefinedColors = [
@@ -1376,7 +1386,7 @@ const RosterApp = () => {
       return (
         <div className="space-y-4">
           <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <div className="text-sm font-semibold text-blue-800 mb-2">🎭 Customize Roles</div>
+            <div className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-1.5"><Theater size={14} /> Customize Roles</div>
             <div className="text-xs text-blue-700">
               Add, edit, or remove roles to match your business. Roles appear as buttons when scheduling staff.
             </div>
@@ -1438,7 +1448,7 @@ const RosterApp = () => {
                   <button
                     onClick={handleUpdateRole}
                     disabled={!roleForm.name || !roleForm.code}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="btn-primary text-sm py-2"
                   >
                     Update Role
                   </button>
@@ -1456,7 +1466,7 @@ const RosterApp = () => {
                 <button
                   onClick={handleAddRole}
                   disabled={!roleForm.name || !roleForm.code}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="btn-primary text-sm py-2"
                 >
                   Add Role
                 </button>
@@ -1508,7 +1518,7 @@ const RosterApp = () => {
 
           <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
             <div className="flex items-start gap-2">
-              <span className="text-lg">⚠️</span>
+              <AlertTriangle size={18} className="text-amber-600 shrink-0" />
               <div className="text-xs text-amber-800">
                 <strong>Note:</strong> Deleting a role will not remove existing schedule entries using that role. They will still display with the original color.
               </div>
@@ -1521,16 +1531,16 @@ const RosterApp = () => {
     return (
       <div className="modal-overlay">
         <div className="modal-container max-w-3xl max-h-[90vh]">
-          <div className="modal-header flex justify-between items-center">
+          <div className="modal-header">
             <div>
-              <h2 className="text-2xl font-bold text-white">Business Settings</h2>
-              <p className="text-blue-50 text-sm mt-1">Configure your operational hours and coverage requirements</p>
+              <h2 className="text-lg font-semibold text-gray-900">Business Settings</h2>
+              <p className="text-sm text-gray-500 mt-0.5">Configure your operational hours and coverage requirements</p>
             </div>
-            <button 
+            <button
               onClick={() => setShowSettingsModal(false)}
-              className="text-white hover:bg-white/20 rounded-full p-2 transition-all"
+              className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <X size={24} />
+              <X size={18} className="text-gray-400" />
             </button>
           </div>
 
@@ -1543,7 +1553,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              🕐 Operational Hours
+              <Clock size={14} className="inline mr-1" /> Hours
             </button>
             <button
               onClick={() => setActiveSettingsTab('coverage')}
@@ -1553,7 +1563,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              📊 Coverage Rules
+              <BarChart3 size={14} className="inline mr-1" /> Coverage
             </button>
             <button
               onClick={() => setActiveSettingsTab('general')}
@@ -1563,7 +1573,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              🏢 General
+              <Settings size={14} className="inline mr-1" /> General
             </button>
             <button
               onClick={() => setActiveSettingsTab('financial')}
@@ -1573,7 +1583,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              💰 Financial
+              <DollarSign size={14} className="inline mr-1" /> Financial
             </button>
             <button
               onClick={() => setActiveSettingsTab('roles')}
@@ -1583,7 +1593,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              🎭 Roles
+              <Theater size={14} className="inline mr-1" /> Roles
             </button>
           </div>
           
@@ -1595,19 +1605,9 @@ const RosterApp = () => {
             {activeSettingsTab === 'roles' && <RolesTab />}
           </div>
 
-          <div className="px-8 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
-            <button
-              onClick={() => setShowSettingsModal(false)}
-              className="px-6 py-2 border-2 border-gray-300 rounded-xl font-semibold hover:bg-gray-100 transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              className="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-semibold transition-colors"
-            >
-              Save Settings
-            </button>
+          <div className="modal-footer">
+            <button onClick={() => setShowSettingsModal(false)} className="btn-secondary">Cancel</button>
+            <button onClick={handleSave} className="btn-primary">Save Settings</button>
           </div>
         </div>
       </div>
@@ -1654,58 +1654,59 @@ const RosterApp = () => {
   return (
     <div className="modal-overlay">
       <div className="modal-container max-w-md">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">Quick Fill Shift</h2>
-          <button onClick={() => { setShowQuickFillModal(false); setQuickFillData(null); }}>
-            <X size={24} />
+        <div className="modal-header">
+          <h2 className="text-lg font-semibold text-gray-900">Quick Fill Shift</h2>
+          <button onClick={() => { setShowQuickFillModal(false); setQuickFillData(null); }} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+            <X size={18} className="text-gray-400" />
           </button>
         </div>
 
-        <div className="space-y-4">
-          <div className="bg-blue-50 p-3 rounded">
-            <div className="text-sm font-medium">
+        <div className="modal-body space-y-4">
+          <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg">
+            <div className="text-sm font-medium text-gray-700">
               Role: <span style={{ backgroundColor: selectedRole.color }} className="px-2 py-1 rounded text-white ml-2">{selectedRole.code}</span>
             </div>
-            <div className="text-sm mt-2">Start: <strong>{quickFillData.startTime}</strong></div>
+            <div className="text-sm mt-2 text-gray-700">Start: <strong>{quickFillData.startTime}</strong></div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">End Time</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
             <select
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
-              className="w-full border rounded px-3 py-2"
+              className="input-base"
             >
               {availableEndTimes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
+        </div>
 
-          <div className="flex gap-2">
-            <button onClick={handleQuickFill} className="flex-1 bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
-              Fill Shift
-            </button>
-            <button onClick={() => { setShowQuickFillModal(false); setQuickFillData(null); }} className="px-4 py-2 border rounded">
-              Cancel
-            </button>
-          </div>
+        <div className="modal-footer">
+          <button onClick={() => { setShowQuickFillModal(false); setQuickFillData(null); }} className="btn-secondary">Cancel</button>
+          <button onClick={handleQuickFill} className="btn-primary">Fill Shift</button>
         </div>
       </div>
     </div>
   );
 };
-  const deleteStaff = async (staffId) => {
+  const deleteStaff = (staffId) => {
     const staffMember = staff.find(s => s.id === staffId);
-    if (!window.confirm(`Archive ${staffMember?.name || 'this staff member'}? They will be removed from the current roster but their historical data will be preserved. You can restore them later from the archived staff list.`)) return;
-
-    try {
-      await db.deleteStaff(staffId);
-      // Mark as inactive locally - don't remove schedule data
-      setStaff(staff.map(s => s.id === staffId ? { ...s, active: false } : s));
-      setStaffOrder(staffOrder.filter(id => id !== staffId));
-    } catch (error) {
-      console.error('Error archiving staff:', error);
-      toast.error('Error archiving staff member.');
-    }
+    setConfirmDialog({
+      title: 'Archive Staff',
+      message: `Archive ${staffMember?.name || 'this staff member'}? They will be removed from the current roster but their historical data will be preserved. You can restore them later from the archived staff list.`,
+      danger: true,
+      confirmLabel: 'Archive',
+      onConfirm: async () => {
+        try {
+          await db.deleteStaff(staffId);
+          setStaff(staff.map(s => s.id === staffId ? { ...s, active: false } : s));
+          setStaffOrder(staffOrder.filter(id => id !== staffId));
+        } catch (error) {
+          console.error('Error archiving staff:', error);
+          toast.error('Error archiving staff member.');
+        }
+      }
+    });
   };
 
   const restoreStaff = async (staffId) => {
@@ -1899,46 +1900,35 @@ const RosterApp = () => {
     return (
       <div className="modal-overlay">
         <div className="modal-container max-w-md">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">Save Shift Template</h2>
-            <button onClick={() => { setShowTemplateModal(false); setSelectedTemplate(null); }}>
-              <X size={24} />
+          <div className="modal-header">
+            <h2 className="text-lg font-semibold text-gray-900">Save Shift Template</h2>
+            <button onClick={() => { setShowTemplateModal(false); setSelectedTemplate(null); }} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+              <X size={18} className="text-gray-400" />
             </button>
           </div>
-          <div className="space-y-4">
+          <div className="modal-body space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Template Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Template Name</label>
               <input
                 type="text"
                 value={templateName}
                 onChange={(e) => setTemplateName(e.target.value)}
-                className="w-full border rounded px-3 py-2"
+                className="input-base"
                 placeholder="e.g., Morning Barista, Lunch Rush"
                 autoFocus
               />
             </div>
             {selectedTemplate && (
-              <div className="p-3 bg-gray-50 rounded text-sm">
-                <div className="font-semibold mb-1">Template Details:</div>
-                <div>Role: <span style={{ color: selectedTemplate.role.color }} className="font-bold">{selectedTemplate.role.name}</span></div>
-                <div>Time: {selectedTemplate.startTime} - {selectedTemplate.endTime}</div>
+              <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-sm">
+                <div className="font-semibold text-gray-700 mb-1">Template Details:</div>
+                <div className="text-gray-600">Role: <span style={{ color: selectedTemplate.role.color }} className="font-bold">{selectedTemplate.role.name}</span></div>
+                <div className="text-gray-600">Time: {selectedTemplate.startTime} - {selectedTemplate.endTime}</div>
               </div>
             )}
-            <div className="flex gap-2">
-              <button
-                onClick={handleSave}
-                disabled={!templateName.trim()}
-                className="flex-1 bg-blue-600 text-white py-2 rounded disabled:opacity-50"
-              >
-                Save Template
-              </button>
-              <button
-                onClick={() => { setShowTemplateModal(false); setSelectedTemplate(null); }}
-                className="px-4 py-2 border rounded"
-              >
-                Cancel
-              </button>
-            </div>
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => { setShowTemplateModal(false); setSelectedTemplate(null); }} className="btn-secondary">Cancel</button>
+            <button onClick={handleSave} disabled={!templateName.trim()} className="btn-primary">Save Template</button>
           </div>
         </div>
       </div>
@@ -1948,18 +1938,18 @@ const RosterApp = () => {
   // Template Menu/Picker
   const TemplateMenu = () => {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50" onClick={() => setShowTemplateMenu(false)}>
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
-          <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4 flex justify-between items-center">
-            <h2 className="text-xl font-bold text-white">Shift Templates</h2>
-            <button onClick={() => setShowTemplateMenu(false)} className="text-white hover:bg-white/20 rounded-full p-1">
-              <X size={24} />
+      <div className="modal-overlay" onClick={() => setShowTemplateMenu(false)}>
+        <div className="modal-container max-w-md max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header">
+            <h2 className="text-lg font-semibold text-gray-900">Shift Templates</h2>
+            <button onClick={() => setShowTemplateMenu(false)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+              <X size={18} className="text-gray-400" />
             </button>
           </div>
 
           {shiftTemplates.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
-              <div className="text-4xl mb-2">📋</div>
+              <ClipboardList size={32} className="text-gray-400 mb-2 mx-auto" />
               <p className="mb-2">No templates yet!</p>
               <p className="text-sm">Right-click on a shift to create your first template.</p>
             </div>
@@ -1997,9 +1987,13 @@ const RosterApp = () => {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (window.confirm(`Delete template "${template.name}"?`)) {
-                            deleteTemplate(template.id);
-                          }
+                          setConfirmDialog({
+                            title: 'Delete Template',
+                            message: `Delete template "${template.name}"?`,
+                            danger: true,
+                            confirmLabel: 'Delete',
+                            onConfirm: () => deleteTemplate(template.id)
+                          });
                         }}
                         className="p-2 hover:bg-red-100 rounded"
                         title="Delete template"
@@ -2014,7 +2008,7 @@ const RosterApp = () => {
           )}
 
           <div className="px-6 py-4 bg-gray-50 border-t text-sm text-gray-600">
-            💡 Click a template to enter apply mode, then click on the roster to place it.
+            Click a template to enter apply mode, then click on the roster to place it.
           </div>
         </div>
       </div>
@@ -2283,16 +2277,16 @@ const RosterApp = () => {
     return (
       <div className="modal-overlay">
         <div className="modal-container max-w-4xl max-h-[90vh]">
-          <div className="modal-header flex justify-between items-center">
+          <div className="modal-header">
             <div>
-              <h2 className="text-2xl font-bold text-white">Help & Support</h2>
-              <p className="text-blue-50 text-sm mt-1">Guides, FAQs, and quick tips</p>
+              <h2 className="text-lg font-semibold text-gray-900">Help & Support</h2>
+              <p className="text-sm text-gray-500 mt-0.5">Guides, FAQs, and quick tips</p>
             </div>
-            <button 
+            <button
               onClick={() => setShowHelpModal(false)}
-              className="text-white hover:bg-white/20 rounded-full p-2 transition-all"
+              className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <X size={24} />
+              <X size={18} className="text-gray-400" />
             </button>
           </div>
 
@@ -2305,7 +2299,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              🚀 Quick Start
+              <Rocket size={14} className="inline mr-1" /> Quick Start
             </button>
             <button
               onClick={() => setActiveTab('faq')}
@@ -2315,7 +2309,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              ❓ FAQ
+              <HelpCircle size={14} className="inline mr-1" /> FAQ
             </button>
             <button
               onClick={() => setActiveTab('keyboard')}
@@ -2325,7 +2319,7 @@ const RosterApp = () => {
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              ⌨️ Shortcuts
+              <Keyboard size={14} className="inline mr-1" /> Shortcuts
             </button>
           </div>
 
@@ -2366,7 +2360,7 @@ const RosterApp = () => {
 
                 <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 mt-6">
                   <div className="flex items-start gap-3">
-                    <span className="text-2xl">✅</span>
+                    <CheckCircle size={22} className="text-green-500 shrink-0" />
                     <div>
                       <h4 className="font-bold text-green-800 mb-1">Auto-Save Enabled</h4>
                       <p className="text-sm text-green-700">Your schedule saves automatically every second. Look for the green "Auto-saved" indicator!</p>
@@ -2380,9 +2374,9 @@ const RosterApp = () => {
                     setShowTutorial(true);
                     setTutorialStep(0);
                   }}
-                  className="w-full mt-4 px-4 py-3 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-semibold transition-colors"
+                  className="btn-primary w-full mt-4"
                 >
-                  🎓 Replay Tutorial
+                  Replay Tutorial
                 </button>
               </div>
             )}
@@ -2411,12 +2405,12 @@ const RosterApp = () => {
 
                 <details className="bg-gray-50 rounded-lg p-4 cursor-pointer">
                   <summary className="font-semibold text-gray-800">How do I customize roles?</summary>
-                  <p className="mt-2 text-gray-700">Go to <strong>Settings → 🎭 Roles</strong> tab. You can add, edit, or delete roles to match your business.</p>
+                  <p className="mt-2 text-gray-700">Go to <strong>Settings → Roles</strong> tab. You can add, edit, or delete roles to match your business.</p>
                 </details>
 
                 <details className="bg-gray-50 rounded-lg p-4 cursor-pointer">
                   <summary className="font-semibold text-gray-800">How do I track labor costs?</summary>
-                  <p className="mt-2 text-gray-700">Go to <strong>Analytics → 💰 Revenue</strong> tab. Enter daily revenue and see your labor cost percentage automatically calculated.</p>
+                  <p className="mt-2 text-gray-700">Go to <strong>Analytics → Revenue</strong> tab. Enter daily revenue and see your labor cost percentage automatically calculated.</p>
                 </details>
 
                 <details className="bg-gray-50 rounded-lg p-4 cursor-pointer">
@@ -2467,7 +2461,7 @@ const RosterApp = () => {
 
                 <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 mt-6">
                   <div className="flex items-start gap-3">
-                    <span className="text-2xl">💡</span>
+                    <Lightbulb size={22} className="text-amber-500 shrink-0" />
                     <div>
                       <h4 className="font-bold text-blue-800 mb-1">Pro Tip</h4>
                       <p className="text-sm text-blue-700">Click and drag to paint multiple shifts at once! Much faster than clicking each cell individually.</p>
@@ -2478,14 +2472,9 @@ const RosterApp = () => {
             )}
           </div>
 
-          <div className="px-8 py-4 bg-gray-50 border-t border-gray-200 flex justify-between items-center">
-            <p className="text-sm text-gray-600">Need more help? Check the full documentation.</p>
-            <button
-              onClick={() => setShowHelpModal(false)}
-              className="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-semibold transition-colors"
-            >
-              Got it!
-            </button>
+          <div className="modal-footer justify-between">
+            <p className="text-sm text-gray-500">Need more help? Check the full documentation.</p>
+            <button onClick={() => setShowHelpModal(false)} className="btn-primary">Got it!</button>
           </div>
         </div>
       </div>
@@ -2544,13 +2533,13 @@ const RosterApp = () => {
     };
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-orange-50 pb-20">
+      <div className="min-h-screen bg-surface-50 pb-20">
         {/* Mobile Header */}
         <div className="bg-white border-b-2 border-gray-200 shadow-lg sticky top-0 z-40">
           <div className="px-4 py-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
-                <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-2 rounded-xl">
+                <div className="bg-brand-500 p-2 rounded-xl">
                   <Users size={20} className="text-white" />
                 </div>
                 <div>
@@ -2592,7 +2581,7 @@ const RosterApp = () => {
                 onClick={() => setShowHelpModal(true)}
                 className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium bg-purple-100 text-purple-700"
               >
-                ❓ Help
+                Help
               </button>
             </div>
           </div>
@@ -2657,7 +2646,7 @@ const RosterApp = () => {
               return (
                 <div key={staffMember.id} className="bg-white rounded-xl shadow-lg overflow-hidden">
                   {/* Staff Header */}
-                  <div className="bg-gradient-to-r from-blue-50 to-orange-50 p-4 border-b border-gray-200">
+                  <div className="bg-gray-50 p-4 border-b border-gray-200">
                     <div className="flex items-center justify-between">
                       <div>
                         <h3 className="font-bold text-gray-800">{staffMember.name}</h3>
@@ -2820,25 +2809,30 @@ const RosterApp = () => {
       }
     };
 
-    const handleDelete = async () => {
-      if (!revenueEditDate || !window.confirm('Delete revenue entry for this day?')) return;
-      
-      try {
-        await db.deleteRevenue(user.id, revenueEditDate);
+    const handleDelete = () => {
+      if (!revenueEditDate) return;
+      setConfirmDialog({
+        title: 'Delete Revenue',
+        message: 'Delete revenue entry for this day?',
+        danger: true,
+        confirmLabel: 'Delete',
+        onConfirm: async () => {
+          try {
+            await db.deleteRevenue(user.id, revenueEditDate);
+            setDailyRevenue(prev => {
+              const updated = { ...prev };
+              delete updated[revenueEditDate];
+              return updated;
+            });
         
-        // Update local state
-        setDailyRevenue(prev => {
-          const updated = { ...prev };
-          delete updated[revenueEditDate];
-          return updated;
-        });
-        
-        setShowRevenueModal(false);
-        setRevenueEditDate(null);
-      } catch (error) {
-        console.error('Error deleting revenue:', error);
-        toast.error('Failed to delete revenue data');
-      }
+            setShowRevenueModal(false);
+            setRevenueEditDate(null);
+          } catch (error) {
+            console.error('Error deleting revenue:', error);
+            toast.error('Failed to delete revenue data');
+          }
+        }
+      });
     };
 
     const date = revenueEditDate ? new Date(revenueEditDate) : null;
@@ -2847,111 +2841,87 @@ const RosterApp = () => {
     return (
       <div className="modal-overlay">
         <div className="modal-container max-w-md">
-          <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-5 flex justify-between items-center rounded-t-2xl">
+          <div className="modal-header">
             <div>
-              <h2 className="text-xl font-bold text-white">Revenue Entry</h2>
-              <p className="text-green-50 text-sm mt-1">
+              <h2 className="text-lg font-semibold text-gray-900">Revenue Entry</h2>
+              <p className="text-sm text-gray-500 mt-0.5">
                 {date?.toLocaleDateString('en-AU', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
               </p>
             </div>
-            <button 
+            <button
               onClick={() => {
                 setShowRevenueModal(false);
                 setRevenueEditDate(null);
               }}
-              className="text-white hover:bg-white/20 rounded-full p-2 transition-all"
+              className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <X size={20} />
+              <X size={18} className="text-gray-400" />
             </button>
           </div>
 
-          <div className="p-6 space-y-4">
-            {/* Projected Revenue */}
+          <div className="modal-body space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Projected Revenue
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Projected Revenue</label>
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
                 <input
                   type="number"
                   step="0.01"
                   value={formData.projectedRevenue}
                   onChange={(e) => setFormData(prev => ({ ...prev, projectedRevenue: e.target.value }))}
-                  className="w-full pl-8 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none text-lg"
+                  className="input-base pl-7"
                   placeholder="0.00"
                 />
               </div>
               <p className="text-xs text-gray-500 mt-1">Expected sales for this day</p>
             </div>
 
-            {/* Other Revenue */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Other Revenue
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Other Revenue</label>
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
                 <input
                   type="number"
                   step="0.01"
                   value={formData.otherRevenue}
                   onChange={(e) => setFormData(prev => ({ ...prev, otherRevenue: e.target.value }))}
-                  className="w-full pl-8 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none text-lg"
+                  className="input-base pl-7"
                   placeholder="0.00"
                 />
               </div>
               <p className="text-xs text-gray-500 mt-1">Delivery, catering, misc. revenue</p>
             </div>
 
-            {/* Total Revenue Display */}
             {totalRevenue > 0 && (
-              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl p-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <div className="text-sm text-gray-600 mb-1">Total Revenue</div>
                 <div className="text-3xl font-bold text-green-600">${totalRevenue.toFixed(2)}</div>
               </div>
             )}
 
-            {/* Notes */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Notes (Optional)
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Notes (Optional)</label>
               <textarea
                 value={formData.notes}
                 onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none resize-none"
+                className="input-base resize-none"
                 rows="3"
                 placeholder="e.g., Special event, catering order, etc."
               />
             </div>
+          </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-2">
-              {revenueEditDate && dailyRevenue[revenueEditDate] && (
-                <button
-                  onClick={handleDelete}
-                  className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl font-medium transition-all"
-                >
-                  Delete
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  setShowRevenueModal(false);
-                  setRevenueEditDate(null);
-                }}
-                className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-semibold transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                className="flex-1 px-4 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-xl font-semibold transition-all shadow-lg"
-              >
-                Save
-              </button>
-            </div>
+          <div className="modal-footer">
+            {revenueEditDate && dailyRevenue[revenueEditDate] && (
+              <button onClick={handleDelete} className="btn-danger mr-auto">Delete</button>
+            )}
+            <button
+              onClick={() => { setShowRevenueModal(false); setRevenueEditDate(null); }}
+              className="btn-secondary"
+            >
+              Cancel
+            </button>
+            <button onClick={handleSave} className="btn-primary">Save</button>
           </div>
         </div>
       </div>
@@ -2996,7 +2966,7 @@ const RosterApp = () => {
                     title="List view"
                   >
                     <span className="flex items-center gap-2">
-                      📋 List
+                      List
                     </span>
                   </button>
                 </div>
@@ -3011,7 +2981,7 @@ const RosterApp = () => {
                       <button
                         key={s.id}
                         onClick={() => setSelectedStaffView(s.id)}
-                        className="bg-gradient-to-br from-blue-50 to-orange-50 hover:from-blue-100 hover:to-orange-100 border-2 border-gray-200 hover:border-blue-400 rounded-xl p-6 text-left transition-all shadow-sm hover:shadow-md"
+                        className="bg-white hover:bg-blue-50 border-2 border-gray-200 hover:border-blue-400 rounded-xl p-6 text-left transition-all shadow-sm hover:shadow-md"
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div>
@@ -3084,7 +3054,7 @@ const RosterApp = () => {
                             <td className="px-4 py-4 text-center">
                               <button
                                 onClick={() => setSelectedStaffView(s.id)}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-all"
+                                className="btn-primary text-sm py-2"
                               >
                                 View Schedule
                               </button>
@@ -3194,18 +3164,18 @@ const RosterApp = () => {
       <div className="p-6">
         <div className="max-w-5xl mx-auto">
           {/* Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-orange-500 rounded-2xl shadow-lg p-8 mb-6 text-white">
+          <div className="card p-8 mb-6">
             <button
               onClick={() => setSelectedStaffView(null)}
-              className="mb-4 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium transition-all"
+              className="mb-4 btn-ghost text-sm px-3 py-1.5"
             >
               ← Back to Staff List
             </button>
-            
+
             <div className="flex items-start justify-between">
               <div>
-                <h1 className="text-3xl font-bold mb-2">{selectedStaff.name}</h1>
-                <div className="flex gap-4 text-sm opacity-90">
+                <h1 className="text-2xl font-bold text-gray-900 mb-2">{selectedStaff.name}</h1>
+                <div className="flex gap-4 text-sm text-gray-500">
                   <span>{selectedStaff.employmentType}</span>
                   <span>•</span>
                   <span>Weekday: ${selectedStaff.hourlyRate}/hr</span>
@@ -3217,12 +3187,12 @@ const RosterApp = () => {
                   )}
                 </div>
               </div>
-              
-              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 text-center">
-                <div className="text-3xl font-bold">{weekStats.hours.toFixed(2)}</div>
-                <div className="text-sm opacity-90">Hours This Week</div>
-                <div className="text-lg font-semibold mt-2">${weekStats.cost.toFixed(0)}</div>
-                <div className="text-xs opacity-90">Est. Pay</div>
+
+              <div className="bg-blue-50 rounded-xl p-4 text-center border border-blue-200">
+                <div className="text-3xl font-bold text-blue-600">{weekStats.hours.toFixed(2)}</div>
+                <div className="text-sm text-gray-500">Hours This Week</div>
+                <div className="text-lg font-semibold text-gray-900 mt-2">${weekStats.cost.toFixed(0)}</div>
+                <div className="text-xs text-gray-500">Est. Pay</div>
               </div>
             </div>
           </div>
@@ -3272,7 +3242,7 @@ const RosterApp = () => {
                     dayShifts.length > 0 ? 'border-blue-200 hover:shadow-lg' : 'border-gray-200 opacity-60'
                   }`}
                 >
-                  <div className={`p-4 ${weekend ? 'bg-gradient-to-r from-orange-100 to-yellow-100' : 'bg-gradient-to-r from-blue-50 to-blue-100'}`}>
+                  <div className={`p-4 ${weekend ? 'bg-orange-50' : 'bg-blue-50'}`}>
                     <div className="flex items-center justify-between">
                       <div>
                         <h3 className="font-bold text-lg">
@@ -3374,18 +3344,18 @@ const RosterApp = () => {
                   navigator.clipboard.writeText(text);
                   toast.success('Schedule copied to clipboard!');
                 }}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                className="btn-primary"
               >
-                📋 Copy as Text
+                Copy as Text
               </button>
               <button
                 onClick={() => {
                   // Print-friendly view
                   window.print();
                 }}
-                className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
+                className="btn-secondary"
               >
-                🖨️ Print Schedule
+                Print Schedule
               </button>
             </div>
           </div>
@@ -3483,7 +3453,7 @@ const RosterApp = () => {
       <div className="p-6">
         <div className="bg-white rounded-xl shadow-lg border overflow-hidden">
           {/* Header */}
-          <div className="bg-gradient-to-r from-blue-50 to-orange-50 p-5 border-b flex flex-wrap items-center justify-between gap-4">
+          <div className="bg-gray-50 p-5 border-b flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-gray-900">Timesheet</h2>
               <p className="text-sm text-gray-600 mt-1">
@@ -3777,9 +3747,9 @@ const RosterApp = () => {
 
         {/* Alerts and Warnings */}
         {(insights.coverageGaps.length > 0 || insights.underStaffedSlots.length > 0 || insights.overStaffedSlots.length > 0) && (
-          <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-gray-100">
+          <div className="card p-6">
             <h3 className="text-lg font-bold mb-4 text-gray-800 flex items-center gap-2">
-              <span className="text-2xl">⚠️</span>
+              <AlertTriangle size={20} className="text-amber-500" />
               Coverage Alerts
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -3814,7 +3784,7 @@ const RosterApp = () => {
         {/* Cost Analysis */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Weekend vs Weekday */}
-          <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-gray-100">
+          <div className="card p-6">
             <h3 className="text-lg font-bold mb-4 text-gray-800">Weekend vs Weekday</h3>
             <div className="space-y-3">
               <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
@@ -3834,7 +3804,7 @@ const RosterApp = () => {
               </div>
 
               {weekStats.weekendCost > 0 && weekStats.weekdayCost > 0 && (
-                <div className="p-3 bg-gradient-to-r from-blue-50 to-orange-50 rounded-lg text-center border border-gray-200">
+                <div className="p-3 bg-gray-50 rounded-lg text-center border border-gray-200">
                   <div className="text-xs text-gray-600">Weekend premium</div>
                   <div className="text-xl font-bold text-orange-600">
                     +{((weekStats.weekendCost / (weekStats.weekendHours || 1) / (weekStats.weekdayCost / (weekStats.weekdayHours || 1)) - 1) * 100).toFixed(0)}%
@@ -3846,7 +3816,7 @@ const RosterApp = () => {
           </div>
 
           {/* Peak vs Off-Peak */}
-          <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-gray-100">
+          <div className="card p-6">
             <h3 className="text-lg font-bold mb-4 text-gray-800">Peak vs Off-Peak</h3>
             <div className="space-y-3">
               <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
@@ -3877,7 +3847,7 @@ const RosterApp = () => {
         </div>
 
         {/* Daily Breakdown with Chart */}
-        <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-gray-100">
+        <div className="card p-6">
           <h3 className="text-lg font-bold mb-4 text-gray-800">Daily Breakdown</h3>
           <div className="space-y-2">
             {weekStats.dailyBreakdown.map((day) => {
@@ -3896,8 +3866,8 @@ const RosterApp = () => {
                   <div className="w-24">
                     <div className="font-semibold text-sm text-gray-800 flex items-center gap-1">
                       {day.date.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase()}
-                      {isHighest && <span className="text-red-500">📈</span>}
-                      {isLowest && <span className="text-green-500">📉</span>}
+                      {isHighest && <TrendingUp size={14} className="text-red-500" />}
+                      {isLowest && <TrendingDown size={14} className="text-green-500" />}
                     </div>
                     <div className="text-xs text-gray-500">
                       {day.date.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}
@@ -3907,9 +3877,9 @@ const RosterApp = () => {
                     <div className="flex-1 bg-gray-200 rounded-full h-6 overflow-hidden">
                       <div 
                         className={`h-6 rounded-full flex items-center justify-end pr-2 text-xs font-bold text-white transition-all ${
-                          isHighest ? 'bg-gradient-to-r from-red-500 to-red-600' :
-                          isLowest ? 'bg-gradient-to-r from-green-500 to-green-600' :
-                          'bg-gradient-to-r from-blue-500 to-orange-500'
+                          isHighest ? 'bg-red-500' :
+                          isLowest ? 'bg-green-500' :
+                          'bg-blue-500'
                         }`}
                         style={{ width: `${Math.max(weekStats.totalCost > 0 ? (day.cost / weekStats.totalCost) * 100 : 0, 5)}%` }}
                       >
@@ -3939,13 +3909,13 @@ const RosterApp = () => {
         <div className="space-y-6">
           {/* Staff Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-xl p-5 shadow-lg border-2 border-gray-100">
+            <div className="card p-5">
               <div className="text-sm text-gray-600 mb-1">Most Expensive Staff</div>
               <div className="text-2xl font-bold text-gray-800">{sortedStaff[0]?.name || 'N/A'}</div>
               <div className="text-sm text-gray-500">${sortedStaff[0]?.cost.toFixed(0) || 0}</div>
             </div>
             
-            <div className="bg-white rounded-xl p-5 shadow-lg border-2 border-gray-100">
+            <div className="card p-5">
               <div className="text-sm text-gray-600 mb-1">Most Hours</div>
               <div className="text-2xl font-bold text-gray-800">
                 {[...sortedStaff].sort((a, b) => b.hours - a.hours)[0]?.name || 'N/A'}
@@ -3955,7 +3925,7 @@ const RosterApp = () => {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl p-5 shadow-lg border-2 border-gray-100">
+            <div className="card p-5">
               <div className="text-sm text-gray-600 mb-1">Average Cost/Staff</div>
               <div className="text-2xl font-bold text-gray-800">${avgStaffCost.toFixed(0)}</div>
               <div className="text-sm text-gray-500">{(weekStats.totalHours / sortedStaff.length).toFixed(2)}h avg</div>
@@ -3963,7 +3933,7 @@ const RosterApp = () => {
           </div>
 
           {/* Staff Utilization */}
-          <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-gray-100">
+          <div className="card p-6">
             <h3 className="text-lg font-bold mb-4 text-gray-800">Staff Utilization Rate</h3>
             <div className="space-y-3">
               {Object.values(insights.utilizationRate)
@@ -3978,10 +3948,10 @@ const RosterApp = () => {
                       <div className="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
                         <div 
                           className={`h-3 rounded-full transition-all ${
-                            util.rate > 75 ? 'bg-gradient-to-r from-red-500 to-red-600' :
-                            util.rate > 50 ? 'bg-gradient-to-r from-orange-500 to-orange-600' :
-                            util.rate > 25 ? 'bg-gradient-to-r from-blue-500 to-blue-600' :
-                            'bg-gradient-to-r from-green-500 to-green-600'
+                            util.rate > 75 ? 'bg-red-500' :
+                            util.rate > 50 ? 'bg-orange-500' :
+                            util.rate > 25 ? 'bg-blue-500' :
+                            'bg-green-500'
                           }`}
                           style={{ width: `${util.rate}%` }}
                         />
@@ -3991,10 +3961,10 @@ const RosterApp = () => {
                       </div>
                     </div>
                     <div className="mt-2 text-xs text-gray-500">
-                      {util.rate > 75 && '⚠️ High utilization - consider adding breaks'}
-                      {util.rate > 50 && util.rate <= 75 && '✅ Good utilization'}
-                      {util.rate > 25 && util.rate <= 50 && '📊 Moderate utilization'}
-                      {util.rate <= 25 && '💡 Low utilization - could schedule more hours'}
+                      {util.rate > 75 && 'High utilization - consider adding breaks'}
+                      {util.rate > 50 && util.rate <= 75 && 'Good utilization'}
+                      {util.rate > 25 && util.rate <= 50 && 'Moderate utilization'}
+                      {util.rate <= 25 && 'Low utilization - could schedule more hours'}
                     </div>
                   </div>
                 ))}
@@ -4002,7 +3972,7 @@ const RosterApp = () => {
           </div>
 
           {/* Staff Cost Breakdown */}
-          <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-gray-100">
+          <div className="card p-6">
             <h3 className="text-lg font-bold mb-4 text-gray-800">Staff Cost Breakdown</h3>
             <div className="space-y-2">
               {sortedStaff.map((staffData, idx) => (
@@ -4015,7 +3985,7 @@ const RosterApp = () => {
                   <div className="flex-1 flex items-center gap-2">
                     <div className="flex-1 bg-gray-200 rounded-full h-4 overflow-hidden">
                       <div 
-                        className="h-4 bg-gradient-to-r from-blue-600 to-blue-400 rounded-full"
+                        className="h-4 bg-blue-500 rounded-full"
                         style={{ width: `${weekStats.totalCost > 0 ? (staffData.cost / weekStats.totalCost) * 100 : 0}%` }}
                       />
                     </div>
@@ -4039,7 +4009,7 @@ const RosterApp = () => {
         <div className="space-y-6">
           {/* Role Summary */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-xl p-5 shadow-lg border-2 border-gray-100">
+            <div className="card p-5">
               <div className="text-sm text-gray-600 mb-1">Most Used Role</div>
               <div className="text-2xl font-bold text-gray-800 flex items-center gap-2">
                 {sortedRoles[0] && (
@@ -4057,7 +4027,7 @@ const RosterApp = () => {
               <div className="text-sm text-gray-500">{sortedRoles[0]?.hours.toFixed(2) || 0}h</div>
             </div>
             
-            <div className="bg-white rounded-xl p-5 shadow-lg border-2 border-gray-100">
+            <div className="card p-5">
               <div className="text-sm text-gray-600 mb-1">Most Expensive Role</div>
               <div className="text-2xl font-bold text-gray-800 flex items-center gap-2">
                 {[...sortedRoles].sort((a, b) => b.cost - a.cost)[0] && (
@@ -4075,7 +4045,7 @@ const RosterApp = () => {
               <div className="text-sm text-gray-500">${[...sortedRoles].sort((a, b) => b.cost - a.cost)[0]?.cost.toFixed(0) || 0}</div>
             </div>
 
-            <div className="bg-white rounded-xl p-5 shadow-lg border-2 border-gray-100">
+            <div className="card p-5">
               <div className="text-sm text-gray-600 mb-1">Active Roles</div>
               <div className="text-2xl font-bold text-gray-800">{sortedRoles.length}</div>
               <div className="text-sm text-gray-500">of {roles.length} total</div>
@@ -4300,47 +4270,49 @@ const RosterApp = () => {
         <div className="space-y-6">
           {/* Week Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-lg">
-              <div className="text-sm opacity-90 mb-1">Total Labor Cost</div>
-              <div className="text-3xl font-bold">${weekTotals.laborCost.toFixed(0)}</div>
-              <div className="text-xs opacity-75 mt-1">This week</div>
+            <div className="metric-card">
+              <div className="text-sm text-gray-500 mb-1">Total Labor Cost</div>
+              <div className="text-3xl font-bold text-gray-900">${weekTotals.laborCost.toFixed(0)}</div>
+              <div className="text-xs text-gray-400 mt-1">This week</div>
             </div>
 
-            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-5 text-white shadow-lg">
-              <div className="text-sm opacity-90 mb-1">Total Revenue</div>
-              <div className="text-3xl font-bold">${weekTotals.totalRevenue.toFixed(0)}</div>
-              <div className="text-xs opacity-75 mt-1">{weekTotals.daysWithRevenue} days tracked</div>
+            <div className="metric-card">
+              <div className="text-sm text-gray-500 mb-1">Total Revenue</div>
+              <div className="text-3xl font-bold text-green-600">${weekTotals.totalRevenue.toFixed(0)}</div>
+              <div className="text-xs text-gray-400 mt-1">{weekTotals.daysWithRevenue} days tracked</div>
             </div>
 
-            <div className={`rounded-xl p-5 shadow-lg ${
-              weekLaborPercentage === 0 
-                ? 'bg-gradient-to-br from-gray-400 to-gray-500 text-white'
-                : weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30)
-                ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white'
-                : weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30) + 10
-                ? 'bg-gradient-to-br from-orange-500 to-orange-600 text-white'
-                : 'bg-gradient-to-br from-red-500 to-red-600 text-white'
+            <div className={`metric-card ${
+              weekLaborPercentage === 0 ? '' :
+              weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30) ? 'border-green-200' :
+              weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30) + 10 ? 'border-orange-200' :
+              'border-red-200'
             }`}>
-              <div className="text-sm opacity-90 mb-1">Labor %</div>
-              <div className="text-3xl font-bold">
+              <div className="text-sm text-gray-500 mb-1">Labor %</div>
+              <div className={`text-3xl font-bold ${
+                weekLaborPercentage === 0 ? 'text-gray-400' :
+                weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30) ? 'text-green-600' :
+                weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30) + 10 ? 'text-orange-600' :
+                'text-red-600'
+              }`}>
                 {weekLaborPercentage > 0 ? `${weekLaborPercentage.toFixed(2)}%` : 'N/A'}
               </div>
-              <div className="text-xs opacity-75 mt-1">
+              <div className="text-xs text-gray-400 mt-1">
                 {weekLaborPercentage > 0 ? 'of revenue' : 'Add revenue data'}
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-5 text-white shadow-lg">
-              <div className="text-sm opacity-90 mb-1">Target Labor %</div>
-              <div className="text-3xl font-bold">{businessSettings.targetLaborPercentage || 30}%</div>
-              <div className="text-xs opacity-75 mt-1">Ideal target</div>
+            <div className="metric-card">
+              <div className="text-sm text-gray-500 mb-1">Target Labor %</div>
+              <div className="text-3xl font-bold text-purple-600">{businessSettings.targetLaborPercentage || 30}%</div>
+              <div className="text-xs text-gray-400 mt-1">Ideal target</div>
             </div>
           </div>
 
           {/* Info Card */}
           <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
             <div className="flex items-start gap-3">
-              <div className="text-2xl">💡</div>
+              <Lightbulb size={20} className="text-blue-600 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <h4 className="font-semibold text-blue-900 mb-1">Managing Labor Costs</h4>
                 <p className="text-sm text-blue-700">
@@ -4351,10 +4323,10 @@ const RosterApp = () => {
           </div>
 
           {/* Daily Breakdown */}
-          <div className="bg-white rounded-xl shadow-lg border-2 border-gray-100 overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-600 to-green-600 px-6 py-4">
-              <h3 className="text-xl font-bold text-white">Daily Revenue & Labor Tracking</h3>
-              <p className="text-blue-50 text-sm mt-1">Track labor costs as a percentage of revenue</p>
+          <div className="card overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-gray-900">Daily Revenue & Labor Tracking</h3>
+              <p className="text-sm text-gray-500 mt-1">Track labor costs as a percentage of revenue</p>
             </div>
 
             <div className="overflow-x-auto">
@@ -4413,7 +4385,7 @@ const RosterApp = () => {
                     );
                   })}
                 </tbody>
-                <tfoot className="bg-gradient-to-r from-blue-50 to-green-50 border-t-2 border-gray-300">
+                <tfoot className="bg-gray-50 border-t-2 border-gray-300">
                   <tr className="font-bold">
                     <td className="px-4 py-4 text-gray-800">Week Total</td>
                     <td className="px-4 py-4 text-right text-gray-600">-</td>
@@ -4443,7 +4415,7 @@ const RosterApp = () => {
           </div>
 
           {/* Labor Percentage Guide */}
-          <div className="bg-white rounded-xl shadow-lg border-2 border-gray-100 p-6">
+          <div className="card p-6">
             <h3 className="text-lg font-bold mb-4 text-gray-800">Understanding Labor Percentage</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-3">
@@ -4489,32 +4461,32 @@ const RosterApp = () => {
         <div className="space-y-6">
           {/* Coverage Summary */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-5 text-white shadow-lg">
-              <div className="text-sm opacity-90 mb-1">Critical Gaps</div>
-              <div className="text-3xl font-bold">{insights.coverageGaps.length}</div>
-              <div className="text-xs opacity-75">No staff scheduled</div>
-              <div className="text-xs opacity-90 mt-1">During operational hours</div>
-            </div>
-            
-            <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl p-5 text-white shadow-lg">
-              <div className="text-sm opacity-90 mb-1">Understaffed</div>
-              <div className="text-3xl font-bold">{insights.underStaffedSlots.length}</div>
-              <div className="text-xs opacity-75">Below minimum ({businessSettings.minStaffCoverage})</div>
-              <div className="text-xs opacity-90 mt-1">Peak min: {businessSettings.minPeakStaffCoverage}</div>
+            <div className="metric-card border-red-200">
+              <div className="text-sm text-gray-500 mb-1">Critical Gaps</div>
+              <div className="text-3xl font-bold text-red-600">{insights.coverageGaps.length}</div>
+              <div className="text-xs text-gray-400">No staff scheduled</div>
+              <div className="text-xs text-gray-400 mt-1">During operational hours</div>
             </div>
 
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-lg">
-              <div className="text-sm opacity-90 mb-1">Well Covered</div>
-              <div className="text-3xl font-bold">
+            <div className="metric-card border-orange-200">
+              <div className="text-sm text-gray-500 mb-1">Understaffed</div>
+              <div className="text-3xl font-bold text-orange-600">{insights.underStaffedSlots.length}</div>
+              <div className="text-xs text-gray-400">Below minimum ({businessSettings.minStaffCoverage})</div>
+              <div className="text-xs text-gray-400 mt-1">Peak min: {businessSettings.minPeakStaffCoverage}</div>
+            </div>
+
+            <div className="metric-card border-blue-200">
+              <div className="text-sm text-gray-500 mb-1">Well Covered</div>
+              <div className="text-3xl font-bold text-blue-600">
                 {dates.length * timeSlots.length - insights.coverageGaps.length - insights.underStaffedSlots.length}
               </div>
-              <div className="text-xs opacity-75">Meets minimum coverage</div>
-              <div className="text-xs opacity-90 mt-1">All operational slots</div>
+              <div className="text-xs text-gray-400">Meets minimum coverage</div>
+              <div className="text-xs text-gray-400 mt-1">All operational slots</div>
             </div>
           </div>
 
           {/* Peak Hour Coverage */}
-          <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-gray-100">
+          <div className="card p-6">
             <h3 className="text-lg font-bold mb-4 text-gray-800 flex items-center gap-2">
               <span className="bg-orange-100 text-orange-600 px-3 py-1 rounded-lg text-sm font-bold">PEAK</span>
               Peak Hour Coverage (12pm - 2pm)
@@ -4582,9 +4554,9 @@ const RosterApp = () => {
 
           {/* Critical Gaps Details */}
           {insights.coverageGaps.length > 0 && (
-            <div className="bg-white rounded-xl p-6 shadow-lg border-2 border-red-200">
+            <div className="card p-6 border-red-200">
               <h3 className="text-lg font-bold mb-4 text-red-800 flex items-center gap-2">
-                <span className="text-2xl">🚨</span>
+                <CircleAlert size={20} className="text-red-600" />
                 Critical Coverage Gaps
               </h3>
               <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -4622,7 +4594,7 @@ const RosterApp = () => {
     return (
       <div className="p-6">
         {/* Tab Navigation */}
-        <div className="bg-white rounded-xl shadow-lg border-2 border-gray-100 p-2 mb-6 flex gap-2 overflow-x-auto">
+        <div className="card p-2 mb-6 flex gap-2 overflow-x-auto">
           <button
             onClick={() => setAnalyticsTab('overview')}
             className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
@@ -4631,7 +4603,7 @@ const RosterApp = () => {
                 : 'tab-inactive'
             }`}
           >
-            📊 Overview
+            <BarChart3 size={14} className="inline mr-1" /> Overview
           </button>
           <button
             onClick={() => setAnalyticsTab('staff')}
@@ -4641,7 +4613,7 @@ const RosterApp = () => {
                 : 'tab-inactive'
             }`}
           >
-            👥 Staff
+            <Users size={14} className="inline mr-1" /> Staff
           </button>
           <button
             onClick={() => setAnalyticsTab('roles')}
@@ -4651,7 +4623,7 @@ const RosterApp = () => {
                 : 'tab-inactive'
             }`}
           >
-            🎭 Roles
+            <Theater size={14} className="inline mr-1" /> Roles
           </button>
           <button
             onClick={() => setAnalyticsTab('coverage')}
@@ -4661,7 +4633,7 @@ const RosterApp = () => {
                 : 'tab-inactive'
             }`}
           >
-            📍 Coverage
+            <MapPin size={14} className="inline mr-1" /> Coverage
           </button>
           <button
             onClick={() => setAnalyticsTab('revenue')}
@@ -4671,7 +4643,7 @@ const RosterApp = () => {
                 : 'tab-inactive'
             }`}
           >
-            💰 Revenue
+            <DollarSign size={14} className="inline mr-1" /> Revenue
           </button>
         </div>
 
@@ -4713,6 +4685,31 @@ const RosterApp = () => {
           <div className="modal-footer">
             <button onClick={() => { setShowClearModal(false); setClearTarget(null); }} className="btn-secondary">Cancel</button>
             <button onClick={confirmClear} className="btn-danger">Clear Shifts</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const ConfirmDialog = () => {
+    if (!confirmDialog) return null;
+    return (
+      <div className="modal-overlay">
+        <div className="modal-container max-w-sm">
+          <div className="modal-header">
+            <h2 className="text-lg font-semibold text-gray-900">{confirmDialog.title}</h2>
+            <button onClick={() => setConfirmDialog(null)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+              <X size={18} className="text-gray-400" />
+            </button>
+          </div>
+          <div className="modal-body">
+            <p className="text-sm text-gray-600">{confirmDialog.message}</p>
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => setConfirmDialog(null)} className="btn-secondary">Cancel</button>
+            <button onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }} className={confirmDialog.danger ? 'btn-danger' : 'btn-primary'}>
+              {confirmDialog.confirmLabel || 'Confirm'}
+            </button>
           </div>
         </div>
       </div>
@@ -4992,7 +4989,7 @@ Key things to verify after rebuild:
 
             {selectedStaff && (
               <div>
-                <div className="bg-gradient-to-br from-blue-50 to-orange-50 rounded-2xl p-6 mb-6 border-2 border-blue-100">
+                <div className="bg-blue-50 rounded-2xl p-6 mb-6 border border-blue-200">
                   <div className="flex justify-between items-center mb-4">
                     <div>
                       <div className="text-sm font-medium text-gray-600 mb-1">Viewing schedule for</div>
@@ -5003,7 +5000,7 @@ Key things to verify after rebuild:
                     </div>
                     <div className="text-right">
                       <div className="text-sm font-medium text-gray-600 mb-1">Total Hours</div>
-                      <div className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-orange-500 bg-clip-text text-transparent">
+                      <div className="text-4xl font-bold text-blue-600">
                         {totalHours.toFixed(2)}h
                       </div>
                     </div>
@@ -5014,7 +5011,7 @@ Key things to verify after rebuild:
                     className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl font-semibold text-lg transition-all shadow-lg ${
                       copiedStaffId === selectedStaffId 
                         ? 'bg-green-500 text-white' 
-                        : 'bg-gradient-to-r from-blue-600 to-orange-500 hover:from-blue-500 hover:to-orange-400 text-white'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
                     }`}
                   >
                     <Clipboard size={20} />
@@ -5090,7 +5087,7 @@ Key things to verify after rebuild:
 
                 <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-200">
                   <div className="flex items-start gap-3">
-                    <div className="text-blue-600 mt-0.5">💡</div>
+                    <Lightbulb size={18} className="text-blue-600 mt-0.5 shrink-0" />
                     <div>
                       <div className="font-semibold text-blue-900 mb-1">How to use</div>
                       <div className="text-sm text-blue-800">
@@ -5472,6 +5469,7 @@ Key things to verify after rebuild:
       <TutorialOverlay />
       <HelpModal />
       <ContextMenu />
+      <ConfirmDialog />
       </div>
     </div>
   );
