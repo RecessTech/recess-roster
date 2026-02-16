@@ -649,14 +649,13 @@ const RosterApp = () => {
       return;
     }
 
-    // Calculate keys from the drag range
+    // Calculate keys from the drag range — paint exactly the rows dragged over
     const slots = timeSlotsRef.current;
     const minIdx = Math.min(drag.startRowIdx, drag.currentRowIdx);
     const maxIdx = Math.max(drag.startRowIdx, drag.currentRowIdx);
     const keys = new Set();
     for (let i = minIdx; i <= maxIdx; i++) {
-      const slotsToFill = getAllSubIntervals(slots[i]);
-      slotsToFill.forEach(slot => keys.add(getScheduleKey(drag.dateKey, drag.staffId, slot)));
+      keys.add(getScheduleKey(drag.dateKey, drag.staffId, slots[i]));
     }
 
     if (keys.size === 0) return;
@@ -5533,7 +5532,6 @@ Key things to verify after rebuild:
                 borderWidth: '2px',
                 borderStyle: 'solid',
                 borderRadius: '2px',
-                transition: 'top 0.03s linear, height 0.03s linear',
               }}
             />
           </div>
