@@ -26,8 +26,10 @@ const RosterApp = () => {
   const [startHour, setStartHour] = useState(6);
   const [endHour, setEndHour] = useState(17);
   const [showTimeSettings, setShowTimeSettings] = useState(false);
-  const [pendingPaint, setPendingPaint] = useState(null); // { keys: Set, role, isEraser }
-  const dragRef = useRef({ active: false, startCell: null, cellCount: 0, staffId: null, dateKey: null });
+  const dragRef = useRef({ active: false, startRowIdx: 0, currentRowIdx: 0, cellCount: 0, staffId: null, dateKey: null, startCell: null, anchorTop: 0, anchorLeft: 0, isEraser: false, role: null });
+  const overlayRef = useRef(null);
+  const containerRef = useRef(null);
+  const timeSlotsRef = useRef([]);
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -505,6 +507,7 @@ const RosterApp = () => {
   };
 
   const timeSlots = generateTimeSlots();
+  timeSlotsRef.current = timeSlots;
   const rowHeight = { 1: 12, 2: 24, 3: 36 }[zoomLevel] || 24;
 
   const generateDates = () => {
@@ -532,7 +535,7 @@ const RosterApp = () => {
   };
   const getScheduleKey = (dateKey, staffId, timeSlot) => `${dateKey}|${staffId}|${timeSlot}`;
 
-  const handleMouseDown = (e, dateKey, staffId, timeSlot) => {
+  const handleMouseDown = (e, dateKey, staffId, timeSlot, rowIdx) => {
     // Template mode: apply template instead of painting
     if (templateMode && selectedTemplate) {
       applyTemplate(selectedTemplate, dateKey, staffId);
@@ -544,32 +547,48 @@ const RosterApp = () => {
     // Prevent text selection while painting
     e.preventDefault();
 
-    // Start tracking drag — don't paint yet
     const isEraser = selectedRole.id === 'eraser';
-    const slotsToFill = getAllSubIntervals(timeSlot);
-    const initialKeys = new Set(slotsToFill.map(slot => getScheduleKey(dateKey, staffId, slot)));
+
+    // Calculate cell position in content-space for overlay
+    const container = containerRef.current;
+    const containerRect = container.getBoundingClientRect();
+    const cellRect = e.currentTarget.getBoundingClientRect();
+    const cellTop = cellRect.top - containerRect.top + container.scrollTop;
+    const cellLeft = cellRect.left - containerRect.left + container.scrollLeft;
 
     dragRef.current = {
       active: true,
-      startCell: timeSlot,
+      startRowIdx: rowIdx,
+      currentRowIdx: rowIdx,
       cellCount: 1,
       staffId,
       dateKey,
+      startCell: timeSlot,
+      anchorTop: cellTop,
+      anchorLeft: cellLeft,
+      isEraser,
+      role: isEraser ? null : { roleId: selectedRole.id, roleCode: selectedRole.code, roleColor: selectedRole.color },
     };
 
-    setPendingPaint({
-      keys: initialKeys,
-      role: isEraser ? null : { roleId: selectedRole.id, roleCode: selectedRole.code, roleColor: selectedRole.color },
-      isEraser,
-    });
+    // Position overlay directly via DOM (no React state update)
+    const overlay = overlayRef.current;
+    if (overlay) {
+      overlay.style.display = 'block';
+      overlay.style.top = `${cellTop}px`;
+      overlay.style.left = `${cellLeft}px`;
+      overlay.style.width = `${columnWidth}px`;
+      overlay.style.height = `${rowHeight}px`;
+      overlay.style.backgroundColor = isEraser ? 'rgba(239, 68, 68, 0.3)' : (selectedRole.color + '80');
+      overlay.style.borderColor = isEraser ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255,255,255,0.6)';
+    }
   };
 
   const handleRightClick = (e, dateKey, staffId, timeSlot) => {
     e.preventDefault();
 
     // Cancel any pending paint on right-click
-    dragRef.current = { active: false, startCell: null, cellCount: 0, staffId: null, dateKey: null };
-    setPendingPaint(null);
+    dragRef.current = { active: false, startRowIdx: 0, currentRowIdx: 0, cellCount: 0, staffId: null, dateKey: null, startCell: null, anchorTop: 0, anchorLeft: 0, isEraser: false, role: null };
+    if (overlayRef.current) overlayRef.current.style.display = 'none';
 
     const key = getScheduleKey(dateKey, staffId, timeSlot);
     const hasShift = !!schedule[key];
@@ -588,59 +607,74 @@ const RosterApp = () => {
     });
   };
 
-  const handleMouseEnter = (dateKey, staffId, timeSlot) => {
-    if (!dragRef.current.active || !selectedRole) return;
+  const handleMouseEnter = (dateKey, staffId, timeSlot, rowIdx) => {
+    if (!dragRef.current.active) return;
     // Only allow dragging within the same staff column and date
     if (staffId !== dragRef.current.staffId || dateKey !== dragRef.current.dateKey) return;
 
+    dragRef.current.currentRowIdx = rowIdx;
     dragRef.current.cellCount += 1;
 
-    const slotsToFill = getAllSubIntervals(timeSlot);
-    setPendingPaint(prev => {
-      if (!prev) return prev;
-      const newKeys = new Set(prev.keys);
-      slotsToFill.forEach(slot => newKeys.add(getScheduleKey(dateKey, staffId, slot)));
-      return { ...prev, keys: newKeys };
-    });
+    // Update overlay position directly via DOM (no React state update = no re-render)
+    const minIdx = Math.min(dragRef.current.startRowIdx, rowIdx);
+    const topOffset = (minIdx - dragRef.current.startRowIdx) * rowHeight;
+    const rowSpan = Math.abs(rowIdx - dragRef.current.startRowIdx) + 1;
+
+    const overlay = overlayRef.current;
+    if (overlay) {
+      overlay.style.top = `${dragRef.current.anchorTop + topOffset}px`;
+      overlay.style.height = `${rowSpan * rowHeight}px`;
+    }
   };
 
   // Commit pending paint to schedule (called on mouseUp)
   const commitPendingPaint = useCallback(() => {
     if (!dragRef.current.active) return;
     const drag = { ...dragRef.current };
-    dragRef.current = { active: false, startCell: null, cellCount: 0, staffId: null, dateKey: null };
+    dragRef.current = { active: false, startRowIdx: 0, currentRowIdx: 0, cellCount: 0, staffId: null, dateKey: null, startCell: null, anchorTop: 0, anchorLeft: 0, isEraser: false, role: null };
 
-    setPendingPaint(pending => {
-      if (!pending || pending.keys.size === 0) return null;
+    // Hide overlay
+    if (overlayRef.current) {
+      overlayRef.current.style.display = 'none';
+    }
 
-      // Single click (no drag) → open QuickFill instead of painting one cell
-      if (drag.cellCount === 1 && !pending.isEraser && selectedRole && selectedRole.id !== 'eraser') {
-        setQuickFillData({
-          dateKey: drag.dateKey,
-          staffId: drag.staffId,
-          startTime: drag.startCell,
+    // Single click (no drag) → open QuickFill instead of painting one cell
+    if (drag.cellCount === 1 && !drag.isEraser && selectedRole && selectedRole.id !== 'eraser') {
+      setQuickFillData({
+        dateKey: drag.dateKey,
+        staffId: drag.staffId,
+        startTime: drag.startCell,
+      });
+      setShowQuickFillModal(true);
+      return;
+    }
+
+    // Calculate keys from the drag range
+    const slots = timeSlotsRef.current;
+    const minIdx = Math.min(drag.startRowIdx, drag.currentRowIdx);
+    const maxIdx = Math.max(drag.startRowIdx, drag.currentRowIdx);
+    const keys = new Set();
+    for (let i = minIdx; i <= maxIdx; i++) {
+      const slotsToFill = getAllSubIntervals(slots[i]);
+      slotsToFill.forEach(slot => keys.add(getScheduleKey(drag.dateKey, drag.staffId, slot)));
+    }
+
+    if (keys.size === 0) return;
+
+    // Commit the paint
+    setSchedule(prevSchedule => {
+      saveToHistory(prevSchedule);
+      const newSchedule = { ...prevSchedule };
+
+      if (drag.isEraser) {
+        keys.forEach(key => { delete newSchedule[key]; });
+      } else {
+        keys.forEach(key => {
+          newSchedule[key] = { ...drag.role };
         });
-        setShowQuickFillModal(true);
-        return null;
       }
 
-      // Commit the paint (drag of 2+ cells, or eraser)
-      setSchedule(prevSchedule => {
-        saveToHistory(prevSchedule);
-        const newSchedule = { ...prevSchedule };
-
-        if (pending.isEraser) {
-          pending.keys.forEach(key => { delete newSchedule[key]; });
-        } else {
-          pending.keys.forEach(key => {
-            newSchedule[key] = { ...pending.role };
-          });
-        }
-
-        return newSchedule;
-      });
-
-      return null;
+      return newSchedule;
     });
   }, [selectedRole, saveToHistory]);
 
@@ -650,8 +684,8 @@ const RosterApp = () => {
     const handleKeyDown = (e) => {
       // Escape cancels pending paint
       if (e.key === 'Escape') {
-        dragRef.current = { active: false, startCell: null, cellCount: 0, staffId: null, dateKey: null };
-        setPendingPaint(null);
+        dragRef.current = { active: false, startRowIdx: 0, currentRowIdx: 0, cellCount: 0, staffId: null, dateKey: null, startCell: null, anchorTop: 0, anchorLeft: 0, isEraser: false, role: null };
+        if (overlayRef.current) overlayRef.current.style.display = 'none';
       }
       // Ctrl+Z or Cmd+Z for undo
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
@@ -5391,8 +5425,8 @@ Key things to verify after rebuild:
         )}
 
         {activeStaff.length > 0 && (
-          <div className="card overflow-auto" style={{ maxHeight: 'calc(100vh - 340px)' }}>
-            <table className="border-collapse table-fixed" style={{ width: `${100 + (orderedStaff.length * dates.length * columnWidth)}px`, userSelect: pendingPaint ? 'none' : 'auto' }}>
+          <div ref={containerRef} className="card overflow-auto relative" style={{ maxHeight: 'calc(100vh - 340px)' }}>
+            <table className="border-collapse table-fixed" style={{ width: `${100 + (orderedStaff.length * dates.length * columnWidth)}px`, userSelect: 'none' }}>
               <thead className="sticky top-0 z-30 bg-white">
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="border-r border-gray-200 p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-40 w-20">Time</th>
@@ -5431,7 +5465,7 @@ Key things to verify after rebuild:
                 </tr>
               </thead>
               <tbody>
-                {timeSlots.map(t => {
+                {timeSlots.map((t, rowIdx) => {
                   const isPeakHour = t >= '12:00' && t < '14:00';
                   return (
                     <tr key={t} className={`border-b border-gray-50 ${isPeakHour ? 'bg-amber-50/30' : ''}`}>
@@ -5447,31 +5481,16 @@ Key things to verify after rebuild:
                           {orderedStaff.map((s, si) => {
                             const k = getScheduleKey(dk, s.id, t);
                             const sh = schedule[k];
-                            const isPending = pendingPaint?.keys.has(k);
-                            const previewColor = isPending
-                              ? (pendingPaint.isEraser ? null : pendingPaint.role?.roleColor)
-                              : null;
-                            const showAsErased = isPending && pendingPaint.isEraser && sh;
-                            const bgColor = showAsErased
-                              ? 'transparent'
-                              : (previewColor || (sh ? sh.roleColor : 'transparent'));
                             return (
                               <td
                                 key={k}
                                 className={`border-r border-gray-50 p-0 relative ${selectedRole ? (selectedRole.id === 'eraser' ? 'cursor-cell' : 'cursor-crosshair') : 'cursor-pointer'} ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`}
-                                onMouseDown={(e) => handleMouseDown(e, dk, s.id, t)}
-                                onMouseEnter={() => handleMouseEnter(dk, s.id, t)}
+                                onMouseDown={(e) => handleMouseDown(e, dk, s.id, t, rowIdx)}
+                                onMouseEnter={() => handleMouseEnter(dk, s.id, t, rowIdx)}
                                 onContextMenu={(e) => handleRightClick(e, dk, s.id, t)}
-                                style={{ backgroundColor: bgColor, height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
+                                style={{ backgroundColor: sh ? sh.roleColor : 'transparent', height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
                               >
-                                {isPending && !pendingPaint.isEraser && (
-                                  <div className="absolute inset-0 bg-white/30 border-2 border-white/50" />
-                                )}
-                                {isPending && pendingPaint.isEraser && sh && (
-                                  <div className="absolute inset-0 bg-red-200/50 border-2 border-red-300/50" />
-                                )}
-                                {(sh && !showAsErased) && <div className="relative flex items-center justify-center text-white font-semibold h-full" style={{ fontSize: zoomLevel === 1 ? '8px' : zoomLevel === 2 ? '10px' : '12px' }}>{sh.roleCode}</div>}
-                                {isPending && !pendingPaint.isEraser && !sh && <div className="relative flex items-center justify-center text-white/80 font-semibold h-full" style={{ fontSize: zoomLevel === 1 ? '8px' : zoomLevel === 2 ? '10px' : '12px' }}>{pendingPaint.role?.roleCode}</div>}
+                                {sh && <div className="relative flex items-center justify-center text-white font-semibold h-full" style={{ fontSize: zoomLevel === 1 ? '8px' : zoomLevel === 2 ? '10px' : '12px' }}>{sh.roleCode}</div>}
                               </td>
                             );
                           })}
@@ -5504,6 +5523,19 @@ Key things to verify after rebuild:
                 </tr>
               </tfoot>
             </table>
+            <div
+              ref={overlayRef}
+              style={{
+                display: 'none',
+                position: 'absolute',
+                pointerEvents: 'none',
+                zIndex: 5,
+                borderWidth: '2px',
+                borderStyle: 'solid',
+                borderRadius: '2px',
+                transition: 'top 0.03s linear, height 0.03s linear',
+              }}
+            />
           </div>
         )}
       </div>
