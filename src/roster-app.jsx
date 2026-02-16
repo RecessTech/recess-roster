@@ -26,7 +26,8 @@ const RosterApp = () => {
   const [startHour, setStartHour] = useState(6);
   const [endHour, setEndHour] = useState(17);
   const [showTimeSettings, setShowTimeSettings] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
+  const [pendingPaint, setPendingPaint] = useState(null); // { keys: Set, role, isEraser }
+  const dragRef = useRef({ active: false, startCell: null, cellCount: 0, staffId: null, dateKey: null });
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -374,21 +375,21 @@ const RosterApp = () => {
     return slots;
   };
 
-  const saveToHistory = (currentSchedule) => {
+  const saveToHistory = useCallback((currentSchedule) => {
     // Trim any future history and add new state
     const newHistory = scheduleHistory.slice(0, historyIndex + 1);
     newHistory.push(JSON.parse(JSON.stringify(currentSchedule)));
-    
+
     // Keep only last 50 states
     let newIndex = historyIndex + 1;
     if (newHistory.length > 50) {
       newHistory.shift();
       newIndex = 49; // Since we shifted, index should be at the last position
     }
-    
+
     setScheduleHistory(newHistory);
     setHistoryIndex(newIndex);
-  };
+  }, [scheduleHistory, historyIndex]);
 
   const undo = () => {
     if (historyIndex > 0) {
@@ -542,44 +543,44 @@ const RosterApp = () => {
 
     // Prevent text selection while painting
     e.preventDefault();
-    
-    setSchedule(prevSchedule => {
-      // Save current state to history BEFORE making changes
-      saveToHistory(prevSchedule);
-      
-      const newSchedule = { ...prevSchedule };
-      
-      if (selectedRole.id === 'eraser') {
-        // Eraser: only erase the specific clicked slot
-        const key = getScheduleKey(dateKey, staffId, timeSlot);
-        delete newSchedule[key];
-      } else {
-        // Paint: fill all sub-intervals within this time slot
-        const slotsToFill = getAllSubIntervals(timeSlot);
-        slotsToFill.forEach(slot => {
-          const key = getScheduleKey(dateKey, staffId, slot);
-          // Only paint if slot doesn't exist or is different role
-          if (!newSchedule[key] || newSchedule[key].roleId !== selectedRole.id) {
-            newSchedule[key] = { roleId: selectedRole.id, roleCode: selectedRole.code, roleColor: selectedRole.color };
-          }
-        });
-      }
-      
-      return newSchedule;
+
+    // Start tracking drag — don't paint yet
+    const isEraser = selectedRole.id === 'eraser';
+    const slotsToFill = getAllSubIntervals(timeSlot);
+    const initialKeys = new Set(slotsToFill.map(slot => getScheduleKey(dateKey, staffId, slot)));
+
+    dragRef.current = {
+      active: true,
+      startCell: timeSlot,
+      cellCount: 1,
+      staffId,
+      dateKey,
+    };
+
+    setPendingPaint({
+      keys: initialKeys,
+      role: isEraser ? null : { roleId: selectedRole.id, roleCode: selectedRole.code, roleColor: selectedRole.color },
+      isEraser,
     });
-    
-    setIsDragging(true);
   };
 
   const handleRightClick = (e, dateKey, staffId, timeSlot) => {
     e.preventDefault();
-    
+
+    // Cancel any pending paint on right-click
+    dragRef.current = { active: false, startCell: null, cellCount: 0, staffId: null, dateKey: null };
+    setPendingPaint(null);
+
     const key = getScheduleKey(dateKey, staffId, timeSlot);
     const hasShift = !!schedule[key];
-    
+
+    // Clamp context menu to viewport
+    const x = Math.min(e.clientX, window.innerWidth - 200);
+    const y = Math.min(e.clientY, window.innerHeight - 200);
+
     setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
+      x,
+      y,
       dateKey,
       staffId,
       timeSlot,
@@ -588,32 +589,70 @@ const RosterApp = () => {
   };
 
   const handleMouseEnter = (dateKey, staffId, timeSlot) => {
-    if (!isDragging || !selectedRole) return;
+    if (!dragRef.current.active || !selectedRole) return;
+    // Only allow dragging within the same staff column and date
+    if (staffId !== dragRef.current.staffId || dateKey !== dragRef.current.dateKey) return;
 
-    setSchedule(prevSchedule => {
-      const newSchedule = { ...prevSchedule };
+    dragRef.current.cellCount += 1;
 
-      if (selectedRole.id === 'eraser') {
-        // Eraser: only erase the specific slot
-        const key = getScheduleKey(dateKey, staffId, timeSlot);
-        delete newSchedule[key];
-      } else {
-        // Paint: fill all sub-intervals within this time slot
-        const slotsToFill = getAllSubIntervals(timeSlot);
-        slotsToFill.forEach(slot => {
-          const key = getScheduleKey(dateKey, staffId, slot);
-          newSchedule[key] = { roleId: selectedRole.id, roleCode: selectedRole.code, roleColor: selectedRole.color };
-        });
-      }
-
-      return newSchedule;
+    const slotsToFill = getAllSubIntervals(timeSlot);
+    setPendingPaint(prev => {
+      if (!prev) return prev;
+      const newKeys = new Set(prev.keys);
+      slotsToFill.forEach(slot => newKeys.add(getScheduleKey(dateKey, staffId, slot)));
+      return { ...prev, keys: newKeys };
     });
   };
 
+  // Commit pending paint to schedule (called on mouseUp)
+  const commitPendingPaint = useCallback(() => {
+    if (!dragRef.current.active) return;
+    const drag = { ...dragRef.current };
+    dragRef.current = { active: false, startCell: null, cellCount: 0, staffId: null, dateKey: null };
+
+    setPendingPaint(pending => {
+      if (!pending || pending.keys.size === 0) return null;
+
+      // Single click (no drag) → open QuickFill instead of painting one cell
+      if (drag.cellCount === 1 && !pending.isEraser && selectedRole && selectedRole.id !== 'eraser') {
+        setQuickFillData({
+          dateKey: drag.dateKey,
+          staffId: drag.staffId,
+          startTime: drag.startCell,
+        });
+        setShowQuickFillModal(true);
+        return null;
+      }
+
+      // Commit the paint (drag of 2+ cells, or eraser)
+      setSchedule(prevSchedule => {
+        saveToHistory(prevSchedule);
+        const newSchedule = { ...prevSchedule };
+
+        if (pending.isEraser) {
+          pending.keys.forEach(key => { delete newSchedule[key]; });
+        } else {
+          pending.keys.forEach(key => {
+            newSchedule[key] = { ...pending.role };
+          });
+        }
+
+        return newSchedule;
+      });
+
+      return null;
+    });
+  }, [selectedRole, saveToHistory]);
+
   useEffect(() => {
-    const handleMouseUp = () => setIsDragging(false);
+    const handleMouseUp = () => commitPendingPaint();
     const handleClick = () => setContextMenu(null);
     const handleKeyDown = (e) => {
+      // Escape cancels pending paint
+      if (e.key === 'Escape') {
+        dragRef.current = { active: false, startCell: null, cellCount: 0, staffId: null, dateKey: null };
+        setPendingPaint(null);
+      }
       // Ctrl+Z or Cmd+Z for undo
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
@@ -625,7 +664,7 @@ const RosterApp = () => {
         redo();
       }
     };
-    
+
     document.addEventListener('mouseup', handleMouseUp);
     document.addEventListener('click', handleClick);
     document.addEventListener('keydown', handleKeyDown);
@@ -635,7 +674,7 @@ const RosterApp = () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyIndex, scheduleHistory]);
+  }, [commitPendingPaint, historyIndex, scheduleHistory]);
 
   const calculateStaffDayStats = (staffId, dateKey) => {
     const staffMember = staff.find(s => s.id === staffId);
@@ -5353,7 +5392,7 @@ Key things to verify after rebuild:
 
         {activeStaff.length > 0 && (
           <div className="card overflow-auto" style={{ maxHeight: 'calc(100vh - 340px)' }}>
-            <table className="border-collapse table-fixed" style={{ width: `${100 + (orderedStaff.length * dates.length * columnWidth)}px`, userSelect: isDragging ? 'none' : 'auto' }}>
+            <table className="border-collapse table-fixed" style={{ width: `${100 + (orderedStaff.length * dates.length * columnWidth)}px`, userSelect: pendingPaint ? 'none' : 'auto' }}>
               <thead className="sticky top-0 z-30 bg-white">
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="border-r border-gray-200 p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-40 w-20">Time</th>
@@ -5408,16 +5447,31 @@ Key things to verify after rebuild:
                           {orderedStaff.map((s, si) => {
                             const k = getScheduleKey(dk, s.id, t);
                             const sh = schedule[k];
+                            const isPending = pendingPaint?.keys.has(k);
+                            const previewColor = isPending
+                              ? (pendingPaint.isEraser ? null : pendingPaint.role?.roleColor)
+                              : null;
+                            const showAsErased = isPending && pendingPaint.isEraser && sh;
+                            const bgColor = showAsErased
+                              ? 'transparent'
+                              : (previewColor || (sh ? sh.roleColor : 'transparent'));
                             return (
                               <td
                                 key={k}
-                                className={`border-r border-gray-50 p-0 ${selectedRole ? (selectedRole.id === 'eraser' ? 'cursor-cell' : 'cursor-crosshair') : 'cursor-pointer'} ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`}
+                                className={`border-r border-gray-50 p-0 relative ${selectedRole ? (selectedRole.id === 'eraser' ? 'cursor-cell' : 'cursor-crosshair') : 'cursor-pointer'} ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`}
                                 onMouseDown={(e) => handleMouseDown(e, dk, s.id, t)}
                                 onMouseEnter={() => handleMouseEnter(dk, s.id, t)}
                                 onContextMenu={(e) => handleRightClick(e, dk, s.id, t)}
-                                style={{ backgroundColor: sh ? sh.roleColor : 'transparent', height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
+                                style={{ backgroundColor: bgColor, height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
                               >
-                                {sh && <div className="flex items-center justify-center text-white font-semibold h-full" style={{ fontSize: zoomLevel === 1 ? '8px' : zoomLevel === 2 ? '10px' : '12px' }}>{sh.roleCode}</div>}
+                                {isPending && !pendingPaint.isEraser && (
+                                  <div className="absolute inset-0 bg-white/30 border-2 border-white/50" />
+                                )}
+                                {isPending && pendingPaint.isEraser && sh && (
+                                  <div className="absolute inset-0 bg-red-200/50 border-2 border-red-300/50" />
+                                )}
+                                {(sh && !showAsErased) && <div className="relative flex items-center justify-center text-white font-semibold h-full" style={{ fontSize: zoomLevel === 1 ? '8px' : zoomLevel === 2 ? '10px' : '12px' }}>{sh.roleCode}</div>}
+                                {isPending && !pendingPaint.isEraser && !sh && <div className="relative flex items-center justify-center text-white/80 font-semibold h-full" style={{ fontSize: zoomLevel === 1 ? '8px' : zoomLevel === 2 ? '10px' : '12px' }}>{pendingPaint.role?.roleCode}</div>}
                               </td>
                             );
                           })}
