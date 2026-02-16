@@ -63,33 +63,56 @@ function getAvailableFilters(dataArrays) {
   };
 }
 
-// Apply filter to data array, returns sliced data
-function applyFilter(data, filter) {
+// Extract the week number from any period string
+function getWeekNum(period) {
+  const m = period?.match(/W(\d{1,2})/);
+  return m ? parseInt(m[1]) : null;
+}
+
+// Get all unique week numbers present in multiple data arrays
+function getAllWeekNumbers(dataArrays) {
+  const weeks = new Set();
+  for (const arr of dataArrays) {
+    for (const d of arr) {
+      const w = getWeekNum(d.period);
+      if (w != null) weeks.add(w);
+    }
+  }
+  return [...weeks].sort((a, b) => a - b);
+}
+
+// Apply filter + week exclusions to data array
+function applyFilter(data, filter, excludedWeeks) {
   if (!data || data.length === 0) return data;
 
-  if (filter.type === 'weeks') {
-    return data.slice(-filter.value);
-  }
+  let result = data;
 
-  if (filter.type === 'year') {
-    return data.filter(d => {
+  if (filter.type === 'weeks') {
+    result = result.slice(-filter.value);
+  } else if (filter.type === 'year') {
+    result = result.filter(d => {
       const p = parsePeriod(d.period);
       return p?.year === filter.value;
     });
-  }
-
-  if (filter.type === 'quarter') {
-    // filter.value = "Q1 2024"
+  } else if (filter.type === 'quarter') {
     const [q, y] = filter.value.split(' ');
     const qNum = parseInt(q.replace('Q', ''));
     const yNum = parseInt(y);
-    return data.filter(d => {
+    result = result.filter(d => {
       const p = parsePeriod(d.period);
       return p?.year === yNum && p?.quarter === qNum;
     });
   }
 
-  return data;
+  // Apply week exclusions
+  if (excludedWeeks && excludedWeeks.size > 0) {
+    result = result.filter(d => {
+      const w = getWeekNum(d.period);
+      return w == null || !excludedWeeks.has(w);
+    });
+  }
+
+  return result;
 }
 
 // --- FORMATTERS ---
@@ -171,6 +194,123 @@ function FilterBar({ filter, setFilter, availableFilters }) {
             )}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// --- WEEK EXCLUSION BAR ---
+function WeekExclusionBar({ excludedWeeks, setExcludedWeeks, allWeekNumbers }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const toggle = (w) => {
+    setExcludedWeeks(prev => {
+      const next = new Set(prev);
+      if (next.has(w)) next.delete(w);
+      else next.add(w);
+      return next;
+    });
+  };
+
+  const presets = [
+    { label: 'Holidays (W52, W1)', weeks: [52, 1] },
+  ];
+
+  const applyPreset = (weeks) => {
+    setExcludedWeeks(prev => {
+      const next = new Set(prev);
+      const allPresent = weeks.every(w => next.has(w));
+      if (allPresent) {
+        weeks.forEach(w => next.delete(w));
+      } else {
+        weeks.forEach(w => next.add(w));
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className="bg-white rounded-xl shadow-card p-4 animate-fade-in">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-surface-700">Exclude Weeks</h3>
+          {excludedWeeks.size > 0 && (
+            <span className="text-xs bg-red-100 text-red-700 font-medium px-2 py-0.5 rounded-full">
+              {excludedWeeks.size} excluded
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Presets */}
+          {presets.map((preset, i) => {
+            const allActive = preset.weeks.every(w => excludedWeeks.has(w));
+            return (
+              <button
+                key={i}
+                onClick={() => applyPreset(preset.weeks)}
+                className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                  allActive
+                    ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                    : 'bg-surface-100 text-surface-600 hover:bg-surface-200'
+                }`}
+              >
+                {allActive ? 'Include' : 'Exclude'} {preset.label}
+              </button>
+            );
+          })}
+          {excludedWeeks.size > 0 && (
+            <button
+              onClick={() => setExcludedWeeks(new Set())}
+              className="text-xs px-2.5 py-1 rounded-lg font-medium text-surface-500 hover:bg-surface-100 transition-colors"
+            >
+              Clear all
+            </button>
+          )}
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-xs px-2.5 py-1 rounded-lg font-medium text-surface-500 hover:bg-surface-100 transition-colors"
+          >
+            {expanded ? 'Collapse' : 'All weeks'}
+          </button>
+        </div>
+      </div>
+
+      {/* Active exclusions shown as chips */}
+      {excludedWeeks.size > 0 && !expanded && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {[...excludedWeeks].sort((a, b) => a - b).map(w => (
+            <button
+              key={w}
+              onClick={() => toggle(w)}
+              className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+            >
+              W{w}
+              <span className="text-red-400 ml-0.5">&times;</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Expanded: show all weeks as toggleable pills */}
+      {expanded && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {allWeekNumbers.map(w => {
+            const isExcluded = excludedWeeks.has(w);
+            return (
+              <button
+                key={w}
+                onClick={() => toggle(w)}
+                className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+                  isExcluded
+                    ? 'bg-red-100 text-red-700 hover:bg-red-200 line-through'
+                    : 'bg-surface-100 text-surface-600 hover:bg-surface-200'
+                }`}
+              >
+                W{w}
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -259,8 +399,8 @@ function lastVal(arr) {
 // ===========================
 // REVENUE TAB
 // ===========================
-function RevenueTab({ data, filter }) {
-  const f = useCallback((arr) => applyFilter(arr, filter), [filter]);
+function RevenueTab({ data, filter, excludedWeeks }) {
+  const f = useCallback((arr) => applyFilter(arr, filter, excludedWeeks), [filter, excludedWeeks]);
 
   const totalRev = useMemo(() => f(data.totalRevenue), [f, data.totalRevenue]);
   const aov = useMemo(() => f(data.aov), [f, data.aov]);
@@ -367,8 +507,8 @@ function RevenueTab({ data, filter }) {
 // ===========================
 // COSTS TAB
 // ===========================
-function CostsTab({ data, filter }) {
-  const f = useCallback((arr) => applyFilter(arr, filter), [filter]);
+function CostsTab({ data, filter, excludedWeeks }) {
+  const f = useCallback((arr) => applyFilter(arr, filter, excludedWeeks), [filter, excludedWeeks]);
 
   const totalCogs = useMemo(() => f(data.totalCogs), [f, data.totalCogs]);
   const cogsPct = useMemo(() => f(data.cogsPctRevenue), [f, data.cogsPctRevenue]);
@@ -517,15 +657,22 @@ function CostsTab({ data, filter }) {
 // ===========================
 // CUSTOMER TAB
 // ===========================
-function CustomerTab({ data, filter }) {
+function CustomerTab({ data, filter, excludedWeeks }) {
   // Customer data uses "W12" format without year — filter by weeks count only
   const f = useCallback((arr) => {
     if (!arr || arr.length === 0) return arr;
-    if (filter.type === 'weeks') return arr.slice(-filter.value);
-    // For year/quarter filters on customer data (no year info), show last 12 weeks as fallback
-    if (filter.type === 'year' || filter.type === 'quarter') return arr.slice(-12);
-    return arr;
-  }, [filter]);
+    let result = arr;
+    if (filter.type === 'weeks') result = result.slice(-filter.value);
+    else if (filter.type === 'year' || filter.type === 'quarter') result = result.slice(-12);
+    // Apply week exclusions
+    if (excludedWeeks && excludedWeeks.size > 0) {
+      result = result.filter(d => {
+        const w = getWeekNum(d.period);
+        return w == null || !excludedWeeks.has(w);
+      });
+    }
+    return result;
+  }, [filter, excludedWeeks]);
 
   const ig = useMemo(() => f(data.instagramFollowers), [f, data.instagramFollowers]);
   const tiktok = useMemo(() => f(data.tiktokFollowers), [f, data.tiktokFollowers]);
@@ -625,6 +772,7 @@ export default function BusinessDashboard({ onBack }) {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('revenue');
   const [filter, setFilter] = useState({ type: 'weeks', value: 12 });
+  const [excludedWeeks, setExcludedWeeks] = useState(new Set());
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -648,6 +796,15 @@ export default function BusinessDashboard({ onBack }) {
   const availableFilters = useMemo(() => {
     if (!data) return { years: [], quarters: [] };
     return getAvailableFilters([
+      data.revenue.totalRevenue,
+      data.costs.totalCogs,
+    ]);
+  }, [data]);
+
+  // All unique week numbers for the exclusion picker
+  const allWeekNumbers = useMemo(() => {
+    if (!data) return [];
+    return getAllWeekNumbers([
       data.revenue.totalRevenue,
       data.costs.totalCogs,
     ]);
@@ -727,10 +884,15 @@ export default function BusinessDashboard({ onBack }) {
       </div>
 
       {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {activeTab === 'revenue' && <RevenueTab data={data.revenue} filter={filter} />}
-        {activeTab === 'costs' && <CostsTab data={data.costs} filter={filter} />}
-        {activeTab === 'customer' && <CustomerTab data={data.customer} filter={filter} />}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+        <WeekExclusionBar
+          excludedWeeks={excludedWeeks}
+          setExcludedWeeks={setExcludedWeeks}
+          allWeekNumbers={allWeekNumbers}
+        />
+        {activeTab === 'revenue' && <RevenueTab data={data.revenue} filter={filter} excludedWeeks={excludedWeeks} />}
+        {activeTab === 'costs' && <CostsTab data={data.costs} filter={filter} excludedWeeks={excludedWeeks} />}
+        {activeTab === 'customer' && <CustomerTab data={data.customer} filter={filter} excludedWeeks={excludedWeeks} />}
       </div>
     </div>
   );
