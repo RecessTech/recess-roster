@@ -21,62 +21,85 @@ async function fetchSheetCsv(gid) {
   return data;
 }
 
-// Parse a value like "$6,677" or "423%" or "68.70%" into a number
+// Parse " $ 6,677 " or "423%" or "68.70%" or "$ (287)" (negative) into a number
 function parseNum(val) {
-  if (!val || val === '' || val === '-') return null;
-  const cleaned = val.replace(/[$,%\s]/g, '');
+  if (!val || val.trim() === '' || val.trim() === '-' || val.trim() === '$ -') return null;
+  // Handle parenthetical negatives like "$ (287)"
+  const isNeg = val.includes('(') && val.includes(')');
+  const cleaned = val.replace(/[$,%\s()]/g, '');
+  if (cleaned === '' || cleaned === '-') return null;
   const n = parseFloat(cleaned);
-  return isNaN(n) ? null : n;
+  if (isNaN(n)) return null;
+  return isNeg ? -n : n;
 }
 
-// Find the row index whose first cell matches (case-insensitive, partial match)
-function findRow(data, label) {
+// Find a row by EXACT trimmed match on column A
+function findRowExact(data, label) {
   return data.findIndex(row =>
-    row[0] && row[0].toLowerCase().includes(label.toLowerCase())
+    row[0] && row[0].trim() === label.trim()
   );
 }
 
-// Extract a metric row: returns array of {period, value} from columns 1..N
+// Extract a metric row by exact label match.
+// Returns array of {period, value} from columns 1..N, skipping CLOSED weeks and nulls.
 function extractMetricRow(data, label, headerRow) {
-  const idx = findRow(data, label);
+  const idx = findRowExact(data, label);
   if (idx === -1) return [];
   const row = data[idx];
   const headers = data[headerRow] || [];
   const result = [];
   for (let i = 1; i < row.length; i++) {
+    const period = (headers[i] || '').trim();
+    // Skip CLOSED periods
+    if (period.startsWith('CLOSED')) continue;
     const val = parseNum(row[i]);
     if (val !== null) {
-      result.push({ period: headers[i] || `Col${i}`, value: val });
+      result.push({ period, value: val });
     }
   }
   return result;
 }
 
+// Parse period string like "Q1-2024 M03 W12" into structured object
+export function parsePeriod(period) {
+  // Revenue format: "Q1-2024 M03 W12"
+  let match = period.match(/Q(\d)-(\d{4})\s+M(\d{2})\s+W(\d{1,2})/);
+  if (match) {
+    return { quarter: parseInt(match[1]), year: parseInt(match[2]), month: parseInt(match[3]), week: parseInt(match[4]) };
+  }
+  // Costs format: "Q1-2024 W12"
+  match = period.match(/Q(\d)-(\d{4})\s+W(\d{1,2})/);
+  if (match) {
+    return { quarter: parseInt(match[1]), year: parseInt(match[2]), week: parseInt(match[3]) };
+  }
+  // Customer format: just "W12"
+  match = period.match(/^W(\d{1,2})$/);
+  if (match) {
+    return { week: parseInt(match[1]) };
+  }
+  return null;
+}
+
 export async function fetchRevenueData() {
   const data = await fetchSheetCsv(SHEET_GIDS.revenue);
-
-  // Row 0 is typically the header row with period labels
   const headerIdx = 0;
-  const headers = data[headerIdx] || [];
-
-  // Build period labels from header row (skip first column which is the metric name)
-  const periods = headers.slice(1).filter(h => h && h.trim() !== '');
-
-  // Helper to extract a named row
   const getRow = (label) => extractMetricRow(data, label, headerIdx);
 
   return {
-    periods,
-    totalRevenue: getRow('Total Revenue'),
-    inStoreRevenue: getRow('In-Store'),
-    uberEatsRevenue: getRow('UberEats'),
-    cateringRevenue: getRow('Catering'),
+    totalRevenue: getRow('Revenue - Total'),
+    inStoreRevenue: getRow('Revenue - In-Store'),
+    uberEatsRevenue: getRow('Revenue - UberEats & DoorDash'),
+    cateringRevenue: getRow('Revenue - Catering / B2B'),
+    classpassRevenue: getRow('Revenue - Classpass / TGTG'),
+    avgDailyRevenue: getRow('Avg. In-Store Daily Rev.'),
+    avgRevenuePerHour: getRow('Avg. Revenue Per Hour'),
+    customers: getRow('Customers'),
     aov: getRow('AOV'),
     avgDailyCustomers: getRow('Avg. Daily Customers'),
-    avgDailyRevenue: getRow('Avg. Daily Rev'),
-    avgWeeklyRevenue: getRow('Avg. Weekly Revenue'),
-    foodPct: getRow('Food %'),
-    drinksPct: getRow('Drinks %'),
+    tradingHours: getRow('Trading Hours'),
+    foodPct: getRow('Food Share of Rev. %'),
+    drinksPct: getRow('Drinks Share of Rev. %'),
+    snacksPct: getRow('Snacks Share of Rev. %'),
     raw: data,
   };
 }
@@ -84,7 +107,6 @@ export async function fetchRevenueData() {
 export async function fetchCostsData() {
   const data = await fetchSheetCsv(SHEET_GIDS.costs);
   const headerIdx = 0;
-
   const getRow = (label) => extractMetricRow(data, label, headerIdx);
 
   return {
@@ -92,12 +114,12 @@ export async function fetchCostsData() {
     ordermentum: getRow('Ordermentum'),
     supermarket: getRow('Supermarket'),
     directSupply: getRow('Direct Supply'),
-    totalCogs: getRow('Total COGS'),
+    totalCogs: getRow('Total'),
     unitsSold: getRow('Units Sold'),
-    cogsPerUnit: getRow('Avg. COGS per Unit'),
+    cogsPerUnit: getRow('Average COGS per Unit'),
     cogsPctRevenue: getRow('COGS % of Revenue'),
-    totalLabour: getRow('Total Labour'),
-    labourPctRevenue: getRow('Labour % of Revenue'),
+    totalLabour: getRow('Total Labour Cost'),
+    labourPctRevenue: getRow('Labour % Of Revenue'),
     raw: data,
   };
 }
@@ -105,15 +127,15 @@ export async function fetchCostsData() {
 export async function fetchCustomerData() {
   const data = await fetchSheetCsv(SHEET_GIDS.customer);
   const headerIdx = 0;
-
   const getRow = (label) => extractMetricRow(data, label, headerIdx);
 
   return {
-    instagramFollowers: getRow('Instagram'),
-    tiktokFollowers: getRow('TikTok'),
-    loyaltyMembers: getRow('Loyalty'),
-    googleReviews: getRow('Google Review'),
-    googleRating: getRow('Average Google'),
+    instagramFollowers: getRow('Instagram Followers'),
+    facebookLikes: getRow('Facebook Page Likes'),
+    tiktokFollowers: getRow('TikTok Followers'),
+    loyaltyMembers: getRow('Loyalty Members'),
+    googleReviews: getRow('Google Reviews'),
+    googleRating: getRow('Average Google Rating'),
     raw: data,
   };
 }
