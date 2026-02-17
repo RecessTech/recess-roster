@@ -558,7 +558,101 @@ export const db = {
       }, {
         onConflict: 'staff_id,date'
       });
-    
+
     if (error) throw error;
-  }
+  },
+
+  // ── Packaging Items ─────────────────────────────────────────────────────────
+
+  async getPackagingItems(userId) {
+    const { data, error } = await supabase
+      .from('packaging_items')
+      .select('*')
+      .eq('user_id', userId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    return (data || []).map(row => ({
+      id: row.id,
+      name: row.name,
+      sku_code: row.sku_code || '',
+      unit: row.unit || 'units',
+      reorder_level: row.reorder_level || 0,
+      reorder_qty: row.reorder_qty || 0,
+      notes: row.notes || '',
+      color: row.color || '#6366f1',
+      sort_order: row.sort_order || 0,
+    }));
+  },
+
+  async createPackagingItem(userId, item) {
+    const { data, error } = await supabase
+      .from('packaging_items')
+      .insert([{ ...item, user_id: userId }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updatePackagingItem(itemId, item) {
+    const { data, error } = await supabase
+      .from('packaging_items')
+      .update({ ...item, updated_at: new Date().toISOString() })
+      .eq('id', itemId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deletePackagingItem(itemId) {
+    const { error } = await supabase
+      .from('packaging_items')
+      .delete()
+      .eq('id', itemId);
+    if (error) throw error;
+  },
+
+  // ── Packaging Inventory Events (stocktakes + inbound deliveries) ────────────
+
+  async getInventoryEvents(userId) {
+    const { data, error } = await supabase
+      .from('packaging_inventory')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return (data || []).map(row => ({
+      id: row.id,
+      packaging_item_id: row.packaging_item_id,
+      type: row.type,
+      date: row.date,
+      quantity: row.quantity,
+      notes: row.notes || '',
+      supplier: row.supplier || '',
+      created_at: row.created_at,
+    }));
+  },
+
+  async addInventoryEvent(userId, event) {
+    const { data, error } = await supabase
+      .from('packaging_inventory')
+      .insert([{ ...event, user_id: userId }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteInventoryEvent(eventId) {
+    const { error } = await supabase
+      .from('packaging_inventory')
+      .delete()
+      .eq('id', eventId);
+    if (error) throw error;
+  },
 };

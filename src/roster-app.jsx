@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, ArchiveRestore, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, LayoutDashboard } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, ArchiveRestore, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, LayoutDashboard, Package } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
 import BusinessDashboard from './BusinessDashboard';
+import PackagingApp from './PackagingApp';
 
 const RosterApp = () => {
   const { user } = useAuth();
@@ -5243,6 +5244,10 @@ Key things to verify after rebuild:
             <LayoutDashboard size={20} />
             <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Business Dashboard</span>
           </button>
+          <button onClick={() => setActiveView('packaging')} className={`p-3 rounded-lg transition-colors group relative ${activeView === 'packaging' ? 'bg-orange-50 text-orange-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`} title="Packaging">
+            <Package size={20} />
+            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Packaging</span>
+          </button>
         </nav>
 
         <div className="flex flex-col gap-1 mt-auto">
@@ -5270,7 +5275,7 @@ Key things to verify after rebuild:
               <div className="flex items-center gap-3">
                 <h1 className="text-lg font-semibold text-gray-900">{businessSettings.businessName}</h1>
                 <span className="text-sm text-gray-400">|</span>
-                <span className="text-sm text-gray-500 capitalize">{activeView === 'roster' ? 'Grid View' : activeView === 'staff-view' ? 'Staff View' : activeView === 'dashboard' ? 'Business Dashboard' : activeView}</span>
+                <span className="text-sm text-gray-500 capitalize">{activeView === 'roster' ? 'Grid View' : activeView === 'staff-view' ? 'Staff View' : activeView === 'dashboard' ? 'Business Dashboard' : activeView === 'packaging' ? 'Packaging' : activeView}</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg">
@@ -5373,7 +5378,9 @@ Key things to verify after rebuild:
         </div>
 
       <div className="view-transition">
-      {activeView === 'dashboard' ? (
+      {activeView === 'packaging' ? (
+        <PackagingApp user={user} />
+      ) : activeView === 'dashboard' ? (
         <BusinessDashboard onBack={() => setActiveView('roster')} />
       ) : activeView === 'analytics' ? (
         <AnalyticsView />

@@ -6,6 +6,7 @@ const SHEET_GIDS = {
   revenue: 1981032383,
   costs: 913347837,
   customer: 332006994,
+  packagingData: 1126682496,
 };
 
 function buildCsvUrl(gid) {
@@ -138,6 +139,54 @@ export async function fetchCustomerData() {
     googleRating: getRow('Average Google Rating'),
     raw: data,
   };
+}
+
+// Parse packaging consumption from PCK Data sheet.
+// Each row is a menu item / modifier with quantity sold and PCK1-PCK4 codes.
+// Returns { consumption: { skuCode: { total, items } }, menuItems: [] }
+export async function fetchPackagingData() {
+  const data = await fetchSheetCsv(SHEET_GIDS.packagingData);
+  if (!data || data.length < 2) return { consumption: {}, menuItems: [] };
+
+  const header = data[0].map(h => (h || '').trim().toLowerCase());
+  const colQty      = header.findIndex(h => h === 'quantity');
+  const colItemName = header.findIndex(h => h === 'item name');
+  const colModifier = header.findIndex(h => h === 'modifier');
+  // PCK columns (case-insensitive, PCK1..PCK4)
+  const colPck = [1, 2, 3, 4].map(n =>
+    data[0].findIndex(h => (h || '').trim().toUpperCase() === `PCK${n}`)
+  );
+
+  const consumption = {}; // { skuCode: { total: number, items: [{label, qty}] } }
+  const menuItems = [];
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const rawQty = colQty >= 0 ? (row[colQty] || '').toString().replace(/,/g, '').trim() : '';
+    const qty = parseFloat(rawQty);
+    if (!qty || qty <= 0) continue;
+
+    const pckCodes = colPck
+      .filter(ci => ci >= 0)
+      .map(ci => (row[ci] || '').trim())
+      .filter(v => v !== '');
+
+    if (pckCodes.length === 0) continue;
+
+    const itemName = colItemName >= 0 ? (row[colItemName] || '').trim() : '';
+    const modifier  = colModifier >= 0 ? (row[colModifier] || '').trim() : '';
+    const label = modifier ? `${itemName} (${modifier})` : itemName;
+
+    menuItems.push({ label, qty, pckCodes });
+
+    for (const code of pckCodes) {
+      if (!consumption[code]) consumption[code] = { total: 0, items: [] };
+      consumption[code].total += qty;
+      consumption[code].items.push({ label, qty });
+    }
+  }
+
+  return { consumption, menuItems };
 }
 
 export async function fetchAllData() {
