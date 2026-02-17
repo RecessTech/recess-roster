@@ -7,7 +7,7 @@ import { fetchAllData, parsePeriod } from './sheetsData';
 import {
   TrendingUp, TrendingDown, DollarSign, Users, ShoppingCart,
   BarChart3, RefreshCw, ArrowLeft, Star, Heart,
-  Utensils, Truck, AlertCircle, Filter, ChevronDown,
+  Utensils, Truck, AlertCircle, Filter, ChevronDown, SlidersHorizontal,
 } from 'lucide-react';
 
 // --- CONSTANTS ---
@@ -26,21 +26,16 @@ const CHART_COLORS = [COLORS.primary, COLORS.secondary, COLORS.green, COLORS.pur
 
 // --- PERIOD HELPERS ---
 
-// Extract just the week number for clean axis labels: "Q1-2024 M03 W12" -> "W12"
-function weekLabel(period) {
-  if (!period) return '';
-  const m = period.match(/W(\d{1,2})/);
-  return m ? `W${m[1]}` : period;
-}
-
-// Get a human-readable short label: "Q1-2024 M03 W12" -> "Mar W12"
-const MONTH_ABBR = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Format period for axis labels: "Q1-2024 M03 W12" -> "W12 '24", "Q1-2024 W12" -> "W12 '24"
 function shortPeriodLabel(period) {
   if (!period) return '';
   const parsed = parsePeriod(period);
-  if (!parsed) return weekLabel(period);
-  if (parsed.month) return `${MONTH_ABBR[parsed.month]} W${parsed.week}`;
-  if (parsed.year) return `W${parsed.week}`;
+  if (!parsed) {
+    // Fallback: try to extract just Wxx
+    const m = period.match(/W(\d{1,2})/);
+    return m ? `W${m[1]}` : period;
+  }
+  if (parsed.year) return `W${parsed.week} '${String(parsed.year).slice(2)}`;
   return `W${parsed.week}`;
 }
 
@@ -350,13 +345,83 @@ function KpiCard({ title, value, subtitle, icon: Icon, trend, color = 'brand' })
   );
 }
 
+// --- Y-Axis range hook ---
+function useAxisRange(defaultMin = '', defaultMax = '') {
+  const [min, setMin] = useState(defaultMin);
+  const [max, setMax] = useState(defaultMax);
+  const domain = useMemo(() => {
+    const lo = min !== '' ? parseFloat(min) : 'auto';
+    const hi = max !== '' ? parseFloat(max) : 'auto';
+    return [lo, hi];
+  }, [min, max]);
+  return { min, max, setMin, setMax, domain };
+}
+
+// --- Y-Axis controls inline ---
+function AxisControls({ axis }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative inline-flex">
+      <button
+        onClick={() => setOpen(!open)}
+        className={`p-1 rounded transition-colors ${open || axis.min !== '' || axis.max !== '' ? 'text-brand-600 bg-orange-50' : 'text-surface-400 hover:text-surface-600'}`}
+        title="Adjust Y-axis range"
+      >
+        <SlidersHorizontal size={14} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-40 bg-white rounded-lg shadow-elevated border border-surface-200 p-3 w-48">
+            <p className="text-xs font-semibold text-surface-500 mb-2">Y-Axis Range</p>
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <label className="text-[10px] text-surface-400 block mb-0.5">Min</label>
+                <input
+                  type="number"
+                  value={axis.min}
+                  onChange={e => axis.setMin(e.target.value)}
+                  placeholder="auto"
+                  className="w-full text-xs px-2 py-1.5 border border-surface-200 rounded-md focus:outline-none focus:border-brand-400"
+                />
+              </div>
+              <span className="text-surface-300 mt-3">–</span>
+              <div className="flex-1">
+                <label className="text-[10px] text-surface-400 block mb-0.5">Max</label>
+                <input
+                  type="number"
+                  value={axis.max}
+                  onChange={e => axis.setMax(e.target.value)}
+                  placeholder="auto"
+                  className="w-full text-xs px-2 py-1.5 border border-surface-200 rounded-md focus:outline-none focus:border-brand-400"
+                />
+              </div>
+            </div>
+            {(axis.min !== '' || axis.max !== '') && (
+              <button
+                onClick={() => { axis.setMin(''); axis.setMax(''); }}
+                className="text-xs text-surface-500 hover:text-surface-700 mt-2"
+              >
+                Reset to auto
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // --- Chart Card wrapper ---
-function ChartCard({ title, subtitle, children, className = '' }) {
+function ChartCard({ title, subtitle, children, className = '', axis }) {
   return (
     <div className={`bg-white rounded-xl shadow-card p-5 animate-fade-in ${className}`}>
-      <div className="mb-4">
-        <h3 className="text-base font-semibold text-surface-800">{title}</h3>
-        {subtitle && <p className="text-xs text-surface-400 mt-0.5">{subtitle}</p>}
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h3 className="text-base font-semibold text-surface-800">{title}</h3>
+          {subtitle && <p className="text-xs text-surface-400 mt-0.5">{subtitle}</p>}
+        </div>
+        {axis && <AxisControls axis={axis} />}
       </div>
       {children}
     </div>
@@ -407,6 +472,11 @@ function RevenueTab({ data, filter, excludedWeeks }) {
   const dailyCust = useMemo(() => f(data.avgDailyCustomers), [f, data.avgDailyCustomers]);
   const avgDailyRev = useMemo(() => f(data.avgDailyRevenue), [f, data.avgDailyRevenue]);
 
+  const revAxis = useAxisRange();
+  const channelAxis = useAxisRange();
+  const aovAxis = useAxisRange();
+  const custAxis = useAxisRange();
+
   // Stacked channel breakdown
   const channelData = useMemo(() => {
     const inStore = f(data.inStoreRevenue);
@@ -438,7 +508,7 @@ function RevenueTab({ data, filter, excludedWeeks }) {
       </div>
 
       {/* Revenue Trend */}
-      <ChartCard title="Total Revenue" subtitle="Weekly revenue over time">
+      <ChartCard title="Total Revenue" subtitle="Weekly revenue over time" axis={revAxis}>
         <ResponsiveContainer width="100%" height={320}>
           <AreaChart data={totalRev.map(d => ({ ...d, period: shortPeriodLabel(d.period) }))}>
             <defs>
@@ -449,7 +519,7 @@ function RevenueTab({ data, filter, excludedWeeks }) {
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="period" tick={TICK_STYLE} interval={Math.max(0, Math.floor(totalRev.length / 12) - 1)} />
-            <YAxis tickFormatter={fmtCurrency} tick={TICK_STYLE} width={55} />
+            <YAxis domain={revAxis.domain} tickFormatter={fmtCurrency} tick={TICK_STYLE} width={55} />
             <Tooltip content={<ChartTooltip formatter={fmtDollar} />} />
             <Area type="monotone" dataKey="value" name="Revenue" stroke={COLORS.primary} fill="url(#revGrad)" strokeWidth={2.5} dot={false} />
           </AreaChart>
@@ -458,12 +528,12 @@ function RevenueTab({ data, filter, excludedWeeks }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Channel Breakdown */}
-        <ChartCard title="Revenue by Channel" subtitle="In-Store, Delivery, Catering, ClassPass">
+        <ChartCard title="Revenue by Channel" subtitle="In-Store, Delivery, Catering, ClassPass" axis={channelAxis}>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={channelData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="period" tick={TICK_STYLE} interval={Math.max(0, Math.floor(channelData.length / 10) - 1)} />
-              <YAxis tickFormatter={fmtCurrency} tick={TICK_STYLE} width={55} />
+              <YAxis domain={channelAxis.domain} tickFormatter={fmtCurrency} tick={TICK_STYLE} width={55} />
               <Tooltip content={<ChartTooltip formatter={fmtDollar} />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="In-Store" stackId="a" fill={COLORS.primary} />
@@ -475,12 +545,12 @@ function RevenueTab({ data, filter, excludedWeeks }) {
         </ChartCard>
 
         {/* AOV Trend */}
-        <ChartCard title="Average Order Value" subtitle="AOV trend over time">
+        <ChartCard title="Average Order Value" subtitle="AOV trend over time" axis={aovAxis}>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={aov.map(d => ({ ...d, period: shortPeriodLabel(d.period) }))}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="period" tick={TICK_STYLE} interval={Math.max(0, Math.floor(aov.length / 10) - 1)} />
-              <YAxis domain={['auto', 'auto']} tickFormatter={v => `$${v}`} tick={TICK_STYLE} width={50} />
+              <YAxis domain={aovAxis.domain} tickFormatter={v => `$${v}`} tick={TICK_STYLE} width={50} />
               <Tooltip content={<ChartTooltip formatter={v => `$${v.toFixed(2)}`} />} />
               <Line type="monotone" dataKey="value" name="AOV" stroke={COLORS.secondary} strokeWidth={2.5} dot={aov.length <= 20 ? { r: 3 } : false} />
             </LineChart>
@@ -489,12 +559,12 @@ function RevenueTab({ data, filter, excludedWeeks }) {
       </div>
 
       {/* Daily Customers */}
-      <ChartCard title="Average Daily Customers" subtitle="Customer count per day by week">
+      <ChartCard title="Average Daily Customers" subtitle="Customer count per day by week" axis={custAxis}>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={dailyCust.map(d => ({ ...d, period: shortPeriodLabel(d.period) }))}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="period" tick={TICK_STYLE} interval={Math.max(0, Math.floor(dailyCust.length / 12) - 1)} />
-            <YAxis tick={TICK_STYLE} width={40} />
+            <YAxis domain={custAxis.domain} tick={TICK_STYLE} width={40} />
             <Tooltip content={<ChartTooltip />} />
             <Bar dataKey="value" name="Customers" fill={COLORS.green} radius={[3, 3, 0, 0]} />
           </BarChart>
@@ -513,6 +583,10 @@ function CostsTab({ data, filter, excludedWeeks }) {
   const totalCogs = useMemo(() => f(data.totalCogs), [f, data.totalCogs]);
   const cogsPct = useMemo(() => f(data.cogsPctRevenue), [f, data.cogsPctRevenue]);
   const labourPct = useMemo(() => f(data.labourPctRevenue), [f, data.labourPctRevenue]);
+
+  const ratiosAxis = useAxisRange();
+  const vendorAxis = useAxisRange();
+  const cogsAxis = useAxisRange();
 
   // Combined ratios chart
   const ratiosData = useMemo(() => {
@@ -575,12 +649,12 @@ function CostsTab({ data, filter, excludedWeeks }) {
       </div>
 
       {/* Cost Ratios */}
-      <ChartCard title="Cost Ratios" subtitle="COGS % and Labour % of revenue over time">
+      <ChartCard title="Cost Ratios" subtitle="COGS % and Labour % of revenue over time" axis={ratiosAxis}>
         <ResponsiveContainer width="100%" height={320}>
           <LineChart data={ratiosData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="period" tick={TICK_STYLE} interval={Math.max(0, Math.floor(ratiosData.length / 12) - 1)} />
-            <YAxis tickFormatter={v => `${v}%`} tick={TICK_STYLE} width={45} />
+            <YAxis domain={ratiosAxis.domain} tickFormatter={v => `${v}%`} tick={TICK_STYLE} width={45} />
             <Tooltip content={<ChartTooltip formatter={fmtPct} />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Line type="monotone" dataKey="COGS %" stroke={COLORS.primary} strokeWidth={2.5} dot={false} connectNulls />
@@ -591,12 +665,12 @@ function CostsTab({ data, filter, excludedWeeks }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Vendor Breakdown */}
-        <ChartCard title="COGS by Vendor" subtitle="Weekly spend by supplier">
+        <ChartCard title="COGS by Vendor" subtitle="Weekly spend by supplier" axis={vendorAxis}>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={vendorData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="period" tick={TICK_STYLE} interval={Math.max(0, Math.floor(vendorData.length / 10) - 1)} />
-              <YAxis tickFormatter={fmtCurrency} tick={TICK_STYLE} width={55} />
+              <YAxis domain={vendorAxis.domain} tickFormatter={fmtCurrency} tick={TICK_STYLE} width={55} />
               <Tooltip content={<ChartTooltip formatter={fmtDollar} />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="Foodbyus" stackId="a" fill={COLORS.primary} />
@@ -633,7 +707,7 @@ function CostsTab({ data, filter, excludedWeeks }) {
       </div>
 
       {/* Total COGS Trend */}
-      <ChartCard title="Total COGS" subtitle="Weekly cost of goods sold">
+      <ChartCard title="Total COGS" subtitle="Weekly cost of goods sold" axis={cogsAxis}>
         <ResponsiveContainer width="100%" height={280}>
           <AreaChart data={totalCogs.map(d => ({ ...d, period: shortPeriodLabel(d.period) }))}>
             <defs>
@@ -644,7 +718,7 @@ function CostsTab({ data, filter, excludedWeeks }) {
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="period" tick={TICK_STYLE} interval={Math.max(0, Math.floor(totalCogs.length / 12) - 1)} />
-            <YAxis tickFormatter={fmtCurrency} tick={TICK_STYLE} width={55} />
+            <YAxis domain={cogsAxis.domain} tickFormatter={fmtCurrency} tick={TICK_STYLE} width={55} />
             <Tooltip content={<ChartTooltip formatter={fmtDollar} />} />
             <Area type="monotone" dataKey="value" name="Total COGS" stroke={COLORS.red} fill="url(#cogsGrad)" strokeWidth={2} dot={false} />
           </AreaChart>
@@ -679,6 +753,10 @@ function CustomerTab({ data, filter, excludedWeeks }) {
   const loyalty = useMemo(() => f(data.loyaltyMembers), [f, data.loyaltyMembers]);
   const reviews = useMemo(() => f(data.googleReviews), [f, data.googleReviews]);
 
+  const socialAxis = useAxisRange();
+  const igAxis = useAxisRange();
+  const reviewsAxis = useAxisRange();
+
   // Combined social growth
   const socialData = useMemo(() => {
     const len = Math.max(ig.length, tiktok.length, loyalty.length);
@@ -705,12 +783,12 @@ function CustomerTab({ data, filter, excludedWeeks }) {
       </div>
 
       {/* Combined Growth */}
-      <ChartCard title="Audience Growth" subtitle="Instagram, TikTok & Loyalty members">
+      <ChartCard title="Audience Growth" subtitle="Instagram, TikTok & Loyalty members" axis={socialAxis}>
         <ResponsiveContainer width="100%" height={350}>
           <LineChart data={socialData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="period" tick={TICK_STYLE} interval={Math.max(0, Math.floor(socialData.length / 12) - 1)} />
-            <YAxis tick={TICK_STYLE} width={50} />
+            <YAxis domain={socialAxis.domain} tick={TICK_STYLE} width={50} />
             <Tooltip content={<ChartTooltip />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Line type="monotone" dataKey="Instagram" stroke={COLORS.pink} strokeWidth={2.5} dot={false} />
@@ -722,7 +800,7 @@ function CustomerTab({ data, filter, excludedWeeks }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Instagram Growth */}
-        <ChartCard title="Instagram Followers" subtitle="Growth trajectory">
+        <ChartCard title="Instagram Followers" subtitle="Growth trajectory" axis={igAxis}>
           <ResponsiveContainer width="100%" height={280}>
             <AreaChart data={ig.map(d => ({ ...d }))}>
               <defs>
@@ -733,7 +811,7 @@ function CustomerTab({ data, filter, excludedWeeks }) {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="period" tick={TICK_STYLE} interval={Math.max(0, Math.floor(ig.length / 10) - 1)} />
-              <YAxis tick={TICK_STYLE} width={50} />
+              <YAxis domain={igAxis.domain} tick={TICK_STYLE} width={50} />
               <Tooltip content={<ChartTooltip />} />
               <Area type="monotone" dataKey="value" name="Followers" stroke={COLORS.pink} fill="url(#igGrad)" strokeWidth={2} dot={false} />
             </AreaChart>
@@ -741,12 +819,12 @@ function CustomerTab({ data, filter, excludedWeeks }) {
         </ChartCard>
 
         {/* Google Reviews */}
-        <ChartCard title="Google Reviews" subtitle="Review count growth">
+        <ChartCard title="Google Reviews" subtitle="Review count growth" axis={reviewsAxis}>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={reviews.map(d => ({ ...d }))}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="period" tick={TICK_STYLE} interval={Math.max(0, Math.floor(reviews.length / 10) - 1)} />
-              <YAxis tick={TICK_STYLE} width={40} />
+              <YAxis domain={reviewsAxis.domain} tick={TICK_STYLE} width={40} />
               <Tooltip content={<ChartTooltip />} />
               <Bar dataKey="value" name="Reviews" fill={COLORS.secondary} radius={[3, 3, 0, 0]} />
             </BarChart>
