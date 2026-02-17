@@ -7,7 +7,7 @@ import { fetchAllData, parsePeriod } from './sheetsData';
 import {
   TrendingUp, TrendingDown, DollarSign, Users, ShoppingCart,
   BarChart3, RefreshCw, ArrowLeft, Star, Heart,
-  Utensils, Truck, AlertCircle, Filter, ChevronDown, SlidersHorizontal,
+  Utensils, Truck, AlertCircle, Filter, ChevronDown, SlidersHorizontal, LayoutGrid,
 } from 'lucide-react';
 
 // --- CONSTANTS ---
@@ -836,9 +836,260 @@ function CustomerTab({ data, filter, excludedWeeks }) {
 }
 
 // ===========================
+// QUARTERLY OVERVIEW TAB
+// ===========================
+
+// Aggregate weekly data into quarterly sums/averages
+function aggregateQuarterly(weeklyData, mode = 'sum') {
+  const buckets = {};
+  for (const d of weeklyData) {
+    const p = parsePeriod(d.period);
+    if (!p?.year || !p?.quarter) continue;
+    const key = `Q${p.quarter} ${p.year}`;
+    if (!buckets[key]) buckets[key] = { sum: 0, count: 0, last: null };
+    buckets[key].sum += d.value;
+    buckets[key].count += 1;
+    buckets[key].last = d.value;
+  }
+  // Sort chronologically
+  const sorted = Object.entries(buckets).sort((a, b) => {
+    const [aq, ay] = [parseInt(a[0][1]), parseInt(a[0].split(' ')[1])];
+    const [bq, by] = [parseInt(b[0][1]), parseInt(b[0].split(' ')[1])];
+    return ay !== by ? ay - by : aq - bq;
+  });
+  return sorted.map(([key, v]) => ({
+    quarter: key,
+    value: mode === 'sum' ? v.sum : mode === 'avg' ? v.sum / v.count : v.last,
+  }));
+}
+
+// Compute QoQ growth for each entry
+function withQoQ(data) {
+  return data.map((d, i) => ({
+    ...d,
+    qoq: i > 0 && data[i - 1].value ? ((d.value - data[i - 1].value) / data[i - 1].value) * 100 : null,
+  }));
+}
+
+function QoQBadge({ value }) {
+  if (value == null) return <span className="text-xs text-surface-300">—</span>;
+  const pos = value >= 0;
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${pos ? 'text-green-600' : 'text-red-500'}`}>
+      {pos ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+      {pos ? '+' : ''}{value.toFixed(1)}%
+    </span>
+  );
+}
+
+function OverviewTab({ data }) {
+  // Revenue metrics - sum per quarter
+  const qRevenue = useMemo(() => withQoQ(aggregateQuarterly(data.revenue.totalRevenue, 'sum')), [data.revenue.totalRevenue]);
+  const qInStore = useMemo(() => withQoQ(aggregateQuarterly(data.revenue.inStoreRevenue, 'sum')), [data.revenue.inStoreRevenue]);
+  const qDelivery = useMemo(() => withQoQ(aggregateQuarterly(data.revenue.uberEatsRevenue, 'sum')), [data.revenue.uberEatsRevenue]);
+  const qCatering = useMemo(() => withQoQ(aggregateQuarterly(data.revenue.cateringRevenue, 'sum')), [data.revenue.cateringRevenue]);
+
+  // Average per quarter
+  const qAov = useMemo(() => withQoQ(aggregateQuarterly(data.revenue.aov, 'avg')), [data.revenue.aov]);
+  const qDailyCustomers = useMemo(() => withQoQ(aggregateQuarterly(data.revenue.avgDailyCustomers, 'avg')), [data.revenue.avgDailyCustomers]);
+  const qDailyRevenue = useMemo(() => withQoQ(aggregateQuarterly(data.revenue.avgDailyRevenue, 'avg')), [data.revenue.avgDailyRevenue]);
+  const qRevenuePerHour = useMemo(() => withQoQ(aggregateQuarterly(data.revenue.avgRevenuePerHour, 'avg')), [data.revenue.avgRevenuePerHour]);
+
+  // Costs - sum per quarter
+  const qCogs = useMemo(() => withQoQ(aggregateQuarterly(data.costs.totalCogs, 'sum')), [data.costs.totalCogs]);
+  const qLabour = useMemo(() => withQoQ(aggregateQuarterly(data.costs.totalLabour, 'sum')), [data.costs.totalLabour]);
+  const qCogsPct = useMemo(() => withQoQ(aggregateQuarterly(data.costs.cogsPctRevenue, 'avg')), [data.costs.cogsPctRevenue]);
+  const qLabourPct = useMemo(() => withQoQ(aggregateQuarterly(data.costs.labourPctRevenue, 'avg')), [data.costs.labourPctRevenue]);
+  const qCogsPerUnit = useMemo(() => withQoQ(aggregateQuarterly(data.costs.cogsPerUnit, 'avg')), [data.costs.cogsPerUnit]);
+  const qUnitsSold = useMemo(() => withQoQ(aggregateQuarterly(data.costs.unitsSold, 'sum')), [data.costs.unitsSold]);
+
+  // Gross profit = revenue - cogs
+  const qGrossProfit = useMemo(() => {
+    return withQoQ(qRevenue.map((r, i) => ({
+      quarter: r.quarter,
+      value: r.value - (qCogs[i]?.value || 0),
+    })));
+  }, [qRevenue, qCogs]);
+
+  // Gross margin = gross profit / revenue * 100
+  const qGrossMargin = useMemo(() => {
+    return withQoQ(qRevenue.map((r, i) => ({
+      quarter: r.quarter,
+      value: r.value > 0 ? ((r.value - (qCogs[i]?.value || 0)) / r.value) * 100 : 0,
+    })));
+  }, [qRevenue, qCogs]);
+
+  // Quarters list
+  const quarters = qRevenue.map(d => d.quarter);
+
+  // Combined chart data for stacked revenue bar + line overlays
+  const chartData = useMemo(() => {
+    return quarters.map((q, i) => ({
+      quarter: q,
+      'In-Store': qInStore[i]?.value || 0,
+      'Delivery': qDelivery[i]?.value || 0,
+      'Catering': qCatering[i]?.value || 0,
+      'Gross Profit': qGrossProfit[i]?.value || 0,
+    }));
+  }, [quarters, qInStore, qDelivery, qCatering, qGrossProfit]);
+
+  const ratioChartData = useMemo(() => {
+    return quarters.map((q, i) => ({
+      quarter: q,
+      'COGS %': qCogsPct[i]?.value || 0,
+      'Labour %': qLabourPct[i]?.value || 0,
+      'Gross Margin %': qGrossMargin[i]?.value || 0,
+    }));
+  }, [quarters, qCogsPct, qLabourPct, qGrossMargin]);
+
+  // Table row helper
+  const MetricRow = ({ label, data: rowData, format = 'currency', className = '' }) => (
+    <tr className={`border-b border-surface-100 hover:bg-surface-50 transition-colors ${className}`}>
+      <td className="py-3 pr-4 text-sm font-medium text-surface-700 whitespace-nowrap sticky left-0 bg-white">{label}</td>
+      {rowData.map((d, i) => (
+        <td key={i} className="py-3 px-3 text-right">
+          <div className="text-sm font-semibold text-surface-800">
+            {format === 'currency' ? fmtDollar(d.value) :
+             format === 'pct' ? fmtPct(d.value) :
+             format === 'dollar2' ? (d.value != null ? `$${d.value.toFixed(2)}` : '-') :
+             format === 'number' ? (d.value != null ? d.value.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '-') :
+             format === 'decimal1' ? (d.value != null ? d.value.toFixed(1) : '-') :
+             d.value}
+          </div>
+          <QoQBadge value={d.qoq} />
+        </td>
+      ))}
+    </tr>
+  );
+
+  const SectionHeader = ({ children }) => (
+    <tr>
+      <td colSpan={quarters.length + 1} className="pt-5 pb-2 sticky left-0">
+        <span className="text-xs font-bold text-surface-400 uppercase tracking-wider">{children}</span>
+      </td>
+    </tr>
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Key headline KPIs - latest quarter */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard
+          title="Quarterly Revenue"
+          value={fmtDollar(qRevenue[qRevenue.length - 1]?.value)}
+          trend={qRevenue[qRevenue.length - 1]?.qoq}
+          subtitle={qRevenue[qRevenue.length - 1]?.quarter}
+          icon={DollarSign} color="brand"
+        />
+        <KpiCard
+          title="Gross Margin"
+          value={fmtPct(qGrossMargin[qGrossMargin.length - 1]?.value)}
+          trend={qGrossMargin[qGrossMargin.length - 1]?.qoq}
+          subtitle={qGrossMargin[qGrossMargin.length - 1]?.quarter}
+          icon={BarChart3} color="green"
+        />
+        <KpiCard
+          title="Avg Order Value"
+          value={qAov[qAov.length - 1]?.value ? `$${qAov[qAov.length - 1].value.toFixed(2)}` : '-'}
+          trend={qAov[qAov.length - 1]?.qoq}
+          subtitle={qAov[qAov.length - 1]?.quarter}
+          icon={ShoppingCart} color="blue"
+        />
+        <KpiCard
+          title="Daily Customers"
+          value={qDailyCustomers[qDailyCustomers.length - 1]?.value?.toFixed(0) || '-'}
+          trend={qDailyCustomers[qDailyCustomers.length - 1]?.qoq}
+          subtitle={qDailyCustomers[qDailyCustomers.length - 1]?.quarter}
+          icon={Users} color="purple"
+        />
+      </div>
+
+      {/* Revenue + Profit chart */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ChartCard title="Quarterly Revenue by Channel" subtitle="Stacked revenue breakdown">
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="quarter" tick={TICK_STYLE} />
+              <YAxis tickFormatter={fmtCurrency} tick={TICK_STYLE} width={55} />
+              <Tooltip content={<ChartTooltip formatter={fmtDollar} />} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="In-Store" stackId="a" fill={COLORS.primary} />
+              <Bar dataKey="Delivery" stackId="a" fill={COLORS.secondary} />
+              <Bar dataKey="Catering" stackId="a" fill={COLORS.green} radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="Cost Ratios & Gross Margin" subtitle="Quarterly averages">
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={ratioChartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="quarter" tick={TICK_STYLE} />
+              <YAxis tickFormatter={v => `${v}%`} tick={TICK_STYLE} width={45} />
+              <Tooltip content={<ChartTooltip formatter={fmtPct} />} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Line type="monotone" dataKey="Gross Margin %" stroke={COLORS.green} strokeWidth={2.5} dot={{ r: 4 }} />
+              <Line type="monotone" dataKey="COGS %" stroke={COLORS.primary} strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="Labour %" stroke={COLORS.secondary} strokeWidth={2} dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      {/* Full quarterly table */}
+      <div className="bg-white rounded-xl shadow-card animate-fade-in">
+        <div className="p-5 border-b border-surface-100">
+          <h3 className="text-base font-semibold text-surface-800">Quarterly Performance</h3>
+          <p className="text-xs text-surface-400 mt-0.5">All key metrics with quarter-over-quarter growth</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px]">
+            <thead>
+              <tr className="border-b border-surface-200">
+                <th className="text-left py-3 pr-4 text-xs font-semibold text-surface-500 uppercase tracking-wider sticky left-0 bg-white">Metric</th>
+                {quarters.map(q => (
+                  <th key={q} className="py-3 px-3 text-right text-xs font-semibold text-surface-500 uppercase tracking-wider whitespace-nowrap">{q}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <SectionHeader>Revenue</SectionHeader>
+              <MetricRow label="Total Revenue" data={qRevenue} />
+              <MetricRow label="In-Store" data={qInStore} />
+              <MetricRow label="Delivery" data={qDelivery} />
+              <MetricRow label="Catering / B2B" data={qCatering} />
+
+              <SectionHeader>Profitability</SectionHeader>
+              <MetricRow label="Total COGS" data={qCogs} />
+              <MetricRow label="Gross Profit" data={qGrossProfit} />
+              <MetricRow label="Gross Margin" data={qGrossMargin} format="pct" />
+              <MetricRow label="Total Labour" data={qLabour} />
+
+              <SectionHeader>Unit Economics</SectionHeader>
+              <MetricRow label="Avg Order Value" data={qAov} format="dollar2" />
+              <MetricRow label="Avg Daily Customers" data={qDailyCustomers} format="decimal1" />
+              <MetricRow label="Avg Daily Revenue" data={qDailyRevenue} />
+              <MetricRow label="Revenue per Hour" data={qRevenuePerHour} />
+              <MetricRow label="Units Sold" data={qUnitsSold} format="number" />
+              <MetricRow label="COGS per Unit" data={qCogsPerUnit} format="dollar2" />
+
+              <SectionHeader>Cost Ratios</SectionHeader>
+              <MetricRow label="COGS % of Revenue" data={qCogsPct} format="pct" />
+              <MetricRow label="Labour % of Revenue" data={qLabourPct} format="pct" />
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===========================
 // MAIN DASHBOARD
 // ===========================
 const TABS = [
+  { id: 'overview', label: 'Overview', icon: LayoutGrid },
   { id: 'revenue', label: 'Revenue', icon: DollarSign },
   { id: 'costs', label: 'Costs', icon: Truck },
   { id: 'customer', label: 'Customer', icon: Users },
@@ -848,7 +1099,7 @@ export default function BusinessDashboard({ onBack }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('revenue');
+  const [activeTab, setActiveTab] = useState('overview');
   const [filter, setFilter] = useState({ type: 'weeks', value: 12 });
   const [excludedWeeks, setExcludedWeeks] = useState(new Set());
 
@@ -933,7 +1184,7 @@ export default function BusinessDashboard({ onBack }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <FilterBar filter={filter} setFilter={setFilter} availableFilters={availableFilters} />
+              {activeTab !== 'overview' && <FilterBar filter={filter} setFilter={setFilter} availableFilters={availableFilters} />}
               <button onClick={loadData} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-surface-600 hover:bg-surface-100 rounded-lg transition-colors" title="Refresh data">
                 <RefreshCw size={16} />
                 <span className="hidden sm:inline">Refresh</span>
@@ -963,11 +1214,14 @@ export default function BusinessDashboard({ onBack }) {
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-4">
-        <WeekExclusionBar
-          excludedWeeks={excludedWeeks}
-          setExcludedWeeks={setExcludedWeeks}
-          allWeekNumbers={allWeekNumbers}
-        />
+        {activeTab !== 'overview' && (
+          <WeekExclusionBar
+            excludedWeeks={excludedWeeks}
+            setExcludedWeeks={setExcludedWeeks}
+            allWeekNumbers={allWeekNumbers}
+          />
+        )}
+        {activeTab === 'overview' && <OverviewTab data={data} />}
         {activeTab === 'revenue' && <RevenueTab data={data.revenue} filter={filter} excludedWeeks={excludedWeeks} />}
         {activeTab === 'costs' && <CostsTab data={data.costs} filter={filter} excludedWeeks={excludedWeeks} />}
         {activeTab === 'customer' && <CustomerTab data={data.customer} filter={filter} excludedWeeks={excludedWeeks} />}
