@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Package, Plus, Trash2, Edit2, RefreshCw, X,
+  Package, Plus, Trash2, Edit2, RefreshCw, X, Download,
   AlertTriangle, CheckCircle, XCircle, Info,
   ClipboardList, Settings, Truck, TrendingDown,
 } from 'lucide-react';
@@ -389,9 +389,10 @@ function InventoryTab({ inventoryEvents, packagingItems, onOpenAdd, onDeleteEven
 
 // ── Setup Tab ─────────────────────────────────────────────────────────────────
 
-function SetupTab({ packagingItems, sheetData, onOpenAdd, onOpenEdit, onDeleteItem }) {
-  const sheetCodes = sheetData ? Object.keys(sheetData.consumption) : [];
+function SetupTab({ packagingItems, sheetData, onOpenAdd, onOpenEdit, onDeleteItem, onImportFromSheet }) {
+  const sheetCodes   = sheetData ? Object.keys(sheetData.consumption) : [];
   const matchedCodes = new Set(packagingItems.map(i => i.sku_code).filter(Boolean));
+  const unmatchedCodes = sheetCodes.filter(c => !matchedCodes.has(c));
 
   return (
     <div className="space-y-5">
@@ -402,13 +403,25 @@ function SetupTab({ packagingItems, sheetData, onOpenAdd, onOpenEdit, onDeleteIt
             Configure packaging types and link them to your sheet's PCK codes
           </p>
         </div>
-        <button
-          onClick={onOpenAdd}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors"
-        >
-          <Plus size={14} />
-          Add Item
-        </button>
+        <div className="flex items-center gap-2">
+          {unmatchedCodes.length > 0 && (
+            <button
+              onClick={onImportFromSheet}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors"
+              title={`Auto-create items for: ${unmatchedCodes.join(', ')}`}
+            >
+              <Download size={14} />
+              Import from Sheet ({unmatchedCodes.length})
+            </button>
+          )}
+          <button
+            onClick={onOpenAdd}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors"
+          >
+            <Plus size={14} />
+            Add Item
+          </button>
+        </div>
       </div>
 
       {/* Sheet code hints */}
@@ -432,9 +445,11 @@ function SetupTab({ packagingItems, sheetData, onOpenAdd, onOpenEdit, onDeleteIt
               </span>
             ))}
           </div>
-          <p className="text-xs text-blue-500 mt-2">
-            Green = matched to an item. Copy unmatched codes into the SKU Code field when adding items.
-          </p>
+          {unmatchedCodes.length > 0 && (
+            <p className="text-xs text-blue-500 mt-2">
+              {unmatchedCodes.length} unmatched — click <strong>Import from Sheet</strong> to auto-create them, then rename as needed.
+            </p>
+          )}
         </div>
       )}
 
@@ -442,13 +457,24 @@ function SetupTab({ packagingItems, sheetData, onOpenAdd, onOpenEdit, onDeleteIt
         <div className="text-center py-20 text-gray-400">
           <Package size={32} className="mx-auto mb-3 opacity-40" />
           <p className="text-sm mb-4">No packaging items yet</p>
-          <button
-            onClick={onOpenAdd}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-orange-600 border border-orange-300 rounded-lg hover:bg-orange-50 transition-colors"
-          >
-            <Plus size={14} />
-            Add your first item
-          </button>
+          <div className="flex items-center justify-center gap-3">
+            {sheetCodes.length > 0 && (
+              <button
+                onClick={onImportFromSheet}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-lg transition-colors"
+              >
+                <Download size={14} />
+                Import {sheetCodes.length} items from Sheet
+              </button>
+            )}
+            <button
+              onClick={onOpenAdd}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-orange-600 border border-orange-300 rounded-lg hover:bg-orange-50 transition-colors"
+            >
+              <Plus size={14} />
+              Add manually
+            </button>
+          </div>
         </div>
       )}
 
@@ -544,7 +570,7 @@ export default function PackagingApp({ user }) {
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
-  useEffect(() => { loadData(); }, [user.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadData(); syncSheet(true); }, [user.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadData() {
     setLoadingData(true);
@@ -562,19 +588,58 @@ export default function PackagingApp({ user }) {
     setLoadingData(false);
   }
 
-  async function syncSheet() {
+  async function syncSheet(silent = false) {
     setLoadingSheet(true);
     try {
       const data = await fetchPackagingData();
       setSheetData(data);
-      toast.success(
-        `Sheet synced — ${Object.keys(data.consumption).length} packaging codes, ${data.menuItems.length} item rows`
-      );
+      if (!silent) {
+        toast.success(
+          `Sheet synced — ${Object.keys(data.consumption).length} packaging codes, ${data.menuItems.length} item rows`
+        );
+      }
+      return data;
     } catch (err) {
-      toast.error('Failed to fetch sheet data');
+      if (!silent) toast.error('Failed to fetch sheet data');
+      console.error(err);
+      return null;
+    } finally {
+      setLoadingSheet(false);
+    }
+  }
+
+  const ITEM_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#3b82f6', '#8b5cf6'];
+
+  async function importFromSheet() {
+    let data = sheetData;
+    if (!data) {
+      data = await syncSheet(true);
+      if (!data) { toast.error('Could not read sheet'); return; }
+    }
+    const codes = Object.keys(data.consumption);
+    const existingCodes = new Set(packagingItems.map(i => i.sku_code).filter(Boolean));
+    const newCodes = codes.filter(c => !existingCodes.has(c));
+    if (!newCodes.length) { toast('All sheet codes are already configured'); return; }
+    try {
+      await Promise.all(
+        newCodes.map((code, i) =>
+          db.createPackagingItem(user.id, {
+            name: code,
+            sku_code: code,
+            unit: 'units',
+            color: ITEM_COLORS[i % ITEM_COLORS.length],
+            reorder_level: 0,
+            reorder_qty: 0,
+            sort_order: packagingItems.length + i,
+          })
+        )
+      );
+      await loadData();
+      toast.success(`Imported ${newCodes.length} item${newCodes.length !== 1 ? 's' : ''} from sheet — rename them in Setup`);
+    } catch (err) {
+      toast.error('Failed to import items');
       console.error(err);
     }
-    setLoadingSheet(false);
   }
 
   // ── Derived: per-item status ────────────────────────────────────────────────
@@ -837,6 +902,7 @@ export default function PackagingApp({ user }) {
             onOpenAdd={openAddItem}
             onOpenEdit={openEditItem}
             onDeleteItem={deleteItem}
+            onImportFromSheet={importFromSheet}
           />
         )}
       </div>
