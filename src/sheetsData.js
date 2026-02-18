@@ -156,13 +156,20 @@ export async function fetchPackagingData() {
 
   const consumption = {};
   const menuItems = [];
+  const weeklyConsumption = {}; // { skuCode: { weekLabel: qty } }
+  const weeksSet = new Set();
 
-  function accumulate(label, qty, pckCodes) {
+  function accumulate(label, qty, pckCodes, week) {
     menuItems.push({ label, qty, pckCodes });
     for (const code of pckCodes) {
       if (!consumption[code]) consumption[code] = { total: 0, items: [] };
       consumption[code].total += qty;
       consumption[code].items.push({ label, qty });
+      if (week) {
+        if (!weeklyConsumption[code]) weeklyConsumption[code] = {};
+        weeklyConsumption[code][week] = (weeklyConsumption[code][week] || 0) + qty;
+        weeksSet.add(week);
+      }
     }
   }
 
@@ -190,9 +197,10 @@ export async function fetchPackagingData() {
     const colVoid   = h.findIndex(c => c.toLowerCase() === 'void?');
     const colQty    = h.findIndex(c => c.toLowerCase() === 'qty');
     const colConcat = h.findIndex(c => c.toLowerCase() === 'concat');
+    const colWeek   = h.findIndex(c => c.toLowerCase() === 'week');
     const pckCols   = pckColumnsFrom(h);
 
-    // Aggregate qty by Concat (e.g. "Latte-Medium") since there's one row per transaction
+    // Aggregate by (Concat, Week) — one row per transaction so we sum across rows
     const agg = {};
     for (let i = 1; i < modifierData.length; i++) {
       const row = modifierData[i];
@@ -205,13 +213,15 @@ export async function fetchPackagingData() {
       const label = colConcat >= 0 ? (row[colConcat] || '').trim() : '';
       if (!label) continue;
 
+      const week  = colWeek >= 0 ? (row[colWeek] || '').trim() : '';
       const codes = extractPckCodes(row, pckCols);
-      if (!agg[label]) agg[label] = { qty: 0, pckCodes: codes };
-      agg[label].qty += qty;
+      const key   = `${label}::${week}`;
+      if (!agg[key]) agg[key] = { label, week, qty: 0, pckCodes: codes };
+      agg[key].qty += qty;
     }
 
-    for (const [label, { qty, pckCodes }] of Object.entries(agg)) {
-      if (pckCodes.length > 0) accumulate(label, qty, pckCodes);
+    for (const { label, week, qty, pckCodes } of Object.values(agg)) {
+      if (pckCodes.length > 0) accumulate(label, qty, pckCodes, week);
     }
   }
 
@@ -222,9 +232,10 @@ export async function fetchPackagingData() {
     const colItem = h.findIndex(c => c.toLowerCase() === 'menu item');
     const colVoid = h.findIndex(c => c.toLowerCase() === 'void?');
     const colQty  = h.findIndex(c => c.toLowerCase() === 'qty');
+    const colWeek = h.findIndex(c => c.toLowerCase() === 'week');
     const pckCols = pckColumnsFrom(h);
 
-    // Aggregate qty by Menu Item
+    // Aggregate by (Menu Item, Week)
     const agg = {};
     for (let i = 1; i < salesData.length; i++) {
       const row = salesData[i];
@@ -239,16 +250,19 @@ export async function fetchPackagingData() {
       const label = colItem >= 0 ? (row[colItem] || '').trim() : '';
       if (!label) continue;
 
-      if (!agg[label]) agg[label] = { qty: 0, pckCodes: codes };
-      else agg[label].qty += qty;
+      const week = colWeek >= 0 ? (row[colWeek] || '').trim() : '';
+      const key  = `${label}::${week}`;
+      if (!agg[key]) agg[key] = { label, week, qty: 0, pckCodes: codes };
+      else agg[key].qty += qty;
     }
 
-    for (const [label, { qty, pckCodes }] of Object.entries(agg)) {
-      accumulate(label, qty, pckCodes);
+    for (const { label, week, qty, pckCodes } of Object.values(agg)) {
+      accumulate(label, qty, pckCodes, week);
     }
   }
 
-  return { consumption, menuItems };
+  const weeks = [...weeksSet].sort();
+  return { consumption, menuItems, weeks, weeklyConsumption };
 }
 
 export async function fetchAllData() {

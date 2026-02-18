@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Package, Plus, Trash2, Edit2, RefreshCw, X, Download,
   AlertTriangle, CheckCircle, XCircle, Info,
-  ClipboardList, Settings, Truck, TrendingDown,
+  ClipboardList, Settings, Truck, TrendingDown, BarChart2,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import { fetchPackagingData } from './sheetsData';
@@ -536,6 +536,147 @@ function SetupTab({ packagingItems, sheetData, onOpenAdd, onOpenEdit, onDeleteIt
   );
 }
 
+// ── Consumption Tab ───────────────────────────────────────────────────────────
+
+function ConsumptionTab({ packagingItems, sheetData }) {
+  const { weeks = [], weeklyConsumption = {}, consumption = {} } = sheetData || {};
+
+  const itemMap = Object.fromEntries(
+    packagingItems.filter(i => i.sku_code).map(i => [i.sku_code, i])
+  );
+
+  // All SKUs with consumption, sorted by total descending
+  const skus = Object.keys(consumption)
+    .filter(sku => consumption[sku].total > 0)
+    .sort((a, b) => consumption[b].total - consumption[a].total);
+
+  if (!sheetData || weeks.length === 0 || skus.length === 0) {
+    return (
+      <div className="text-center py-20 text-gray-400">
+        <BarChart2 size={32} className="mx-auto mb-3 opacity-40" />
+        <p className="text-sm">No consumption data yet.</p>
+        <p className="text-xs mt-1">Sync your sheet to load weekly data.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-base font-semibold text-gray-900">Consumption by Week</h2>
+        <p className="text-sm text-gray-500 mt-0.5">
+          Packaging usage from sales data &mdash; {weeks.length} week{weeks.length !== 1 ? 's' : ''} of data
+        </p>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50">
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Item
+              </th>
+              {weeks.map(w => (
+                <th key={w} className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                  {w}
+                </th>
+              ))}
+              <th className="px-4 py-3 text-right text-xs font-semibold text-orange-600 uppercase tracking-wide">
+                Total
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {skus.map((sku, i) => {
+              const item = itemMap[sku];
+              const weekData = weeklyConsumption[sku] || {};
+              const total = consumption[sku]?.total || 0;
+              const weekValues = weeks.map(w => weekData[w] || 0);
+              const maxVal = Math.max(...weekValues, 1);
+
+              return (
+                <tr
+                  key={sku}
+                  className={`hover:bg-gray-50 transition-colors ${i < skus.length - 1 ? 'border-b border-gray-50' : ''}`}
+                >
+                  {/* Item name */}
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: item?.color || '#d1d5db' }}
+                      />
+                      <div>
+                        <div className="font-medium text-gray-900">{item?.name || sku}</div>
+                        {item?.name && (
+                          <div className="text-xs font-mono text-gray-400">{sku}</div>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Weekly columns */}
+                  {weeks.map(w => {
+                    const qty = weekData[w];
+                    const isMax = qty && qty === maxVal && weeks.length > 1;
+                    return (
+                      <td key={w} className="px-4 py-3 text-right tabular-nums">
+                        {qty ? (
+                          <span className={isMax ? 'font-semibold text-orange-600' : 'text-gray-700'}>
+                            {fmt(qty)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+
+                  {/* Total */}
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    <span className="font-semibold text-gray-900">{fmt(total)}</span>
+                    <span className="text-xs font-normal text-gray-400 ml-1">{item?.unit || 'units'}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+
+          {/* Avg/week footer */}
+          {weeks.length > 1 && (
+            <tfoot>
+              <tr className="border-t-2 border-gray-200 bg-gray-50">
+                <td className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  Avg / week
+                </td>
+                {weeks.map(w => <td key={w} />)}
+                <td className="px-4 py-2.5 text-right text-xs text-gray-400">
+                  over {weeks.length} wks
+                </td>
+              </tr>
+              {skus.map(sku => {
+                const item = itemMap[sku];
+                const avg = (consumption[sku]?.total || 0) / weeks.length;
+                return (
+                  <tr key={`avg-${sku}`} className="border-t border-gray-100 bg-gray-50/60">
+                    <td className="px-4 py-1.5 pl-8 text-xs text-gray-400">
+                      {item?.name || sku}
+                    </td>
+                    {weeks.map(w => <td key={w} />)}
+                    <td className="px-4 py-1.5 text-right text-xs text-gray-500 tabular-nums font-medium">
+                      ~{fmt(avg)}/wk
+                    </td>
+                  </tr>
+                );
+              })}
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 const BLANK_ITEM  = { name: '', sku_code: '', unit: 'units', reorder_level: '', reorder_qty: '', notes: '', color: '#6366f1' };
@@ -814,9 +955,10 @@ export default function PackagingApp({ user }) {
   }
 
   const TABS = [
-    { id: 'dashboard', label: 'Dashboard', Icon: Package },
-    { id: 'inventory', label: 'Inventory',  Icon: ClipboardList },
-    { id: 'setup',     label: 'Setup',       Icon: Settings },
+    { id: 'dashboard',   label: 'Dashboard',   Icon: Package },
+    { id: 'consumption', label: 'Consumption',  Icon: BarChart2 },
+    { id: 'inventory',   label: 'Inventory',    Icon: ClipboardList },
+    { id: 'setup',       label: 'Setup',        Icon: Settings },
   ];
 
   return (
@@ -885,6 +1027,12 @@ export default function PackagingApp({ user }) {
             onAddEvent={openAddEvent}
             onSyncSheet={syncSheet}
             loadingSheet={loadingSheet}
+          />
+        )}
+        {activeTab === 'consumption' && (
+          <ConsumptionTab
+            packagingItems={packagingItems}
+            sheetData={sheetData}
           />
         )}
         {activeTab === 'inventory' && (
