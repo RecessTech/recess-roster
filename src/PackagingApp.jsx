@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Package, Plus, Trash2, Edit2, RefreshCw, X, Download,
   AlertTriangle, CheckCircle, XCircle, Info,
-  ClipboardList, Settings, Truck, TrendingDown, BarChart2,
+  ClipboardList, Settings, Truck, TrendingDown, BarChart2, GripVertical,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import { fetchPackagingData } from './sheetsData';
@@ -389,10 +389,24 @@ function InventoryTab({ inventoryEvents, packagingItems, onOpenAdd, onDeleteEven
 
 // ── Setup Tab ─────────────────────────────────────────────────────────────────
 
-function SetupTab({ packagingItems, sheetData, onOpenAdd, onOpenEdit, onDeleteItem, onImportFromSheet }) {
+function SetupTab({ packagingItems, sheetData, onOpenAdd, onOpenEdit, onDeleteItem, onImportFromSheet, onReorder }) {
+  const [dragIdx, setDragIdx]         = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+
   const sheetCodes   = sheetData ? Object.keys(sheetData.consumption) : [];
   const matchedCodes = new Set(packagingItems.map(i => i.sku_code).filter(Boolean));
   const unmatchedCodes = sheetCodes.filter(c => !matchedCodes.has(c));
+
+  function handleDrop(targetIdx) {
+    if (dragIdx === null || dragIdx === targetIdx) {
+      setDragIdx(null); setDragOverIdx(null); return;
+    }
+    const reordered = [...packagingItems];
+    const [moved] = reordered.splice(dragIdx, 1);
+    reordered.splice(dragIdx < targetIdx ? targetIdx - 1 : targetIdx, 0, moved);
+    onReorder(reordered);
+    setDragIdx(null); setDragOverIdx(null);
+  }
 
   return (
     <div className="space-y-5">
@@ -483,11 +497,20 @@ function SetupTab({ packagingItems, sheetData, onOpenAdd, onOpenEdit, onDeleteIt
           {packagingItems.map((item, i) => {
             const hasMatch = item.sku_code && matchedCodes.has(item.sku_code) && sheetCodes.includes(item.sku_code);
             const sheetTotal = sheetData?.consumption?.[item.sku_code]?.total;
+            const isDraggingOver = dragOverIdx === i && dragIdx !== i;
             return (
               <div
                 key={item.id}
-                className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors ${i > 0 ? 'border-t border-gray-100' : ''}`}
+                draggable
+                onDragStart={() => setDragIdx(i)}
+                onDragOver={e => { e.preventDefault(); setDragOverIdx(i); }}
+                onDrop={() => handleDrop(i)}
+                onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
+                className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors select-none ${
+                  dragIdx === i ? 'opacity-40' : ''
+                } ${isDraggingOver ? 'border-t-2 border-orange-400' : i > 0 ? 'border-t border-gray-100' : ''}`}
               >
+                <GripVertical size={14} className="text-gray-300 cursor-grab flex-shrink-0" />
                 <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -545,10 +568,15 @@ function ConsumptionTab({ packagingItems, sheetData }) {
     packagingItems.filter(i => i.sku_code).map(i => [i.sku_code, i])
   );
 
-  // All SKUs with consumption, sorted by total descending
-  const skus = Object.keys(consumption)
-    .filter(sku => consumption[sku].total > 0)
-    .sort((a, b) => consumption[b].total - consumption[a].total);
+  // Order by packagingItems sort_order first, then any unrecognised SKUs at the end
+  const knownSkus = packagingItems
+    .filter(i => i.sku_code && consumption[i.sku_code]?.total > 0)
+    .map(i => i.sku_code);
+  const knownSet = new Set(knownSkus);
+  const unknownSkus = Object.keys(consumption)
+    .filter(sku => consumption[sku].total > 0 && !knownSet.has(sku))
+    .sort();
+  const skus = [...knownSkus, ...unknownSkus];
 
   if (!sheetData || weeks.length === 0 || skus.length === 0) {
     return (
@@ -899,6 +927,19 @@ export default function PackagingApp({ user }) {
     }
   }
 
+  async function reorderItems(newOrder) {
+    // Optimistically update local state so the UI feels instant
+    setPackagingItems(newOrder);
+    try {
+      await Promise.all(
+        newOrder.map((item, idx) => db.updatePackagingItem(item.id, { sort_order: idx }))
+      );
+    } catch (err) {
+      toast.error('Failed to save order');
+      loadData(); // revert to server state on failure
+    }
+  }
+
   // ── Inventory event CRUD ────────────────────────────────────────────────────
 
   function openAddEvent(type = 'stocktake', itemId = '') {
@@ -1051,6 +1092,7 @@ export default function PackagingApp({ user }) {
             onOpenEdit={openEditItem}
             onDeleteItem={deleteItem}
             onImportFromSheet={importFromSheet}
+            onReorder={reorderItems}
           />
         )}
       </div>
