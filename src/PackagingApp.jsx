@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Package, Plus, Trash2, Edit2, RefreshCw, X, Download,
   AlertTriangle, CheckCircle, XCircle, Info,
-  ClipboardList, Settings, Truck, TrendingDown,
+  ClipboardList, Settings, Truck, TrendingDown, BarChart2, GripVertical,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import { fetchPackagingData } from './sheetsData';
@@ -389,10 +389,24 @@ function InventoryTab({ inventoryEvents, packagingItems, onOpenAdd, onDeleteEven
 
 // ── Setup Tab ─────────────────────────────────────────────────────────────────
 
-function SetupTab({ packagingItems, sheetData, onOpenAdd, onOpenEdit, onDeleteItem, onImportFromSheet }) {
+function SetupTab({ packagingItems, sheetData, onOpenAdd, onOpenEdit, onDeleteItem, onImportFromSheet, onReorder }) {
+  const [dragIdx, setDragIdx]         = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+
   const sheetCodes   = sheetData ? Object.keys(sheetData.consumption) : [];
   const matchedCodes = new Set(packagingItems.map(i => i.sku_code).filter(Boolean));
   const unmatchedCodes = sheetCodes.filter(c => !matchedCodes.has(c));
+
+  function handleDrop(targetIdx) {
+    if (dragIdx === null || dragIdx === targetIdx) {
+      setDragIdx(null); setDragOverIdx(null); return;
+    }
+    const reordered = [...packagingItems];
+    const [moved] = reordered.splice(dragIdx, 1);
+    reordered.splice(dragIdx < targetIdx ? targetIdx - 1 : targetIdx, 0, moved);
+    onReorder(reordered);
+    setDragIdx(null); setDragOverIdx(null);
+  }
 
   return (
     <div className="space-y-5">
@@ -483,11 +497,20 @@ function SetupTab({ packagingItems, sheetData, onOpenAdd, onOpenEdit, onDeleteIt
           {packagingItems.map((item, i) => {
             const hasMatch = item.sku_code && matchedCodes.has(item.sku_code) && sheetCodes.includes(item.sku_code);
             const sheetTotal = sheetData?.consumption?.[item.sku_code]?.total;
+            const isDraggingOver = dragOverIdx === i && dragIdx !== i;
             return (
               <div
                 key={item.id}
-                className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors ${i > 0 ? 'border-t border-gray-100' : ''}`}
+                draggable
+                onDragStart={() => setDragIdx(i)}
+                onDragOver={e => { e.preventDefault(); setDragOverIdx(i); }}
+                onDrop={() => handleDrop(i)}
+                onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
+                className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors select-none ${
+                  dragIdx === i ? 'opacity-40' : ''
+                } ${isDraggingOver ? 'border-t-2 border-orange-400' : i > 0 ? 'border-t border-gray-100' : ''}`}
               >
+                <GripVertical size={14} className="text-gray-300 cursor-grab flex-shrink-0" />
                 <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -532,6 +555,152 @@ function SetupTab({ packagingItems, sheetData, onOpenAdd, onOpenEdit, onDeleteIt
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Consumption Tab ───────────────────────────────────────────────────────────
+
+function ConsumptionTab({ packagingItems, sheetData }) {
+  const { weeks = [], weeklyConsumption = {}, consumption = {} } = sheetData || {};
+
+  const itemMap = Object.fromEntries(
+    packagingItems.filter(i => i.sku_code).map(i => [i.sku_code, i])
+  );
+
+  // Order by packagingItems sort_order first, then any unrecognised SKUs at the end
+  const knownSkus = packagingItems
+    .filter(i => i.sku_code && consumption[i.sku_code]?.total > 0)
+    .map(i => i.sku_code);
+  const knownSet = new Set(knownSkus);
+  const unknownSkus = Object.keys(consumption)
+    .filter(sku => consumption[sku].total > 0 && !knownSet.has(sku))
+    .sort();
+  const skus = [...knownSkus, ...unknownSkus];
+
+  if (!sheetData || weeks.length === 0 || skus.length === 0) {
+    return (
+      <div className="text-center py-20 text-gray-400">
+        <BarChart2 size={32} className="mx-auto mb-3 opacity-40" />
+        <p className="text-sm">No consumption data yet.</p>
+        <p className="text-xs mt-1">Sync your sheet to load weekly data.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-base font-semibold text-gray-900">Consumption by Week</h2>
+        <p className="text-sm text-gray-500 mt-0.5">
+          Packaging usage from sales data &mdash; {weeks.length} week{weeks.length !== 1 ? 's' : ''} of data
+        </p>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50">
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Item
+              </th>
+              {weeks.map(w => (
+                <th key={w} className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                  {w}
+                </th>
+              ))}
+              <th className="px-4 py-3 text-right text-xs font-semibold text-orange-600 uppercase tracking-wide">
+                Total
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {skus.map((sku, i) => {
+              const item = itemMap[sku];
+              const weekData = weeklyConsumption[sku] || {};
+              const total = consumption[sku]?.total || 0;
+              const weekValues = weeks.map(w => weekData[w] || 0);
+              const maxVal = Math.max(...weekValues, 1);
+
+              return (
+                <tr
+                  key={sku}
+                  className={`hover:bg-gray-50 transition-colors ${i < skus.length - 1 ? 'border-b border-gray-50' : ''}`}
+                >
+                  {/* Item name */}
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: item?.color || '#d1d5db' }}
+                      />
+                      <div>
+                        <div className="font-medium text-gray-900">{item?.name || sku}</div>
+                        {item?.name && (
+                          <div className="text-xs font-mono text-gray-400">{sku}</div>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Weekly columns */}
+                  {weeks.map(w => {
+                    const qty = weekData[w];
+                    const isMax = qty && qty === maxVal && weeks.length > 1;
+                    return (
+                      <td key={w} className="px-4 py-3 text-right tabular-nums">
+                        {qty ? (
+                          <span className={isMax ? 'font-semibold text-orange-600' : 'text-gray-700'}>
+                            {fmt(qty)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+
+                  {/* Total */}
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    <span className="font-semibold text-gray-900">{fmt(total)}</span>
+                    <span className="text-xs font-normal text-gray-400 ml-1">{item?.unit || 'units'}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+
+          {/* Avg/week footer */}
+          {weeks.length > 1 && (
+            <tfoot>
+              <tr className="border-t-2 border-gray-200 bg-gray-50">
+                <td className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  Avg / week
+                </td>
+                {weeks.map(w => <td key={w} />)}
+                <td className="px-4 py-2.5 text-right text-xs text-gray-400">
+                  over {weeks.length} wks
+                </td>
+              </tr>
+              {skus.map(sku => {
+                const item = itemMap[sku];
+                const avg = (consumption[sku]?.total || 0) / weeks.length;
+                return (
+                  <tr key={`avg-${sku}`} className="border-t border-gray-100 bg-gray-50/60">
+                    <td className="px-4 py-1.5 pl-8 text-xs text-gray-400">
+                      {item?.name || sku}
+                    </td>
+                    {weeks.map(w => <td key={w} />)}
+                    <td className="px-4 py-1.5 text-right text-xs text-gray-500 tabular-nums font-medium">
+                      ~{fmt(avg)}/wk
+                    </td>
+                  </tr>
+                );
+              })}
+            </tfoot>
+          )}
+        </table>
+      </div>
     </div>
   );
 }
@@ -758,6 +927,19 @@ export default function PackagingApp({ user }) {
     }
   }
 
+  async function reorderItems(newOrder) {
+    // Optimistically update local state so the UI feels instant
+    setPackagingItems(newOrder);
+    try {
+      await Promise.all(
+        newOrder.map((item, idx) => db.updatePackagingItem(item.id, { sort_order: idx }))
+      );
+    } catch (err) {
+      toast.error('Failed to save order');
+      loadData(); // revert to server state on failure
+    }
+  }
+
   // ── Inventory event CRUD ────────────────────────────────────────────────────
 
   function openAddEvent(type = 'stocktake', itemId = '') {
@@ -814,9 +996,10 @@ export default function PackagingApp({ user }) {
   }
 
   const TABS = [
-    { id: 'dashboard', label: 'Dashboard', Icon: Package },
-    { id: 'inventory', label: 'Inventory',  Icon: ClipboardList },
-    { id: 'setup',     label: 'Setup',       Icon: Settings },
+    { id: 'dashboard',   label: 'Dashboard',   Icon: Package },
+    { id: 'consumption', label: 'Consumption',  Icon: BarChart2 },
+    { id: 'inventory',   label: 'Inventory',    Icon: ClipboardList },
+    { id: 'setup',       label: 'Setup',        Icon: Settings },
   ];
 
   return (
@@ -887,6 +1070,12 @@ export default function PackagingApp({ user }) {
             loadingSheet={loadingSheet}
           />
         )}
+        {activeTab === 'consumption' && (
+          <ConsumptionTab
+            packagingItems={packagingItems}
+            sheetData={sheetData}
+          />
+        )}
         {activeTab === 'inventory' && (
           <InventoryTab
             inventoryEvents={inventoryEvents}
@@ -903,6 +1092,7 @@ export default function PackagingApp({ user }) {
             onOpenEdit={openEditItem}
             onDeleteItem={deleteItem}
             onImportFromSheet={importFromSheet}
+            onReorder={reorderItems}
           />
         )}
       </div>

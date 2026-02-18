@@ -6,7 +6,8 @@ const SHEET_GIDS = {
   revenue: 1981032383,
   costs: 913347837,
   customer: 332006994,
-  packagingData: 1126682496,
+  packagingModifiers: 751171605, // PCK Modifier Data — coffee size modifiers with PCK codes
+  itemSales: 0,                  // Item Sales — food + cold drinks with PCK codes
 };
 
 function buildCsvUrl(gid) {
@@ -141,52 +142,127 @@ export async function fetchCustomerData() {
   };
 }
 
-// Parse packaging consumption from PCK Data sheet.
-// Each row is a menu item / modifier with quantity sold and PCK1-PCK4 codes.
+// Parse packaging consumption from two sources:
+//   1. PCK Modifier Data — coffee size modifiers (Option Group Name = "Coffee Size")
+//      each row has Concat (e.g. "Latte-Medium"), Qty, PCK1-PCK4
+//   2. Item Sales — food + cold drinks; rows with at least one PCK code
+//      hot drinks have all dashes so are automatically excluded
 // Returns { consumption: { skuCode: { total, items } }, menuItems: [] }
 export async function fetchPackagingData() {
-  const data = await fetchSheetCsv(SHEET_GIDS.packagingData);
-  if (!data || data.length < 2) return { consumption: {}, menuItems: [] };
+  const [modifierData, salesData] = await Promise.all([
+    fetchSheetCsv(SHEET_GIDS.packagingModifiers),
+    fetchSheetCsv(SHEET_GIDS.itemSales),
+  ]);
 
-  const header = data[0].map(h => (h || '').trim().toLowerCase());
-  const colQty      = header.findIndex(h => h === 'quantity');
-  const colItemName = header.findIndex(h => h === 'item name');
-  const colModifier = header.findIndex(h => h === 'modifier');
-  // PCK columns (case-insensitive, PCK1..PCK4)
-  const colPck = [1, 2, 3, 4].map(n =>
-    data[0].findIndex(h => (h || '').trim().toUpperCase() === `PCK${n}`)
-  );
-
-  const consumption = {}; // { skuCode: { total: number, items: [{label, qty}] } }
+  const consumption = {};
   const menuItems = [];
+  const weeklyConsumption = {}; // { skuCode: { weekLabel: qty } }
+  const weeksSet = new Set();
 
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    const rawQty = colQty >= 0 ? (row[colQty] || '').toString().replace(/,/g, '').trim() : '';
-    const qty = parseFloat(rawQty);
-    if (!qty || qty <= 0) continue;
-
-    const pckCodes = colPck
-      .filter(ci => ci >= 0)
-      .map(ci => (row[ci] || '').trim())
-      .filter(v => v !== '');
-
-    if (pckCodes.length === 0) continue;
-
-    const itemName = colItemName >= 0 ? (row[colItemName] || '').trim() : '';
-    const modifier  = colModifier >= 0 ? (row[colModifier] || '').trim() : '';
-    const label = modifier ? `${itemName} (${modifier})` : itemName;
-
+  function accumulate(label, qty, pckCodes, week) {
     menuItems.push({ label, qty, pckCodes });
-
     for (const code of pckCodes) {
       if (!consumption[code]) consumption[code] = { total: 0, items: [] };
       consumption[code].total += qty;
       consumption[code].items.push({ label, qty });
+      if (week) {
+        if (!weeklyConsumption[code]) weeklyConsumption[code] = {};
+        weeklyConsumption[code][week] = (weeklyConsumption[code][week] || 0) + qty;
+        weeksSet.add(week);
+      }
     }
   }
 
-  return { consumption, menuItems };
+  function pckColumnsFrom(header) {
+    return header
+      .map((h, i) => ({ h: (h || '').trim(), i }))
+      .filter(({ h }) => /^pck\d+$/i.test(h))
+      .map(({ i }) => i);
+  }
+
+  function isVoided(row, colVoid) {
+    return colVoid >= 0 && (row[colVoid] || '').trim().toUpperCase() === 'TRUE';
+  }
+
+  function extractPckCodes(row, pckCols) {
+    return pckCols
+      .map(ci => (row[ci] || '').trim())
+      .filter(v => v !== '' && v !== '-');
+  }
+
+  // --- Source 1: PCK Modifier Data (coffee sizes) ---
+  if (modifierData && modifierData.length >= 2) {
+    const h = modifierData[0].map(c => (c || '').trim());
+    const colGroup  = h.findIndex(c => c.toLowerCase() === 'option group name');
+    const colVoid   = h.findIndex(c => c.toLowerCase() === 'void?');
+    const colQty    = h.findIndex(c => c.toLowerCase() === 'qty');
+    const colConcat = h.findIndex(c => c.toLowerCase() === 'concat');
+    const colWeek   = h.findIndex(c => c.toLowerCase() === 'week');
+    const pckCols   = pckColumnsFrom(h);
+
+    // Aggregate by (Concat, Week) — one row per transaction so we sum across rows
+    const agg = {};
+    for (let i = 1; i < modifierData.length; i++) {
+      const row = modifierData[i];
+      const group = colGroup >= 0 ? (row[colGroup] || '').trim() : '';
+      if (group !== 'Coffee Size' || isVoided(row, colVoid)) continue;
+
+      const qty = parseFloat((row[colQty] || '').toString().replace(/,/g, ''));
+      if (!qty || qty <= 0) continue;
+
+      const label = colConcat >= 0 ? (row[colConcat] || '').trim() : '';
+      if (!label) continue;
+
+      const week  = colWeek >= 0 ? (row[colWeek] || '').trim() : '';
+      const codes = extractPckCodes(row, pckCols);
+      const key   = `${label}::${week}`;
+      if (!agg[key]) agg[key] = { label, week, qty: 0, pckCodes: codes };
+      agg[key].qty += qty;
+    }
+
+    for (const { label, week, qty, pckCodes } of Object.values(agg)) {
+      if (pckCodes.length > 0) accumulate(label, qty, pckCodes, week);
+    }
+  }
+
+  // --- Source 2: Item Sales (food + cold drinks) ---
+  // Hot drinks have all-dash PCK columns so are automatically skipped.
+  if (salesData && salesData.length >= 2) {
+    const h = salesData[0].map(c => (c || '').trim());
+    const colItem = h.findIndex(c => c.toLowerCase() === 'menu item');
+    const colVoid = h.findIndex(c => c.toLowerCase() === 'void?');
+    const colQty  = h.findIndex(c => c.toLowerCase() === 'qty');
+    const colWeek = h.findIndex(c => c.toLowerCase() === 'week');
+    const pckCols = pckColumnsFrom(h);
+
+    // Aggregate by (Menu Item, Week)
+    const agg = {};
+    for (let i = 1; i < salesData.length; i++) {
+      const row = salesData[i];
+      if (isVoided(row, colVoid)) continue;
+
+      const codes = extractPckCodes(row, pckCols);
+      if (codes.length === 0) continue; // no packaging — hot drinks, skip
+
+      const qty = parseFloat((row[colQty] || '').toString().replace(/,/g, ''));
+      if (!qty || qty <= 0) continue;
+
+      const label = colItem >= 0 ? (row[colItem] || '').trim() : '';
+      if (!label) continue;
+
+      const week = colWeek >= 0 ? (row[colWeek] || '').trim() : '';
+      const key  = `${label}::${week}`;
+      if (!agg[key]) agg[key] = { label, week, qty: 0, pckCodes: codes };
+      else agg[key].qty += qty;
+    }
+
+    for (const { label, week, qty, pckCodes } of Object.values(agg)) {
+      accumulate(label, qty, pckCodes, week);
+    }
+  }
+
+  const weeks = [...weeksSet].sort();
+  return { consumption, menuItems, weeks, weeklyConsumption };
 }
 
 export async function fetchAllData() {
