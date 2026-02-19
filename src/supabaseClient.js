@@ -655,4 +655,133 @@ export const db = {
       .eq('id', eventId);
     if (error) throw error;
   },
+
+  // ── Ordering: Distributors ───────────────────────────────────────────────────
+
+  async getOrderingDistributors(userId) {
+    const { data, error } = await supabase
+      .from('ordering_distributors')
+      .select('*')
+      .eq('user_id', userId)
+      .order('name', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createOrderingDistributor(userId, name) {
+    const { data, error } = await supabase
+      .from('ordering_distributors')
+      .insert([{ user_id: userId, name }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteOrderingDistributor(distributorId) {
+    const { error } = await supabase
+      .from('ordering_distributors')
+      .delete()
+      .eq('id', distributorId);
+    if (error) throw error;
+  },
+
+  // ── Ordering: Items ──────────────────────────────────────────────────────────
+
+  async getOrderingItems(userId) {
+    const { data, error } = await supabase
+      .from('ordering_items')
+      .select('*')
+      .eq('user_id', userId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data || []).map(row => ({
+      id:                row.id,
+      sku:               row.sku,
+      default_qty:       row.default_qty,
+      uom:               row.uom,
+      distributor_id:    row.distributor_id,
+      sort_order:        row.sort_order,
+      current_status:    row.current_status || 'in_stock',
+      current_qty:       row.current_qty,
+      status_updated_at: row.status_updated_at,
+      created_at:        row.created_at,
+    }));
+  },
+
+  async createOrderingItem(userId, item) {
+    const { data, error } = await supabase
+      .from('ordering_items')
+      .insert([{ ...item, user_id: userId }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async bulkCreateOrderingItems(userId, items) {
+    const rows = items.map(item => ({ ...item, user_id: userId }));
+    const { error } = await supabase
+      .from('ordering_items')
+      .insert(rows);
+    if (error) throw error;
+  },
+
+  async updateOrderingItem(itemId, updates) {
+    const { data, error } = await supabase
+      .from('ordering_items')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', itemId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateOrderingItemStatus(itemId, status) {
+    const { error } = await supabase
+      .from('ordering_items')
+      .update({ current_status: status, status_updated_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', itemId);
+    if (error) throw error;
+  },
+
+  async updateOrderingItemQty(itemId, qty) {
+    const { error } = await supabase
+      .from('ordering_items')
+      .update({ current_qty: qty, updated_at: new Date().toISOString() })
+      .eq('id', itemId);
+    if (error) throw error;
+  },
+
+  async deleteOrderingItem(itemId) {
+    const { error } = await supabase
+      .from('ordering_items')
+      .delete()
+      .eq('id', itemId);
+    if (error) throw error;
+  },
+
+  // ── Ordering: Order History ──────────────────────────────────────────────────
+
+  async getOrderHistory(userId) {
+    const { data, error } = await supabase
+      .from('order_history')
+      .select('*')
+      .eq('user_id', userId)
+      .order('placed_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createOrderHistoryRecord(userId, record) {
+    const { data, error } = await supabase
+      .from('order_history')
+      .insert([{ ...record, user_id: userId }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
 };
