@@ -8,6 +8,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, Users, ShoppingCart,
   BarChart3, RefreshCw, ArrowLeft, Star, Heart,
   Utensils, Truck, AlertCircle, Filter, ChevronDown, SlidersHorizontal, LayoutGrid,
+  Calendar, FileText,
 } from 'lucide-react';
 
 // --- CONSTANTS ---
@@ -312,14 +313,19 @@ function WeekExclusionBar({ excludedWeeks, setExcludedWeeks, allWeekNumbers }) {
 }
 
 // --- KPI Card ---
-function KpiCard({ title, value, subtitle, icon: Icon, trend, color = 'brand' }) {
+function KpiCard({ title, value, subtitle, icon: Icon, trend, color = 'brand', invertTrend = false }) {
   const colorMap = {
     brand: 'bg-orange-50 text-orange-600',
     blue: 'bg-blue-50 text-blue-600',
     green: 'bg-green-50 text-green-600',
     purple: 'bg-purple-50 text-purple-600',
     pink: 'bg-pink-50 text-pink-600',
+    red: 'bg-red-50 text-red-600',
+    amber: 'bg-amber-50 text-amber-600',
   };
+
+  // For cost metrics, going up is bad (red), going down is good (green)
+  const trendIsGood = trend != null ? (invertTrend ? trend < 0 : trend >= 0) : null;
 
   return (
     <div className="bg-white rounded-xl shadow-card p-5 flex items-start gap-4 animate-fade-in">
@@ -332,7 +338,7 @@ function KpiCard({ title, value, subtitle, icon: Icon, trend, color = 'brand' })
         {(subtitle || trend != null) && (
           <div className="flex items-center gap-1.5 mt-1">
             {trend != null && (
-              <span className={`flex items-center gap-0.5 text-xs font-semibold ${trend >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+              <span className={`flex items-center gap-0.5 text-xs font-semibold ${trendIsGood ? 'text-green-600' : 'text-red-500'}`}>
                 {trend >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
                 {Math.abs(trend).toFixed(1)}%
               </span>
@@ -476,6 +482,34 @@ function RevenueTab({ data, filter, excludedWeeks }) {
   const channelAxis = useAxisRange();
   const aovAxis = useAxisRange();
   const custAxis = useAxisRange();
+  const mixAxis = useAxisRange();
+
+  const revenuePerHour = useMemo(() => f(data.avgRevenuePerHour), [f, data.avgRevenuePerHour]);
+
+  // Product mix (food/drinks/snacks %)
+  const productMixData = useMemo(() => {
+    const food = f(data.foodPct);
+    const drinks = f(data.drinksPct);
+    const snacks = f(data.snacksPct);
+    const len = Math.max(food.length, drinks.length, snacks.length);
+    const result = [];
+    for (let i = 0; i < len; i++) {
+      result.push({
+        period: shortPeriodLabel(food[i]?.period || drinks[i]?.period || snacks[i]?.period),
+        Food: food[i]?.value ?? null,
+        Drinks: drinks[i]?.value ?? null,
+        Snacks: snacks[i]?.value ?? null,
+      });
+    }
+    return result;
+  }, [f, data.foodPct, data.drinksPct, data.snacksPct]);
+
+  const latestMix = productMixData[productMixData.length - 1];
+  const pieMixData = latestMix ? [
+    { name: 'Food', value: latestMix.Food || 0 },
+    { name: 'Drinks', value: latestMix.Drinks || 0 },
+    { name: 'Snacks', value: latestMix.Snacks || 0 },
+  ].filter(d => d.value > 0) : [];
 
   // Stacked channel breakdown
   const channelData = useMemo(() => {
@@ -500,11 +534,12 @@ function RevenueTab({ data, filter, excludedWeeks }) {
   return (
     <div className="space-y-6">
       {/* KPI Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <KpiCard title="Weekly Revenue" value={fmtDollar(lastVal(totalRev))} trend={trend(totalRev)} subtitle="latest week" icon={DollarSign} color="brand" />
         <KpiCard title="Avg Order Value" value={lastVal(aov) ? `$${lastVal(aov).toFixed(2)}` : '-'} trend={trend(aov)} subtitle="per transaction" icon={ShoppingCart} color="blue" />
         <KpiCard title="Daily Customers" value={lastVal(dailyCust)?.toFixed(0) || '-'} trend={trend(dailyCust)} subtitle="avg per day" icon={Users} color="green" />
         <KpiCard title="Daily Revenue" value={fmtDollar(lastVal(avgDailyRev))} trend={trend(avgDailyRev)} subtitle="in-store avg" icon={BarChart3} color="purple" />
+        <KpiCard title="Revenue / Hour" value={fmtDollar(lastVal(revenuePerHour))} trend={trend(revenuePerHour)} subtitle="trading hour avg" icon={Calendar} color="amber" />
       </div>
 
       {/* Revenue Trend */}
@@ -570,6 +605,47 @@ function RevenueTab({ data, filter, excludedWeeks }) {
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
+
+      {/* Product Mix */}
+      {productMixData.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <ChartCard title="Product Mix Trend" subtitle="Food / Drinks / Snacks share of revenue" className="lg:col-span-2" axis={mixAxis}>
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={productMixData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="period" tick={TICK_STYLE} interval={Math.max(0, Math.floor(productMixData.length / 10) - 1)} />
+                <YAxis domain={mixAxis.domain} tickFormatter={v => `${v}%`} tick={TICK_STYLE} width={45} />
+                <Tooltip content={<ChartTooltip formatter={fmtPct} />} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Area type="monotone" dataKey="Food" stroke={COLORS.primary} fill={COLORS.primary} fillOpacity={0.15} strokeWidth={2} dot={false} connectNulls />
+                <Area type="monotone" dataKey="Drinks" stroke={COLORS.secondary} fill={COLORS.secondary} fillOpacity={0.15} strokeWidth={2} dot={false} connectNulls />
+                <Area type="monotone" dataKey="Snacks" stroke={COLORS.amber} fill={COLORS.amber} fillOpacity={0.15} strokeWidth={2} dot={false} connectNulls />
+              </AreaChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
+          <ChartCard title="Latest Mix" subtitle="Revenue share this week">
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie
+                  data={pieMixData}
+                  cx="50%" cy="50%"
+                  innerRadius={55} outerRadius={90}
+                  paddingAngle={3}
+                  dataKey="value"
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  labelLine={{ stroke: '#94a3b8', strokeWidth: 1 }}
+                >
+                  {pieMixData.map((_, i) => (
+                    <Cell key={i} fill={[COLORS.primary, COLORS.secondary, COLORS.amber][i % 3]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={fmtPct} />
+              </PieChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        </div>
+      )}
     </div>
   );
 }
@@ -642,10 +718,10 @@ function CostsTab({ data, filter, excludedWeeks }) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard title="Weekly COGS" value={fmtDollar(lastVal(totalCogs))} trend={trend(totalCogs)} subtitle="latest week" icon={Truck} color="brand" />
-        <KpiCard title="COGS % Revenue" value={fmtPct(latestCogsPct)} subtitle="of total revenue" icon={ShoppingCart} color="blue" />
-        <KpiCard title="Labour % Revenue" value={fmtPct(latestLabourPct)} subtitle="of total revenue" icon={Users} color="green" />
-        <KpiCard title="COGS per Unit" value={latestCogsPerUnit ? `$${latestCogsPerUnit.toFixed(2)}` : '-'} subtitle="avg unit cost" icon={Utensils} color="purple" />
+        <KpiCard title="Weekly COGS" value={fmtDollar(lastVal(totalCogs))} trend={trend(totalCogs)} subtitle="latest week" icon={Truck} color="brand" invertTrend />
+        <KpiCard title="COGS % Revenue" value={fmtPct(latestCogsPct)} trend={trend(cogsPct)} subtitle="of total revenue" icon={ShoppingCart} color="blue" invertTrend />
+        <KpiCard title="Labour % Revenue" value={fmtPct(latestLabourPct)} trend={trend(labourPct)} subtitle="of total revenue" icon={Users} color="green" invertTrend />
+        <KpiCard title="COGS per Unit" value={latestCogsPerUnit ? `$${latestCogsPerUnit.toFixed(2)}` : '-'} trend={trend(f(data.cogsPerUnit))} subtitle="avg unit cost" icon={Utensils} color="purple" invertTrend />
       </div>
 
       {/* Cost Ratios */}
@@ -871,11 +947,12 @@ function withQoQ(data) {
   }));
 }
 
-function QoQBadge({ value }) {
+function QoQBadge({ value, invertTrend = false }) {
   if (value == null) return <span className="text-xs text-surface-300">—</span>;
   const pos = value >= 0;
+  const isGood = invertTrend ? !pos : pos;
   return (
-    <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${pos ? 'text-green-600' : 'text-red-500'}`}>
+    <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${isGood ? 'text-green-600' : 'text-red-500'}`}>
       {pos ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
       {pos ? '+' : ''}{value.toFixed(1)}%
     </span>
@@ -919,6 +996,21 @@ function OverviewTab({ data }) {
     })));
   }, [qRevenue, qCogs]);
 
+  // Contribution margin = gross profit - labour
+  const qContribMargin = useMemo(() => {
+    return withQoQ(qGrossProfit.map((r, i) => ({
+      quarter: r.quarter,
+      value: r.value - (qLabour[i]?.value || 0),
+    })));
+  }, [qGrossProfit, qLabour]);
+
+  const qContribMarginPct = useMemo(() => {
+    return withQoQ(qRevenue.map((r, i) => ({
+      quarter: r.quarter,
+      value: r.value > 0 ? (qContribMargin[i]?.value / r.value) * 100 : 0,
+    })));
+  }, [qRevenue, qContribMargin]);
+
   // Quarters list
   const quarters = qRevenue.map(d => d.quarter);
 
@@ -939,11 +1031,12 @@ function OverviewTab({ data }) {
       'COGS %': qCogsPct[i]?.value || 0,
       'Labour %': qLabourPct[i]?.value || 0,
       'Gross Margin %': qGrossMargin[i]?.value || 0,
+      'Contrib. Margin %': qContribMarginPct[i]?.value || 0,
     }));
-  }, [quarters, qCogsPct, qLabourPct, qGrossMargin]);
+  }, [quarters, qCogsPct, qLabourPct, qGrossMargin, qContribMarginPct]);
 
   // Table row helper
-  const MetricRow = ({ label, data: rowData, format = 'currency', className = '' }) => (
+  const MetricRow = ({ label, data: rowData, format = 'currency', className = '', invertTrend = false }) => (
     <tr className={`border-b border-surface-100 hover:bg-surface-50 transition-colors ${className}`}>
       <td className="py-3 pr-4 text-sm font-medium text-surface-700 whitespace-nowrap sticky left-0 bg-white">{label}</td>
       {rowData.map((d, i) => (
@@ -956,7 +1049,7 @@ function OverviewTab({ data }) {
              format === 'decimal1' ? (d.value != null ? d.value.toFixed(1) : '-') :
              d.value}
           </div>
-          <QoQBadge value={d.qoq} />
+          <QoQBadge value={d.qoq} invertTrend={invertTrend} />
         </td>
       ))}
     </tr>
@@ -1030,6 +1123,7 @@ function OverviewTab({ data }) {
               <Tooltip content={<ChartTooltip formatter={fmtPct} />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Line type="monotone" dataKey="Gross Margin %" stroke={COLORS.green} strokeWidth={2.5} dot={{ r: 4 }} />
+              <Line type="monotone" dataKey="Contrib. Margin %" stroke={COLORS.teal} strokeWidth={2.5} dot={{ r: 4 }} strokeDasharray="5 3" />
               <Line type="monotone" dataKey="COGS %" stroke={COLORS.primary} strokeWidth={2} dot={{ r: 3 }} />
               <Line type="monotone" dataKey="Labour %" stroke={COLORS.secondary} strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
@@ -1061,10 +1155,12 @@ function OverviewTab({ data }) {
               <MetricRow label="Catering / B2B" data={qCatering} />
 
               <SectionHeader>Profitability</SectionHeader>
-              <MetricRow label="Total COGS" data={qCogs} />
+              <MetricRow label="Total COGS" data={qCogs} invertTrend />
               <MetricRow label="Gross Profit" data={qGrossProfit} />
-              <MetricRow label="Gross Margin" data={qGrossMargin} format="pct" />
-              <MetricRow label="Total Labour" data={qLabour} />
+              <MetricRow label="Gross Margin %" data={qGrossMargin} format="pct" />
+              <MetricRow label="Total Labour" data={qLabour} invertTrend />
+              <MetricRow label="Contribution Margin" data={qContribMargin} />
+              <MetricRow label="Contrib. Margin %" data={qContribMarginPct} format="pct" />
 
               <SectionHeader>Unit Economics</SectionHeader>
               <MetricRow label="Avg Order Value" data={qAov} format="dollar2" />
@@ -1075,8 +1171,337 @@ function OverviewTab({ data }) {
               <MetricRow label="COGS per Unit" data={qCogsPerUnit} format="dollar2" />
 
               <SectionHeader>Cost Ratios</SectionHeader>
-              <MetricRow label="COGS % of Revenue" data={qCogsPct} format="pct" />
-              <MetricRow label="Labour % of Revenue" data={qLabourPct} format="pct" />
+              <MetricRow label="COGS % of Revenue" data={qCogsPct} format="pct" invertTrend />
+              <MetricRow label="Labour % of Revenue" data={qLabourPct} format="pct" invertTrend />
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===========================
+// WEEKLY VIEW TAB
+// ===========================
+function WeeklyTab({ data, filter, excludedWeeks }) {
+  const f = useCallback((arr) => applyFilter(arr, filter, excludedWeeks), [filter, excludedWeeks]);
+
+  const weeklyRows = useMemo(() => {
+    const map = {};
+
+    const add = (arr, key) => {
+      for (const d of f(arr)) {
+        const p = parsePeriod(d.period);
+        if (!p) continue;
+        const mapKey = p.year
+          ? `${p.year}-${String(p.week).padStart(2, '0')}`
+          : `0000-${String(p.week).padStart(2, '0')}`;
+        if (!map[mapKey]) map[mapKey] = { period: d.period, year: p.year, week: p.week, quarter: p.quarter ? `Q${p.quarter} ${p.year}` : '' };
+        map[mapKey][key] = d.value;
+      }
+    };
+
+    add(data.revenue.totalRevenue, 'revenue');
+    add(data.revenue.aov, 'aov');
+    add(data.revenue.avgDailyCustomers, 'dailyCustomers');
+    add(data.revenue.avgDailyRevenue, 'dailyRevenue');
+    add(data.revenue.avgRevenuePerHour, 'revenuePerHour');
+    add(data.revenue.tradingHours, 'tradingHours');
+    add(data.costs.totalCogs, 'cogs');
+    add(data.costs.cogsPctRevenue, 'cogsPct');
+    add(data.costs.totalLabour, 'labour');
+    add(data.costs.labourPctRevenue, 'labourPct');
+    add(data.costs.unitsSold, 'unitsSold');
+    add(data.costs.cogsPerUnit, 'cogsPerUnit');
+
+    const sorted = Object.values(map)
+      .filter(r => r.year)
+      .sort((a, b) => b.year !== a.year ? b.year - a.year : b.week - a.week);
+
+    return sorted.map((row, i) => {
+      const prev = sorted[i + 1];
+      const wow = prev?.revenue && row.revenue ? ((row.revenue - prev.revenue) / prev.revenue) * 100 : null;
+      const grossProfit = row.revenue != null && row.cogs != null ? row.revenue - row.cogs : null;
+      const grossMargin = row.revenue && grossProfit != null ? (grossProfit / row.revenue) * 100 : null;
+      const contribMargin = grossProfit != null && row.labour != null ? grossProfit - row.labour : null;
+      const contribMarginPct = row.revenue && contribMargin != null ? (contribMargin / row.revenue) * 100 : null;
+      return { ...row, wow, grossProfit, grossMargin, contribMargin, contribMarginPct };
+    });
+  }, [f, data]);
+
+  const latestRow = weeklyRows[0];
+
+  // Summary KPI cards from latest week
+  const kpis = latestRow ? [
+    { title: 'Revenue', value: fmtDollar(latestRow.revenue), sub: shortPeriodLabel(latestRow.period), color: 'brand', icon: DollarSign, trend: latestRow.wow },
+    { title: 'Gross Profit', value: fmtDollar(latestRow.grossProfit), sub: `${fmtPct(latestRow.grossMargin)} margin`, color: 'green', icon: BarChart3 },
+    { title: 'Contrib. Margin', value: fmtDollar(latestRow.contribMargin), sub: `${fmtPct(latestRow.contribMarginPct)} of revenue`, color: 'teal', icon: TrendingUp },
+    { title: 'COGS %', value: fmtPct(latestRow.cogsPct), sub: 'of revenue', color: 'red', icon: Truck, invertTrend: true },
+    { title: 'AOV', value: latestRow.aov ? `$${latestRow.aov.toFixed(2)}` : '-', sub: 'per transaction', color: 'blue', icon: ShoppingCart },
+    { title: 'Daily Customers', value: latestRow.dailyCustomers?.toFixed(1) || '-', sub: 'avg per day', color: 'purple', icon: Users },
+  ] : [];
+
+  return (
+    <div className="space-y-6">
+      {latestRow && (
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          {kpis.map((k, i) => (
+            <KpiCard key={i} title={k.title} value={k.value} subtitle={k.sub} icon={k.icon} color={k.color} trend={k.trend} invertTrend={k.invertTrend} />
+          ))}
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl shadow-card animate-fade-in overflow-hidden">
+        <div className="p-5 border-b border-surface-100">
+          <h3 className="text-base font-semibold text-surface-800">Weekly Performance</h3>
+          <p className="text-xs text-surface-400 mt-0.5">All key metrics by week — newest first</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs min-w-[1100px]">
+            <thead>
+              <tr className="border-b border-surface-200 bg-surface-50">
+                {[
+                  'Period', 'Quarter', 'Revenue', 'WoW', 'COGS', 'COGS %',
+                  'Gross Profit', 'Margin %', 'Labour', 'Labour %',
+                  'Contrib. Margin', 'CM %', 'AOV', 'Daily Cust.', 'Rev/Hr', 'Units'
+                ].map(h => (
+                  <th key={h} className={`py-3 px-3 font-semibold text-surface-500 uppercase tracking-wider whitespace-nowrap ${h === 'Period' || h === 'Quarter' ? 'text-left' : 'text-right'}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {weeklyRows.map((row, i) => {
+                const wowColor = row.wow == null ? '' : row.wow >= 0 ? 'text-green-600 font-semibold' : 'text-red-500 font-semibold';
+                const cogsPctColor = row.cogsPct == null ? '' : row.cogsPct > 35 ? 'text-red-500' : row.cogsPct < 28 ? 'text-green-600' : 'text-surface-800';
+                const marginColor = row.grossMargin == null ? '' : row.grossMargin > 70 ? 'text-green-600' : row.grossMargin < 60 ? 'text-red-500' : 'text-surface-800';
+                const cmColor = row.contribMarginPct == null ? '' : row.contribMarginPct > 30 ? 'text-green-600' : row.contribMarginPct < 15 ? 'text-red-500' : 'text-surface-800';
+                return (
+                  <tr key={i} className="border-b border-surface-100 hover:bg-surface-50 transition-colors">
+                    <td className="py-2.5 px-3 font-medium text-surface-700 whitespace-nowrap">{shortPeriodLabel(row.period)}</td>
+                    <td className="py-2.5 px-3 text-surface-400 whitespace-nowrap">{row.quarter}</td>
+                    <td className="py-2.5 px-3 text-right font-semibold text-surface-800">{fmtDollar(row.revenue)}</td>
+                    <td className={`py-2.5 px-3 text-right whitespace-nowrap ${wowColor}`}>
+                      {row.wow != null ? `${row.wow >= 0 ? '+' : ''}${row.wow.toFixed(1)}%` : '—'}
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-surface-700">{fmtDollar(row.cogs)}</td>
+                    <td className={`py-2.5 px-3 text-right ${cogsPctColor}`}>{fmtPct(row.cogsPct)}</td>
+                    <td className="py-2.5 px-3 text-right font-semibold text-surface-800">{fmtDollar(row.grossProfit)}</td>
+                    <td className={`py-2.5 px-3 text-right ${marginColor}`}>{fmtPct(row.grossMargin)}</td>
+                    <td className="py-2.5 px-3 text-right text-surface-700">{fmtDollar(row.labour)}</td>
+                    <td className="py-2.5 px-3 text-right text-surface-700">{fmtPct(row.labourPct)}</td>
+                    <td className={`py-2.5 px-3 text-right font-semibold ${cmColor}`}>{fmtDollar(row.contribMargin)}</td>
+                    <td className={`py-2.5 px-3 text-right ${cmColor}`}>{fmtPct(row.contribMarginPct)}</td>
+                    <td className="py-2.5 px-3 text-right text-surface-700">{row.aov ? `$${row.aov.toFixed(2)}` : '—'}</td>
+                    <td className="py-2.5 px-3 text-right text-surface-700">{row.dailyCustomers?.toFixed(1) || '—'}</td>
+                    <td className="py-2.5 px-3 text-right text-surface-700">{fmtDollar(row.revenuePerHour)}</td>
+                    <td className="py-2.5 px-3 text-right text-surface-700">{row.unitsSold != null ? row.unitsSold.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===========================
+// P&L TAB
+// ===========================
+function PnLTab({ data }) {
+  // Quarterly aggregates
+  const qRevenue = useMemo(() => withQoQ(aggregateQuarterly(data.revenue.totalRevenue, 'sum')), [data.revenue.totalRevenue]);
+  const qCogs = useMemo(() => withQoQ(aggregateQuarterly(data.costs.totalCogs, 'sum')), [data.costs.totalCogs]);
+  const qLabour = useMemo(() => withQoQ(aggregateQuarterly(data.costs.totalLabour, 'sum')), [data.costs.totalLabour]);
+
+  const quarters = qRevenue.map(d => d.quarter);
+
+  const qGrossProfit = useMemo(() => withQoQ(qRevenue.map((r, i) => ({
+    quarter: r.quarter,
+    value: r.value - (qCogs[i]?.value || 0),
+  }))), [qRevenue, qCogs]);
+
+  const qContribMargin = useMemo(() => withQoQ(qGrossProfit.map((r, i) => ({
+    quarter: r.quarter,
+    value: r.value - (qLabour[i]?.value || 0),
+  }))), [qGrossProfit, qLabour]);
+
+  const qGrossMarginPct = useMemo(() => qRevenue.map((r, i) => ({
+    quarter: r.quarter,
+    value: r.value > 0 ? (qGrossProfit[i]?.value / r.value) * 100 : 0,
+  })), [qRevenue, qGrossProfit]);
+
+  const qContribMarginPct = useMemo(() => qRevenue.map((r, i) => ({
+    quarter: r.quarter,
+    value: r.value > 0 ? (qContribMargin[i]?.value / r.value) * 100 : 0,
+  })), [qRevenue, qContribMargin]);
+
+  const qCogsPct = useMemo(() => withQoQ(aggregateQuarterly(data.costs.cogsPctRevenue, 'avg')), [data.costs.cogsPctRevenue]);
+  const qLabourPct = useMemo(() => withQoQ(aggregateQuarterly(data.costs.labourPctRevenue, 'avg')), [data.costs.labourPctRevenue]);
+
+  const latestIdx = quarters.length - 1;
+  const latestQ = quarters[latestIdx] || '';
+
+  // Waterfall chart for latest quarter
+  const waterfallData = useMemo(() => {
+    if (latestIdx < 0) return [];
+    const rev = qRevenue[latestIdx]?.value || 0;
+    const cogs = qCogs[latestIdx]?.value || 0;
+    const gp = qGrossProfit[latestIdx]?.value || 0;
+    const labour = qLabour[latestIdx]?.value || 0;
+    const cm = qContribMargin[latestIdx]?.value || 0;
+    return [
+      { name: 'Revenue', value: rev, fill: COLORS.green },
+      { name: 'Less: COGS', value: -cogs, fill: COLORS.red },
+      { name: 'Gross Profit', value: gp, fill: COLORS.teal, isSubtotal: true },
+      { name: 'Less: Labour', value: -labour, fill: COLORS.amber },
+      { name: 'Contrib. Margin', value: cm, fill: COLORS.primary, isSubtotal: true },
+    ];
+  }, [latestIdx, qRevenue, qCogs, qGrossProfit, qLabour, qContribMargin]);
+
+  // Margin trend chart
+  const marginTrendData = useMemo(() => quarters.map((q, i) => ({
+    quarter: q,
+    'Gross Margin %': qGrossMarginPct[i]?.value || 0,
+    'Contrib. Margin %': qContribMarginPct[i]?.value || 0,
+    'COGS %': qCogsPct[i]?.value || 0,
+    'Labour %': qLabourPct[i]?.value || 0,
+  })), [quarters, qGrossMarginPct, qContribMarginPct, qCogsPct, qLabourPct]);
+
+  // Latest KPIs
+  const latestRev = qRevenue[latestIdx]?.value;
+  const latestGP = qGrossProfit[latestIdx]?.value;
+  const latestCM = qContribMargin[latestIdx]?.value;
+  const latestGMPct = qGrossMarginPct[latestIdx]?.value;
+  const latestCMPct = qContribMarginPct[latestIdx]?.value;
+
+  // P&L table rows
+  const PnLRow = ({ label, data: rowData, format = 'currency', indent = false, bold = false, invertTrend = false, className = '' }) => (
+    <tr className={`border-b border-surface-100 hover:bg-surface-50 transition-colors ${className}`}>
+      <td className={`py-3 pr-4 text-sm whitespace-nowrap sticky left-0 bg-white ${bold ? 'font-bold text-surface-800' : 'font-medium text-surface-600'} ${indent ? 'pl-6' : ''}`}>{label}</td>
+      {rowData.map((d, i) => (
+        <td key={i} className="py-3 px-3 text-right">
+          <div className={`text-sm ${bold ? 'font-bold text-surface-800' : 'font-semibold text-surface-700'}`}>
+            {format === 'currency' ? fmtDollar(d.value) : format === 'pct' ? fmtPct(d.value) : d.value}
+          </div>
+          <QoQBadge value={d.qoq} invertTrend={invertTrend} />
+        </td>
+      ))}
+    </tr>
+  );
+
+  const SeparatorRow = ({ label }) => (
+    <tr>
+      <td colSpan={quarters.length + 1} className="pt-4 pb-1 sticky left-0">
+        <span className="text-xs font-bold text-surface-400 uppercase tracking-wider">{label}</span>
+      </td>
+    </tr>
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* KPI headline cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <KpiCard title="Quarterly Revenue" value={fmtDollar(latestRev)} trend={qRevenue[latestIdx]?.qoq} subtitle={latestQ} icon={DollarSign} color="brand" />
+        <KpiCard title="Gross Profit" value={fmtDollar(latestGP)} trend={qGrossProfit[latestIdx]?.qoq} subtitle={latestQ} icon={BarChart3} color="green" />
+        <KpiCard title="Gross Margin" value={fmtPct(latestGMPct)} subtitle="revenue minus COGS" icon={TrendingUp} color="teal" />
+        <KpiCard title="Contrib. Margin" value={fmtDollar(latestCM)} trend={qContribMargin[latestIdx]?.qoq} subtitle={latestQ} icon={FileText} color="purple" />
+        <KpiCard title="CM %" value={fmtPct(latestCMPct)} subtitle="after COGS & labour" icon={TrendingUp} color="blue" />
+      </div>
+
+      {/* Waterfall + Margin Trend */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ChartCard title={`P&L Waterfall — ${latestQ}`} subtitle="Revenue → Gross Profit → Contribution Margin">
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={waterfallData} barCategoryGap="30%">
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+              <XAxis dataKey="name" tick={{ ...TICK_STYLE, fontSize: 10 }} />
+              <YAxis tickFormatter={fmtCurrency} tick={TICK_STYLE} width={60} />
+              <Tooltip formatter={(v) => fmtDollar(Math.abs(v))} />
+              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                {waterfallData.map((entry, i) => (
+                  <Cell key={i} fill={entry.fill} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="Margin Trends" subtitle="Gross & Contribution Margin % by quarter">
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={marginTrendData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="quarter" tick={TICK_STYLE} />
+              <YAxis tickFormatter={v => `${v}%`} tick={TICK_STYLE} width={45} />
+              <Tooltip content={<ChartTooltip formatter={fmtPct} />} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Line type="monotone" dataKey="Gross Margin %" stroke={COLORS.green} strokeWidth={2.5} dot={{ r: 4 }} />
+              <Line type="monotone" dataKey="Contrib. Margin %" stroke={COLORS.teal} strokeWidth={2.5} dot={{ r: 4 }} strokeDasharray="5 3" />
+              <Line type="monotone" dataKey="COGS %" stroke={COLORS.red} strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="Labour %" stroke={COLORS.amber} strokeWidth={2} dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      {/* Quarterly Revenue stacked bar */}
+      <ChartCard title="Quarterly Revenue vs Costs" subtitle="Revenue, COGS and Labour by quarter">
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={quarters.map((q, i) => ({
+            quarter: q,
+            Revenue: qRevenue[i]?.value || 0,
+            COGS: qCogs[i]?.value || 0,
+            Labour: qLabour[i]?.value || 0,
+          }))}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="quarter" tick={TICK_STYLE} />
+            <YAxis tickFormatter={fmtCurrency} tick={TICK_STYLE} width={60} />
+            <Tooltip content={<ChartTooltip formatter={fmtDollar} />} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Bar dataKey="Revenue" fill={COLORS.green} radius={[3, 3, 0, 0]} />
+            <Bar dataKey="COGS" fill={COLORS.red} radius={[3, 3, 0, 0]} />
+            <Bar dataKey="Labour" fill={COLORS.amber} radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartCard>
+
+      {/* Full P&L Table */}
+      <div className="bg-white rounded-xl shadow-card animate-fade-in">
+        <div className="p-5 border-b border-surface-100">
+          <h3 className="text-base font-semibold text-surface-800">Quarterly P&L Statement</h3>
+          <p className="text-xs text-surface-400 mt-0.5">Income statement with quarter-over-quarter growth</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px]">
+            <thead>
+              <tr className="border-b border-surface-200">
+                <th className="text-left py-3 pr-4 text-xs font-semibold text-surface-500 uppercase tracking-wider sticky left-0 bg-white">Line Item</th>
+                {quarters.map(q => (
+                  <th key={q} className="py-3 px-3 text-right text-xs font-semibold text-surface-500 uppercase tracking-wider whitespace-nowrap">{q}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <SeparatorRow label="Revenue" />
+              <PnLRow label="Total Revenue" data={qRevenue} bold />
+
+              <SeparatorRow label="Cost of Goods Sold" />
+              <PnLRow label="Total COGS" data={qCogs} indent invertTrend />
+              <PnLRow label="COGS % of Revenue" data={qCogsPct} format="pct" indent invertTrend />
+
+              <SeparatorRow label="Gross Profit" />
+              <PnLRow label="Gross Profit" data={qGrossProfit} bold />
+              <PnLRow label="Gross Margin %" data={qGrossMarginPct.map((d, i) => ({ ...d, qoq: qGrossProfit[i]?.qoq ?? null }))} format="pct" indent />
+
+              <SeparatorRow label="Labour" />
+              <PnLRow label="Total Labour" data={qLabour} indent invertTrend />
+              <PnLRow label="Labour % of Revenue" data={qLabourPct} format="pct" indent invertTrend />
+
+              <SeparatorRow label="Contribution Margin" />
+              <PnLRow label="Contribution Margin" data={qContribMargin} bold />
+              <PnLRow label="Contribution Margin %" data={qContribMarginPct.map((d, i) => ({ ...d, qoq: qContribMargin[i]?.qoq ?? null }))} format="pct" indent />
             </tbody>
           </table>
         </div>
@@ -1090,6 +1515,8 @@ function OverviewTab({ data }) {
 // ===========================
 const TABS = [
   { id: 'overview', label: 'Overview', icon: LayoutGrid },
+  { id: 'weekly', label: 'Weekly', icon: Calendar },
+  { id: 'pnl', label: 'P&L', icon: FileText },
   { id: 'revenue', label: 'Revenue', icon: DollarSign },
   { id: 'costs', label: 'Costs', icon: Truck },
   { id: 'customer', label: 'Customer', icon: Users },
@@ -1184,7 +1611,7 @@ export default function BusinessDashboard({ onBack }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {activeTab !== 'overview' && <FilterBar filter={filter} setFilter={setFilter} availableFilters={availableFilters} />}
+              {!['overview', 'pnl'].includes(activeTab) && <FilterBar filter={filter} setFilter={setFilter} availableFilters={availableFilters} />}
               <button onClick={loadData} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-surface-600 hover:bg-surface-100 rounded-lg transition-colors" title="Refresh data">
                 <RefreshCw size={16} />
                 <span className="hidden sm:inline">Refresh</span>
@@ -1214,7 +1641,7 @@ export default function BusinessDashboard({ onBack }) {
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-4">
-        {activeTab !== 'overview' && (
+        {!['overview', 'pnl'].includes(activeTab) && (
           <WeekExclusionBar
             excludedWeeks={excludedWeeks}
             setExcludedWeeks={setExcludedWeeks}
@@ -1222,6 +1649,8 @@ export default function BusinessDashboard({ onBack }) {
           />
         )}
         {activeTab === 'overview' && <OverviewTab data={data} />}
+        {activeTab === 'weekly' && <WeeklyTab data={data} filter={filter} excludedWeeks={excludedWeeks} />}
+        {activeTab === 'pnl' && <PnLTab data={data} />}
         {activeTab === 'revenue' && <RevenueTab data={data.revenue} filter={filter} excludedWeeks={excludedWeeks} />}
         {activeTab === 'costs' && <CostsTab data={data.costs} filter={filter} excludedWeeks={excludedWeeks} />}
         {activeTab === 'customer' && <CustomerTab data={data.customer} filter={filter} excludedWeeks={excludedWeeks} />}
