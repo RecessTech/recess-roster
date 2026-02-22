@@ -1321,10 +1321,10 @@ function WeeklyTab({ data, filter, excludedWeeks }) {
 // P&L TAB
 // ===========================
 function PnLTab({ data }) {
-  // Quarterly aggregates
-  const qRevenue = useMemo(() => withQoQ(aggregateQuarterly(data.revenue.totalRevenue, 'sum')), [data.revenue.totalRevenue]);
-  const qCogs = useMemo(() => withQoQ(aggregateQuarterly(data.costs.totalCogs, 'sum')), [data.costs.totalCogs]);
-  const qLabour = useMemo(() => withQoQ(aggregateQuarterly(data.costs.totalLabour, 'sum')), [data.costs.totalLabour]);
+  // Quarterly aggregates — sourced from [EXPORT] Budget tab (source of truth for P&L)
+  const qRevenue = useMemo(() => withQoQ(aggregateQuarterly(data.budget.netRevenue, 'sum')), [data.budget.netRevenue]);
+  const qCogs = useMemo(() => withQoQ(aggregateQuarterly(data.budget.pc1Total, 'sum')), [data.budget.pc1Total]);
+  const qLabour = useMemo(() => withQoQ(aggregateQuarterly(data.budget.totalLabour, 'sum')), [data.budget.totalLabour]);
 
   const quarters = qRevenue.map(d => d.quarter);
 
