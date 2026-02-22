@@ -122,6 +122,11 @@ export async function fetchCostsData() {
     cogsPctRevenue: getRow('COGS % of Revenue'),
     totalLabour: getRow('Total Labour Cost'),
     labourPctRevenue: getRow('Labour % Of Revenue'),
+    // Additional P&L rows (gracefully empty if not present in sheet)
+    grossProfit: getRow('Gross Profit'),
+    operatingExpenses: getRow('Operating Expenses'),
+    ebitda: getRow('EBITDA'),
+    netProfit: getRow('Net Profit'),
     raw: data,
   };
 }
