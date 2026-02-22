@@ -6,6 +6,7 @@ const SHEET_GIDS = {
   revenue: 1981032383,
   costs: 913347837,
   customer: 332006994,
+  budget: 59627822,             // [EXPORT] Budget — source of truth for P&L
   packagingModifiers: 751171605, // PCK Modifier Data — coffee size modifiers with PCK codes
   itemSales: 0,                  // Item Sales — food + cold drinks with PCK codes
 };
@@ -127,6 +128,68 @@ export async function fetchCostsData() {
     operatingExpenses: getRow('Operating Expenses'),
     ebitda: getRow('EBITDA'),
     netProfit: getRow('Net Profit'),
+    raw: data,
+  };
+}
+
+// Fetch P&L data from the [EXPORT] Budget tab (gid=59627822).
+// This sheet has category in col A, label in col B, and weekly data in cols C+.
+// Headers are bare week numbers (W12, W13, ..., W52, W01, ...) with no year info —
+// we track the year by detecting the week number wrapping (W52 → W01 = new year).
+// The business started trading in W12-2024, so year begins at 2024.
+//
+// Quarter boundaries (matching the costs/revenue sheets):
+//   Q1: W01–W13  Q2: W14–W26  Q3: W27–W40  Q4: W41–W52
+export async function fetchBudgetData() {
+  const data = await fetchSheetCsv(SHEET_GIDS.budget);
+  const header = data[0] || [];
+
+  function extractRow(label) {
+    const idx = data.findIndex(row => row[1] && row[1].trim() === label.trim());
+    if (idx === -1) return [];
+    const row = data[idx];
+    const result = [];
+    let year = 2024;
+    let prevWeek = null;
+
+    for (let i = 2; i < header.length; i++) {
+      const weekStr = (header[i] || '').trim();
+      if (!weekStr.match(/^W\d{1,2}$/)) break; // stop at non-week columns
+      const weekNum = parseInt(weekStr.slice(1));
+      if (prevWeek !== null && weekNum < prevWeek) year++; // year wrap
+      prevWeek = weekNum;
+
+      const val = parseNum(row[i]);
+      if (val === null) continue;
+
+      const quarter = weekNum <= 13 ? 1 : weekNum <= 26 ? 2 : weekNum <= 40 ? 3 : 4;
+      result.push({ period: `Q${quarter}-${year} W${weekNum}`, value: val });
+    }
+    return result;
+  }
+
+  const labourWages = extractRow('Labour Costs (Wages)');
+  const superannuation = extractRow('Superannuation');
+
+  // Merge wages + super into a single total-labour series by period
+  const labourMap = {};
+  for (const d of labourWages) labourMap[d.period] = (labourMap[d.period] || 0) + d.value;
+  for (const d of superannuation) labourMap[d.period] = (labourMap[d.period] || 0) + d.value;
+  const totalLabour = Object.entries(labourMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([period, value]) => ({ period, value }));
+
+  return {
+    grossRevenue: extractRow('Gross Revenue'),
+    netRevenue: extractRow('Net Revenue'),
+    cogs: extractRow('COGS'),
+    packaging: extractRow('Packaging'),
+    pc1Total: extractRow('PC1 Total'),     // COGS + Packaging
+    pc1Margin: extractRow('PC1 Margin'),   // Net Revenue − PC1 Total
+    labourWages,
+    superannuation,
+    totalLabour,
+    operatingProfit: extractRow('Operating Profit $'),
     raw: data,
   };
 }
@@ -271,10 +334,11 @@ export async function fetchPackagingData() {
 }
 
 export async function fetchAllData() {
-  const [revenue, costs, customer] = await Promise.all([
+  const [revenue, costs, customer, budget] = await Promise.all([
     fetchRevenueData(),
     fetchCostsData(),
     fetchCustomerData(),
+    fetchBudgetData(),
   ]);
-  return { revenue, costs, customer };
+  return { revenue, costs, customer, budget };
 }

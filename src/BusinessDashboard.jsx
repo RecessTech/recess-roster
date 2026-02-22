@@ -975,10 +975,20 @@ function OverviewTab({ data }) {
   // Costs - sum per quarter
   const qCogs = useMemo(() => withQoQ(aggregateQuarterly(data.costs.totalCogs, 'sum')), [data.costs.totalCogs]);
   const qLabour = useMemo(() => withQoQ(aggregateQuarterly(data.costs.totalLabour, 'sum')), [data.costs.totalLabour]);
-  const qCogsPct = useMemo(() => withQoQ(aggregateQuarterly(data.costs.cogsPctRevenue, 'avg')), [data.costs.cogsPctRevenue]);
-  const qLabourPct = useMemo(() => withQoQ(aggregateQuarterly(data.costs.labourPctRevenue, 'avg')), [data.costs.labourPctRevenue]);
-  const qCogsPerUnit = useMemo(() => withQoQ(aggregateQuarterly(data.costs.cogsPerUnit, 'avg')), [data.costs.cogsPerUnit]);
   const qUnitsSold = useMemo(() => withQoQ(aggregateQuarterly(data.costs.unitsSold, 'sum')), [data.costs.unitsSold]);
+  // Derived ratios — computed from quarterly totals, not averaged from weekly %s
+  const qCogsPct = useMemo(() => withQoQ(qCogs.map((d, i) => ({
+    quarter: d.quarter,
+    value: qRevenue[i]?.value > 0 ? (d.value / qRevenue[i].value) * 100 : 0,
+  }))), [qCogs, qRevenue]);
+  const qLabourPct = useMemo(() => withQoQ(qLabour.map((d, i) => ({
+    quarter: d.quarter,
+    value: qRevenue[i]?.value > 0 ? (d.value / qRevenue[i].value) * 100 : 0,
+  }))), [qLabour, qRevenue]);
+  const qCogsPerUnit = useMemo(() => withQoQ(qCogs.map((d, i) => ({
+    quarter: d.quarter,
+    value: qUnitsSold[i]?.value > 0 ? d.value / qUnitsSold[i].value : 0,
+  }))), [qCogs, qUnitsSold]);
 
   // Gross profit = revenue - cogs
   const qGrossProfit = useMemo(() => {
@@ -1311,10 +1321,10 @@ function WeeklyTab({ data, filter, excludedWeeks }) {
 // P&L TAB
 // ===========================
 function PnLTab({ data }) {
-  // Quarterly aggregates
-  const qRevenue = useMemo(() => withQoQ(aggregateQuarterly(data.revenue.totalRevenue, 'sum')), [data.revenue.totalRevenue]);
-  const qCogs = useMemo(() => withQoQ(aggregateQuarterly(data.costs.totalCogs, 'sum')), [data.costs.totalCogs]);
-  const qLabour = useMemo(() => withQoQ(aggregateQuarterly(data.costs.totalLabour, 'sum')), [data.costs.totalLabour]);
+  // Quarterly aggregates — sourced from [EXPORT] Budget tab (source of truth for P&L)
+  const qRevenue = useMemo(() => withQoQ(aggregateQuarterly(data.budget.netRevenue, 'sum')), [data.budget.netRevenue]);
+  const qCogs = useMemo(() => withQoQ(aggregateQuarterly(data.budget.pc1Total, 'sum')), [data.budget.pc1Total]);
+  const qLabour = useMemo(() => withQoQ(aggregateQuarterly(data.budget.totalLabour, 'sum')), [data.budget.totalLabour]);
 
   const quarters = qRevenue.map(d => d.quarter);
 
@@ -1338,8 +1348,15 @@ function PnLTab({ data }) {
     value: r.value > 0 ? (qContribMargin[i]?.value / r.value) * 100 : 0,
   })), [qRevenue, qContribMargin]);
 
-  const qCogsPct = useMemo(() => withQoQ(aggregateQuarterly(data.costs.cogsPctRevenue, 'avg')), [data.costs.cogsPctRevenue]);
-  const qLabourPct = useMemo(() => withQoQ(aggregateQuarterly(data.costs.labourPctRevenue, 'avg')), [data.costs.labourPctRevenue]);
+  // Derived from quarterly totals, not averaged from weekly %s
+  const qCogsPct = useMemo(() => withQoQ(qCogs.map((d, i) => ({
+    quarter: d.quarter,
+    value: qRevenue[i]?.value > 0 ? (d.value / qRevenue[i].value) * 100 : 0,
+  }))), [qCogs, qRevenue]);
+  const qLabourPct = useMemo(() => withQoQ(qLabour.map((d, i) => ({
+    quarter: d.quarter,
+    value: qRevenue[i]?.value > 0 ? (d.value / qRevenue[i].value) * 100 : 0,
+  }))), [qLabour, qRevenue]);
 
   const latestIdx = quarters.length - 1;
   const latestQ = quarters[latestIdx] || '';
