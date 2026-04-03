@@ -706,13 +706,24 @@ const RosterApp = () => {
       return;
     }
 
-    // Calculate keys from the drag range — paint exactly the rows dragged over
+    // Calculate keys from the drag range.
+    // When interval > 15m, also fill all 15-min sub-slots so the data is
+    // always stored at 15m granularity — switching intervals shows consistent shifts.
     const slots = timeSlotsRef.current;
     const minIdx = Math.min(drag.startRowIdx, drag.currentRowIdx);
     const maxIdx = Math.max(drag.startRowIdx, drag.currentRowIdx);
     const keys = new Set();
     for (let i = minIdx; i <= maxIdx; i++) {
-      keys.add(getScheduleKey(drag.dateKey, drag.staffId, slots[i]));
+      const slot = slots[i];
+      keys.add(getScheduleKey(drag.dateKey, drag.staffId, slot));
+      if (timeInterval > 15) {
+        const [h, m] = slot.split(':').map(Number);
+        for (let sub = 15; sub < timeInterval; sub += 15) {
+          const totalMins = h * 60 + m + sub;
+          const subSlot = `${Math.floor(totalMins / 60).toString().padStart(2, '0')}:${(totalMins % 60).toString().padStart(2, '0')}`;
+          keys.add(getScheduleKey(drag.dateKey, drag.staffId, subSlot));
+        }
+      }
     }
 
     if (keys.size === 0) return;
@@ -732,7 +743,7 @@ const RosterApp = () => {
 
       return newSchedule;
     });
-  }, [selectedRole, saveToHistory]);
+  }, [selectedRole, saveToHistory, timeInterval]);
 
   useEffect(() => {
     const handleMouseUp = () => commitPendingPaint();
@@ -5383,22 +5394,26 @@ Key things to verify after rebuild:
                 </>
               ) : (
                 <>
-                  <span className="text-xs font-medium text-gray-500 whitespace-nowrap">Paint:</span>
+                  {!selectedRole && (
+                    <span className="text-xs text-gray-400 italic whitespace-nowrap">← Select a role, then drag to fill shifts</span>
+                  )}
                   {roles.map(r => (
                     <button
                       key={r.id}
-                      onClick={() => setSelectedRole(r)}
+                      onClick={() => setSelectedRole(selectedRole?.id === r.id ? null : r)}
+                      title={`Assign ${r.name} — drag across cells to fill`}
                       style={{ backgroundColor: selectedRole?.id === r.id ? r.color : 'transparent', color: selectedRole?.id === r.id ? 'white' : r.color, borderColor: r.color }}
-                      className="px-2.5 py-1 rounded-lg border text-xs font-bold transition-colors"
+                      className="px-2.5 py-1 rounded-lg border text-xs font-bold transition-colors whitespace-nowrap"
                     >
-                      {r.code}
+                      {r.name}
                     </button>
                   ))}
                   <button
-                    onClick={() => setSelectedRole({ id: 'eraser', code: 'X', color: '#ef4444' })}
+                    onClick={() => setSelectedRole(selectedRole?.id === 'eraser' ? null : { id: 'eraser', code: 'X', color: '#ef4444' })}
+                    title="Erase shifts — drag across cells to remove"
                     className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition-colors ${selectedRole?.id === 'eraser' ? 'bg-red-600 text-white border-red-600' : 'border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-500'}`}
                   >
-                    Eraser
+                    Erase
                   </button>
                 </>
               )}
@@ -5683,12 +5698,12 @@ const SetupFunnel = ({ step, setStep, roles, setRoles, staff, setStaff, org, use
   return (
     <div className="fixed inset-0 z-[200] bg-white flex flex-col">
       {/* Header */}
-      <div className="border-b border-gray-200 px-8 py-5 flex items-center justify-between">
+      <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Set up {org?.name}</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Step {step} of {totalSteps} — {STEP_LABELS[step - 1]}</p>
+          <h1 className="text-base font-bold text-gray-900">Set up {org?.name}</h1>
+          <p className="text-xs text-gray-500 mt-0.5">Step {step} of {totalSteps} — {STEP_LABELS[step - 1]}</p>
         </div>
-        <button onClick={onComplete} className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
+        <button onClick={onComplete} className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
           Skip setup
         </button>
       </div>
@@ -5702,14 +5717,14 @@ const SetupFunnel = ({ step, setStep, roles, setRoles, staff, setStaff, org, use
       </div>
 
       {/* Step content */}
-      <div className="flex-1 overflow-y-auto px-8 py-8 max-w-2xl mx-auto w-full">
+      <div className="flex-1 overflow-y-auto px-6 py-6 max-w-xl mx-auto w-full">
         {step === 1 && <SetupRolesStep roles={roles} setRoles={setRoles} />}
         {step === 2 && <SetupStaffStep staff={staff} setStaff={setStaff} org={org} user={user} roles={roles} />}
         {step === 3 && <SetupHoursStep businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} org={org} user={user} />}
       </div>
 
       {/* Footer */}
-      <div className="border-t border-gray-200 px-8 py-5 flex items-center justify-between">
+      <div className="border-t border-gray-200 px-6 py-4 flex items-center justify-between">
         <button
           onClick={() => setStep(s => s - 1)}
           disabled={step === 1}
@@ -5744,8 +5759,8 @@ const SetupRolesStep = ({ roles, setRoles }) => {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-gray-900 mb-1">Roles</h2>
-        <p className="text-sm text-gray-500">These are the shift types your staff can be assigned to. You can edit these any time in Settings.</p>
+        <h2 className="text-sm font-bold text-gray-900 mb-1">Roles</h2>
+        <p className="text-xs text-gray-500">Shift types your staff can be assigned to. Editable any time in Settings.</p>
       </div>
 
       <div className="space-y-2">
@@ -5835,8 +5850,8 @@ const SetupStaffStep = ({ staff, setStaff, org, user, roles }) => {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-gray-900 mb-1">Staff members</h2>
-        <p className="text-sm text-gray-500">Add your team. You can add more and edit details any time from the Staff section.</p>
+        <h2 className="text-sm font-bold text-gray-900 mb-1">Staff members</h2>
+        <p className="text-xs text-gray-500">Add your team. You can add more and edit details any time from the Staff section.</p>
       </div>
 
       {staff.length > 0 && (
@@ -5912,8 +5927,8 @@ const SetupHoursStep = ({ businessSettings, setBusinessSettings, org, user }) =>
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-gray-900 mb-1">Operating hours</h2>
-        <p className="text-sm text-gray-500">Set when your business is open each day. This controls which time slots appear on the roster.</p>
+        <h2 className="text-sm font-bold text-gray-900 mb-1">Operating hours</h2>
+        <p className="text-xs text-gray-500">Controls which time slots appear on the roster each day.</p>
       </div>
 
       <div className="space-y-2">
