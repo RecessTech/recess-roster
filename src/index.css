@@ -39,7 +39,7 @@ body {
   --primary-dk:     #C94410;
   --primary-fg:     white;
 
-  --app-bg:         #FEF3EB;
+  --app-bg:         #F5F5F5;
   --top-bg:         white;
   --top-border:     #E5E7EB;
 }
@@ -60,15 +60,15 @@ body {
   --primary-dk:     #2D4EC9;
   --primary-fg:     white;
 
-  --app-bg:         #EBE5D3;
-  --top-bg:         #FAF7F0;
-  --top-border:     #DDD8CB;
+  --app-bg:         #F5F5F5;
+  --top-bg:         white;
+  --top-border:     #E5E7EB;
 }
 
 /* Dark theme (logo 3) */
 [data-theme="dark"] {
   --sb-bg:          #171717;
-  --sb-icon:        #5A5550;
+  --sb-icon:        #706860;
   --sb-icon-active: #E85018;
   --sb-active:      rgba(232, 80, 24, 0.15);
   --sb-hover:       rgba(255, 255, 255, 0.05);
