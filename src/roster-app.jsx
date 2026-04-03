@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, ArchiveRestore, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
@@ -43,7 +43,6 @@ const RosterApp = () => {
   const [zoomLevel] = useState(2);
   const [columnWidth, setColumnWidth] = useState(70);
   const [timeInterval, setTimeInterval] = useState(15);
-  const [showTeamMembers, setShowTeamMembers] = useState(true);
   const [staffOrder, setStaffOrder] = useState([]);
   const [draggedStaffId, setDraggedStaffId] = useState(null);
   const [showQuickFillModal, setShowQuickFillModal] = useState(false);
@@ -346,6 +345,7 @@ const RosterApp = () => {
   }, [user, org]);
 
   const activeStaff = useMemo(() => staff.filter(s => s.active !== false), [staff]);
+  // eslint-disable-next-line no-unused-vars
   const archivedStaff = useMemo(() => staff.filter(s => s.active === false), [staff]);
 
   useEffect(() => {
@@ -3150,7 +3150,7 @@ const RosterApp = () => {
                             onClick={() => setSelectedStaffView(s.id)}
                             className="flex-1 btn-ghost text-xs py-1.5"
                           >
-                            View Schedule
+                            View
                           </button>
                           <button
                             onClick={() => { setEditingStaff(s); setShowStaffModal(true); }}
@@ -3158,6 +3158,13 @@ const RosterApp = () => {
                             title="Edit staff member"
                           >
                             <Edit2 size={13} />
+                          </button>
+                          <button
+                            onClick={() => deleteStaff(s.id)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-red-500 hover:bg-red-50 border border-gray-200 transition-colors"
+                            title="Archive staff member"
+                          >
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       </div>
@@ -3223,6 +3230,13 @@ const RosterApp = () => {
                                 >
                                   <Edit2 size={13} /> Edit
                                 </button>
+                                <button
+                                  onClick={() => deleteStaff(s.id)}
+                                  className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 border border-gray-200 transition-colors"
+                                  title="Archive"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -3233,6 +3247,25 @@ const RosterApp = () => {
                 </div>
               )}
             </div>
+
+            {archivedStaff.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-400 mb-3">Archived ({archivedStaff.length})</h3>
+                <div className="flex flex-wrap gap-2">
+                  {archivedStaff.map(s => (
+                    <div key={s.id} className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+                      <span className="text-sm text-gray-500">{s.name}</span>
+                      <button
+                        onClick={() => restoreStaff(s.id)}
+                        className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       );
