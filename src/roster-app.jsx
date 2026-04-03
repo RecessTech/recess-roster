@@ -447,6 +447,7 @@ const RosterApp = () => {
 
   // Get all time slots that should be filled for a given time slot
   // This ensures that painting at coarse intervals (1h) fills all finer intervals (15m, 30m)
+  // eslint-disable-next-line no-unused-vars
   const getAllSubIntervals = (timeSlot) => {
     const [hour, minute] = timeSlot.split(':').map(Number);
     const slots = [timeSlot]; // Always include the clicked slot
