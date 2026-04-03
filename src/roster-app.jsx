@@ -5291,7 +5291,7 @@ Key things to verify after rebuild:
 
   return (
 
-    <div className="min-h-screen bg-surface-50 flex">
+    <div className="h-screen bg-surface-50 flex overflow-hidden">
       <Toaster
         position="bottom-right"
         toastOptions={{
@@ -5349,10 +5349,10 @@ Key things to verify after rebuild:
       </aside>
 
       {/* Main content */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <div className="bg-white border-b border-gray-200 shadow-soft sticky top-0 z-40">
-          <div className="px-6 py-3">
+        <div className="bg-white border-b border-gray-200 shadow-soft shrink-0 z-40">
+          <div className="px-4 py-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <h1 className="text-base font-bold text-gray-900 tracking-tight">{businessSettings.businessName || org?.name}</h1>
@@ -5395,8 +5395,8 @@ Key things to verify after rebuild:
             </div>
           </div>
 
-          {/* Toolbar row */}
-          <div className="px-6 py-2 border-t border-gray-100 flex items-center gap-2">
+          {/* Toolbar row — roster only */}
+          {activeView === 'roster' && <div className="px-4 py-1.5 border-t border-gray-100 flex items-center gap-2">
             <div className="flex items-center gap-2">
               {/* View mode */}
               <div className="flex bg-gray-100 p-0.5 rounded-lg">
@@ -5465,77 +5465,33 @@ Key things to verify after rebuild:
               <button onClick={() => setCurrentDate(new Date())} className="btn-primary text-xs py-1.5 px-2.5">Today</button>
               <button onClick={clearWeek} className="text-xs py-1.5 px-2.5 rounded-lg text-red-600 hover:bg-red-50 font-medium transition-colors">Clear Week</button>
             </div>
-          </div>
+          </div>}
         </div>
 
-      <div className="view-transition">
+      <div className="flex-1 overflow-hidden view-transition">
       {activeView === 'analytics' ? (
-        <AnalyticsView />
+        <div className="h-full overflow-auto"><AnalyticsView /></div>
       ) : activeView === 'timesheet' ? (
-        <TimesheetView />
+        <div className="h-full overflow-auto"><TimesheetView /></div>
       ) : activeView === 'staff-view' ? (
-        <StaffRosterView />
+        <div className="h-full overflow-auto"><StaffRosterView /></div>
       ) : (
-        <div className="p-6">
+        <div className="h-full flex flex-col p-3">
         {activeStaff.length === 0 && (
-          <div className="text-center py-20">
-            <div className="card p-12 max-w-sm mx-auto animate-fade-in">
+          <div className="flex-1 flex items-center justify-center">
+            <div className="card p-12 max-w-sm animate-fade-in">
               <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center mx-auto mb-4">
                 <Users size={24} className="text-blue-600" />
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">No Staff Yet</h3>
-              <p className="text-sm text-gray-500 mb-5">Add your first team member to start building schedules.</p>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 text-center">No Staff Yet</h3>
+              <p className="text-sm text-gray-500 mb-5 text-center">Add your first team member to start building schedules.</p>
               <button onClick={() => setShowStaffModal(true)} className="btn-primary w-full">Add Staff</button>
             </div>
           </div>
         )}
 
-        {staff.length > 0 && (
-          <div className="mb-4 card">
-            <button onClick={() => setShowTeamMembers(!showTeamMembers)} className="w-full flex items-center justify-between p-4">
-              <h3 className="text-sm font-medium text-gray-700">Team ({activeStaff.length}){archivedStaff.length > 0 && <span className="text-gray-400 font-normal ml-1">· {archivedStaff.length} archived</span>}</h3>
-              {showTeamMembers ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
-            </button>
-            {showTeamMembers && (
-              <div className="px-4 pb-4 space-y-1 border-t border-gray-100 pt-3">
-                {activeStaff.map(s => (
-                  <div key={s.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 transition-colors group">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-xs font-semibold text-blue-600">
-                        {s.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                      </div>
-                      <div>
-                        <span className="text-sm font-medium text-gray-900">{s.name}</span>
-                        <span className="text-xs text-gray-400 ml-2">${s.hourlyRate}/hr · {s.employmentType}</span>
-                      </div>
-                    </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setEditingStaff(s); setShowStaffModal(true); }} className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors"><Edit2 size={14} className="text-gray-400" /></button>
-                      <button onClick={() => deleteStaff(s.id)} className="p-1.5 hover:bg-red-50 rounded-lg transition-colors" title="Archive"><Trash2 size={14} className="text-red-400" /></button>
-                    </div>
-                  </div>
-                ))}
-                {archivedStaff.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-gray-100">
-                    <h4 className="text-xs font-medium text-gray-400 mb-2 px-3">Archived</h4>
-                    {archivedStaff.map(s => (
-                      <div key={s.id} className="flex items-center justify-between py-2 px-3 rounded-lg">
-                        <span className="text-sm text-gray-400">{s.name} <span className="text-xs">({s.employmentType})</span></span>
-                        <button onClick={() => restoreStaff(s.id)} className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                          <ArchiveRestore size={12} />
-                          Restore
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
         {activeStaff.length > 0 && (
-          <div ref={containerRef} className="card overflow-auto relative" style={{ maxHeight: 'calc(100vh - 340px)' }}>
+          <div ref={containerRef} className="card overflow-auto relative flex-1 min-h-0">
             <table className="border-collapse table-fixed w-full" style={{ minWidth: `${100 + (orderedStaff.length * dates.length * columnWidth)}px`, userSelect: 'none' }}>
               <thead className="sticky top-0 z-30 bg-white">
                 {(() => {
