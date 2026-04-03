@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight, LayoutList, LayoutGrid } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
@@ -61,6 +61,8 @@ const RosterApp = () => {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [activeView, setActiveView] = useState('roster'); // 'roster', 'analytics', or 'staff-view'
   const [isMobileView, setIsMobileView] = useState(false);
+  const [rosterView, setRosterView] = useState('weekly'); // 'weekly' | 'daily'
+  const [dailyViewDate, setDailyViewDate] = useState(() => new Date());
 
   // Detect mobile on mount and resize
   useEffect(() => {
@@ -691,6 +693,58 @@ const RosterApp = () => {
     if (overlay) {
       overlay.style.top = `${dragRef.current.anchorTop + topOffset}px`;
       overlay.style.height = `${rowSpan * rowHeight}px`;
+    }
+  };
+
+  const handleHMouseDown = (e, dateKey, staffId, timeSlot, colIdx) => {
+    if (templateMode && selectedTemplate) { applyTemplate(selectedTemplate, dateKey, staffId); return; }
+    if (!selectedRole) return;
+    e.preventDefault();
+    const isEraser = selectedRole.id === 'eraser';
+    const container = containerRef.current;
+    const containerRect = container.getBoundingClientRect();
+    const cellRect = e.currentTarget.getBoundingClientRect();
+    const cellTop  = cellRect.top  - containerRect.top  + container.scrollTop;
+    const cellLeft = cellRect.left - containerRect.left + container.scrollLeft;
+    dragRef.current = {
+      active: true,
+      startRowIdx: colIdx,
+      currentRowIdx: colIdx,
+      cellCount: 1,
+      staffId,
+      dateKey,
+      startCell: timeSlot,
+      anchorTop: cellTop,
+      anchorLeft: cellLeft,
+      isEraser,
+      role: isEraser ? null : { roleId: selectedRole.id, roleCode: selectedRole.code, roleColor: selectedRole.color },
+    };
+    const hColW = Math.max(timeInterval * 1.5, 24);
+    const overlay = overlayRef.current;
+    if (overlay) {
+      overlay.style.display = 'block';
+      overlay.style.top    = `${cellTop}px`;
+      overlay.style.left   = `${cellLeft}px`;
+      overlay.style.width  = `${hColW}px`;
+      overlay.style.height = '48px';
+      overlay.style.backgroundColor = isEraser ? 'rgba(239, 68, 68, 0.3)' : (selectedRole.color + '80');
+      overlay.style.borderColor     = isEraser ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255,255,255,0.6)';
+    }
+  };
+
+  const handleHMouseEnter = (dateKey, staffId, timeSlot, colIdx) => {
+    if (!dragRef.current.active) return;
+    if (staffId !== dragRef.current.staffId || dateKey !== dragRef.current.dateKey) return;
+    dragRef.current.currentRowIdx = colIdx;
+    dragRef.current.cellCount += 1;
+    const hColW = Math.max(timeInterval * 1.5, 24);
+    const minIdx = Math.min(dragRef.current.startRowIdx, colIdx);
+    const leftOffset = (minIdx - dragRef.current.startRowIdx) * hColW;
+    const colSpan    = Math.abs(colIdx - dragRef.current.startRowIdx) + 1;
+    const overlay = overlayRef.current;
+    if (overlay) {
+      overlay.style.left  = `${dragRef.current.anchorLeft + leftOffset}px`;
+      overlay.style.width = `${colSpan * hColW}px`;
     }
   };
 
@@ -5311,6 +5365,158 @@ Key things to verify after rebuild:
     );
   }
 
+  const renderDailyTimeline = () => {
+    const dk = formatDateKey(dailyViewDate);
+    const todayKey = formatDateKey(new Date());
+    const hColW = Math.max(timeInterval * 1.5, 24);
+    const STAFF_COL_W = 148;
+    const ROW_H = 48;
+    const dayStats = calculateDayStats(dk);
+
+    return (
+      <div className="h-full flex flex-col">
+        {/* Day picker */}
+        <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-gray-100 bg-white">
+          <button
+            onClick={() => { const d = new Date(dailyViewDate); d.setDate(d.getDate() - 1); setDailyViewDate(d); }}
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors text-sm"
+          >←</button>
+          <div className="flex gap-1">
+            {dates.map(d => {
+              const dKey = formatDateKey(d);
+              const isSelected = dKey === dk;
+              const isDayToday = dKey === todayKey;
+              return (
+                <button key={dKey} onClick={() => setDailyViewDate(new Date(d))}
+                  className={`px-2.5 py-1 rounded-lg text-center transition-all ${
+                    isSelected ? 'bg-blue-600 text-white shadow-sm'
+                    : isDayToday ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                    : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <div className="text-xs font-semibold">{d.toLocaleDateString('en-AU', { weekday: 'short' })}</div>
+                  <div className="text-[10px] opacity-75">{d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            onClick={() => { const d = new Date(dailyViewDate); d.setDate(d.getDate() + 1); setDailyViewDate(d); }}
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors text-sm"
+          >→</button>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-xs font-semibold text-gray-700">{dayStats.totalHours.toFixed(1)}h</span>
+            <span className="text-xs font-semibold text-blue-600">${dayStats.totalCost.toFixed(0)}</span>
+            <div className="flex gap-0.5">
+              <button onClick={() => copyDay(dk)} className={`p-1 rounded hover:bg-blue-50 transition-colors ${copiedDay === dk ? 'bg-blue-100' : ''}`} title="Copy day"><Copy size={13} className="text-gray-400" /></button>
+              <button onClick={() => pasteDay(dk)} className="p-1 rounded hover:bg-green-50 transition-colors" title="Paste day" disabled={!copiedDay}><Clipboard size={13} className="text-gray-400" /></button>
+              <button onClick={() => clearDay(dk)} className="p-1 rounded hover:bg-red-50 transition-colors" title="Clear day"><Trash size={13} className="text-red-300" /></button>
+            </div>
+          </div>
+        </div>
+
+        {/* Timeline table */}
+        <div ref={containerRef} className="flex-1 overflow-auto relative" style={{ userSelect: 'none' }}>
+          <table className="border-collapse" style={{ minWidth: `${STAFF_COL_W + timeSlots.length * hColW}px` }}>
+            <thead className="sticky top-0 z-30">
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="sticky left-0 z-40 bg-gray-50 border-r border-gray-200 text-left px-3 py-2"
+                  style={{ width: STAFF_COL_W, minWidth: STAFF_COL_W }}>
+                  <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Staff</span>
+                </th>
+                {timeSlots.map((slot) => {
+                  const isHour = slot.endsWith(':00');
+                  return (
+                    <th key={slot}
+                      className={`text-center ${isHour ? 'border-l border-l-gray-200' : ''} border-r border-gray-100`}
+                      style={{ width: hColW, minWidth: hColW, padding: '4px 0' }}>
+                      {isHour && <span className="text-[10px] font-semibold text-gray-500">{slot}</span>}
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {orderedStaff.map((s, si) => {
+                const staffStats = calculateStaffDayStats(s.id, dk);
+                const isWeekend = [0, 6].includes(dailyViewDate.getDay());
+                const rate = isWeekend && s.weekendRate ? s.weekendRate : s.hourlyRate;
+                return (
+                  <tr key={s.id} className={`border-b border-gray-100 ${si % 2 === 1 ? 'bg-gray-50/40' : 'bg-white'}`} style={{ height: ROW_H }}>
+                    <td className="sticky left-0 z-20 border-r border-gray-200 bg-white px-3"
+                      style={{ width: STAFF_COL_W, minWidth: STAFF_COL_W, height: ROW_H }}>
+                      <div className="text-xs font-semibold text-gray-800 truncate">{s.name}</div>
+                      {staffStats.hours > 0
+                        ? <div className="text-[10px] text-gray-400 mt-0.5">{staffStats.hours.toFixed(1)}h · ${staffStats.cost.toFixed(0)}</div>
+                        : <div className="text-[10px] text-gray-300 mt-0.5">${rate}/hr</div>
+                      }
+                    </td>
+                    {timeSlots.map((slot, ci) => {
+                      const k = getScheduleKey(dk, s.id, slot);
+                      const sh = schedule[k];
+                      const prevSh = ci > 0 ? schedule[getScheduleKey(dk, s.id, timeSlots[ci - 1])] : null;
+                      const nextSh = ci < timeSlots.length - 1 ? schedule[getScheduleKey(dk, s.id, timeSlots[ci + 1])] : null;
+                      const isShiftStart = sh && (!prevSh || prevSh.roleId !== sh.roleId);
+                      const isHour = slot.endsWith(':00');
+                      return (
+                        <td key={slot}
+                          style={{
+                            height: ROW_H, width: hColW, minWidth: hColW, position: 'relative',
+                            backgroundColor: sh ? sh.roleColor : undefined,
+                            borderRight: sh
+                              ? ((!nextSh || nextSh.roleId !== sh.roleId) ? '2px solid rgba(255,255,255,0.4)' : 'none')
+                              : (isHour ? '1px solid #E5E7EB' : '1px solid #F3F4F6'),
+                            borderLeft: sh && isShiftStart ? '2px solid rgba(255,255,255,0.4)' : isHour ? '1px solid #E5E7EB' : undefined,
+                            cursor: selectedRole ? (selectedRole.id === 'eraser' ? 'cell' : 'crosshair') : 'pointer',
+                          }}
+                          onMouseDown={(e) => handleHMouseDown(e, dk, s.id, slot, ci)}
+                          onMouseEnter={() => handleHMouseEnter(dk, s.id, slot, ci)}
+                          onContextMenu={(e) => handleRightClick(e, dk, s.id, slot)}
+                        >
+                          {sh && isShiftStart && (
+                            <div className="absolute inset-y-0 left-1 flex items-center pointer-events-none z-10" style={{ maxWidth: hColW * 4 }}>
+                              <span className="text-white font-semibold truncate whitespace-nowrap" style={{ fontSize: 10 }}>{sh.roleCode}</span>
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot className="sticky bottom-0 z-20">
+              <tr className="bg-gray-50 border-t-2 border-gray-200">
+                <td className="sticky left-0 z-30 bg-gray-50 border-r border-gray-200 px-3 py-2"
+                  style={{ width: STAFF_COL_W, minWidth: STAFF_COL_W }}>
+                  <div className="text-xs font-semibold text-gray-600">Total</div>
+                  <div className="text-xs text-blue-600 font-semibold mt-0.5">{dayStats.totalHours.toFixed(1)}h · ${dayStats.totalCost.toFixed(0)}</div>
+                </td>
+                {timeSlots.map((slot) => {
+                  const count = orderedStaff.filter(s => !!schedule[getScheduleKey(dk, s.id, slot)]).length;
+                  const isHour = slot.endsWith(':00');
+                  return (
+                    <td key={slot} className="text-center"
+                      style={{ width: hColW, minWidth: hColW, padding: '4px 0',
+                        borderRight: isHour ? '1px solid #E5E7EB' : '1px solid #F3F4F6' }}>
+                      {count > 0 && (
+                        <span className="text-[9px] font-bold"
+                          style={{ color: count < (businessSettings.minStaffCoverage || 2) ? '#ef4444' : '#9CA3AF' }}>
+                          {count}
+                        </span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            </tfoot>
+          </table>
+          <div ref={overlayRef} style={{ display: 'none', position: 'absolute', pointerEvents: 'none', zIndex: 5, borderWidth: '2px', borderStyle: 'solid', borderRadius: '2px' }} />
+        </div>
+      </div>
+    );
+  };
+
   return (
 
     <div className="h-screen flex overflow-hidden" style={{ background: 'var(--app-bg)' }}>
@@ -5430,10 +5636,21 @@ Key things to verify after rebuild:
           {/* Toolbar row — roster only */}
           {activeView === 'roster' && <div className="px-4 py-1.5 border-t border-gray-100 flex items-center gap-2">
             <div className="flex items-center gap-2">
-              {/* View mode */}
-              <div className="flex bg-gray-100 p-0.5 rounded-lg">
-                {[1, 3, 7].map(m => <button key={m} onClick={() => setViewMode(m)} className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{m}D</button>)}
+              {/* Layout toggle: weekly grid vs daily timeline */}
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden shrink-0">
+                <button onClick={() => setRosterView('weekly')} title="Weekly grid"
+                  className={`p-1.5 transition-colors ${rosterView === 'weekly' ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  <LayoutGrid size={14} />
+                </button>
+                <button onClick={() => setRosterView('daily')} title="Daily timeline"
+                  className={`p-1.5 transition-colors border-l border-gray-200 ${rosterView === 'daily' ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  <LayoutList size={14} />
+                </button>
               </div>
+              {/* View mode — only relevant for weekly grid */}
+              {rosterView === 'weekly' && <div className="flex bg-gray-100 p-0.5 rounded-lg">
+                {[1, 3, 7].map(m => <button key={m} onClick={() => setViewMode(m)} className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{m}D</button>)}
+              </div>}
               {/* Time interval */}
               <div className="flex bg-gray-100 p-0.5 rounded-lg">
                 {[15, 30, 60].map(i => <button key={i} onClick={() => setTimeInterval(i)} className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${timeInterval === i ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{i === 60 ? '1h' : `${i}m`}</button>)}
@@ -5519,7 +5736,13 @@ Key things to verify after rebuild:
           </div>
         )}
 
-        {activeStaff.length > 0 && (
+        {activeStaff.length > 0 && rosterView === 'daily' && (
+          <div className="card overflow-hidden relative flex-1 min-h-0">
+            {renderDailyTimeline()}
+          </div>
+        )}
+
+        {activeStaff.length > 0 && rosterView === 'weekly' && (
           <div ref={containerRef} className="card overflow-auto relative flex-1 min-h-0">
             <table className="border-collapse table-fixed w-full" style={{ minWidth: `${100 + (orderedStaff.length * dates.length * columnWidth)}px`, userSelect: 'none' }}>
               <thead className="sticky top-0 z-30 bg-white">
