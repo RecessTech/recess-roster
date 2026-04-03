@@ -5426,11 +5426,21 @@ Key things to verify after rebuild:
                 </th>
                 {timeSlots.map((slot) => {
                   const isHour = slot.endsWith(':00');
+                  const isHalf = slot.endsWith(':30');
+                  const [h] = slot.split(':').map(Number);
                   return (
                     <th key={slot}
-                      className={`text-center ${isHour ? 'border-l border-l-gray-200' : ''} border-r border-gray-100`}
-                      style={{ width: hColW, minWidth: hColW, padding: '4px 0' }}>
-                      {isHour && <span className="text-[10px] font-semibold text-gray-500">{slot}</span>}
+                      style={{
+                        width: hColW, minWidth: hColW, padding: 0,
+                        verticalAlign: 'bottom',
+                        borderLeft: isHour ? '1px solid #D1D5DB' : undefined,
+                        borderRight: '1px solid #F3F4F6',
+                      }}>
+                      <div style={{ height: 28, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 3 }}>
+                        {isHour && <span style={{ fontSize: 10, fontWeight: 700, color: '#4B5563' }}>{h}</span>}
+                        {isHalf && <span style={{ fontSize: 9, color: '#9CA3AF' }}>:30</span>}
+                        {!isHour && !isHalf && <div style={{ width: 1, height: 5, backgroundColor: '#E5E7EB' }} />}
+                      </div>
                     </th>
                   );
                 })}
@@ -5486,24 +5496,40 @@ Key things to verify after rebuild:
               })}
             </tbody>
             <tfoot className="sticky bottom-0 z-20">
-              <tr className="bg-gray-50 border-t-2 border-gray-200">
-                <td className="sticky left-0 z-30 bg-gray-50 border-r border-gray-200 px-3 py-2"
+              <tr style={{ height: 36 }} className="bg-white border-t-2 border-gray-200">
+                <td className="sticky left-0 z-30 bg-white border-r border-gray-200 px-3"
                   style={{ width: STAFF_COL_W, minWidth: STAFF_COL_W }}>
-                  <div className="text-xs font-semibold text-gray-600">Total</div>
-                  <div className="text-xs text-blue-600 font-semibold mt-0.5">{dayStats.totalHours.toFixed(1)}h · ${dayStats.totalCost.toFixed(0)}</div>
+                  <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Coverage</div>
+                  <div className="text-[9px] text-gray-400 mt-0.5">staff on shift</div>
                 </td>
                 {timeSlots.map((slot) => {
                   const count = orderedStaff.filter(s => !!schedule[getScheduleKey(dk, s.id, slot)]).length;
+                  const minStaff = businessSettings.minStaffCoverage || 2;
+                  const maxPossible = Math.max(orderedStaff.length, 1);
+                  const barPct = Math.min((count / maxPossible) * 100, 100);
+                  const underMin = count > 0 && count < minStaff;
+                  const barColor = count === 0 ? 'transparent' : underMin ? '#FCA5A5' : '#86EFAC';
                   const isHour = slot.endsWith(':00');
                   return (
-                    <td key={slot} className="text-center"
-                      style={{ width: hColW, minWidth: hColW, padding: '4px 0',
-                        borderRight: isHour ? '1px solid #E5E7EB' : '1px solid #F3F4F6' }}>
+                    <td key={slot}
+                      style={{
+                        width: hColW, minWidth: hColW, padding: 0, position: 'relative',
+                        verticalAlign: 'bottom',
+                        borderLeft: isHour ? '1px solid #E5E7EB' : undefined,
+                        borderRight: '1px solid #F3F4F6',
+                      }}>
                       {count > 0 && (
-                        <span className="text-[9px] font-bold"
-                          style={{ color: count < (businessSettings.minStaffCoverage || 2) ? '#ef4444' : '#9CA3AF' }}>
+                        <div style={{
+                          position: 'absolute', bottom: 0, left: 0, right: 0,
+                          height: `${barPct}%`, minHeight: count > 0 ? 4 : 0,
+                          backgroundColor: barColor,
+                          transition: 'height 0.15s',
+                        }} />
+                      )}
+                      {count > 0 && (
+                        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', fontSize: 9, fontWeight: 700, paddingBottom: 2, color: underMin ? '#DC2626' : '#6B7280' }}>
                           {count}
-                        </span>
+                        </div>
                       )}
                     </td>
                   );
@@ -5637,14 +5663,14 @@ Key things to verify after rebuild:
           {activeView === 'roster' && <div className="px-4 py-1.5 border-t border-gray-100 flex items-center gap-2">
             <div className="flex items-center gap-2">
               {/* Layout toggle: weekly grid vs daily timeline */}
-              <div className="flex rounded-lg border border-gray-200 overflow-hidden shrink-0">
-                <button onClick={() => setRosterView('weekly')} title="Weekly grid"
-                  className={`p-1.5 transition-colors ${rosterView === 'weekly' ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-                  <LayoutGrid size={14} />
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden shrink-0 shadow-sm">
+                <button onClick={() => setRosterView('weekly')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${rosterView === 'weekly' ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  <LayoutGrid size={13} /> Week
                 </button>
-                <button onClick={() => setRosterView('daily')} title="Daily timeline"
-                  className={`p-1.5 transition-colors border-l border-gray-200 ${rosterView === 'daily' ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-                  <LayoutList size={14} />
+                <button onClick={() => setRosterView('daily')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors border-l border-gray-200 ${rosterView === 'daily' ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  <LayoutList size={13} /> Day
                 </button>
               </div>
               {/* View mode — only relevant for weekly grid */}
