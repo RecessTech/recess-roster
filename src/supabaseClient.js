@@ -25,21 +25,9 @@ export const db = {
 
   // Create a new org and make this user its owner. Returns the new org record.
   async createOrg(userId, orgName) {
-    const { data: org, error: orgError } = await supabase
-      .from('organisations')
-      .insert([{ name: orgName }])
-      .select()
-      .single();
-
-    if (orgError) throw orgError;
-
-    const { error: memberError } = await supabase
-      .from('org_members')
-      .insert([{ org_id: org.id, user_id: userId, role: 'owner' }]);
-
-    if (memberError) throw memberError;
-
-    return org;
+    const { data, error } = await supabase.rpc('create_org_for_user', { org_name: orgName });
+    if (error) throw error;
+    return data;
   },
 
   // ── Staff ────────────────────────────────────────────────────────────────────
