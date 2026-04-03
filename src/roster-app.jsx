@@ -899,6 +899,7 @@ const RosterApp = () => {
   const calculateWeekStats = () => {
     let totalHours = 0;
     let totalCost = 0;
+    let totalBaseCost = 0;
     const staffBreakdown = {};
     const roleBreakdown = {};
     const dailyBreakdown = [];
@@ -925,6 +926,7 @@ const RosterApp = () => {
       const dayStats = calculateDayStats(dateKey);
       totalHours += dayStats.totalHours;
       totalCost += dayStats.totalCost;
+      totalBaseCost += (dayStats.totalBaseCost || 0);
 
       // Check if weekend
       const dayOfWeek = date.getDay();
@@ -995,6 +997,7 @@ const RosterApp = () => {
     return {
       totalHours,
       totalCost,
+      totalBaseCost,
       staffBreakdown: Object.values(staffBreakdown).filter(s => s.hours > 0),
       roleBreakdown: Object.values(roleBreakdown).filter(r => r.hours > 0),
       dailyBreakdown,
@@ -1017,12 +1020,13 @@ const RosterApp = () => {
       if (editingStaff) {
         return {
           name: editingStaff.name || '',
+          email: editingStaff.email || '',
           hourlyRate: editingStaff.hourlyRate || '',
           weekendRate: editingStaff.weekendRate || '',
           employmentType: editingStaff.employmentType || 'FT'
         };
       }
-      return { name: '', hourlyRate: '', weekendRate: '', employmentType: 'FT' };
+      return { name: '', email: '', hourlyRate: '', weekendRate: '', employmentType: 'FT' };
     });
 
     const handleSave = async () => {
@@ -1035,6 +1039,7 @@ const RosterApp = () => {
       
       const finalData = {
         name: formData.name,
+        email: formData.email || null,
         hourly_rate: hourlyRate,
         weekend_rate: weekendRate,
         employment_type: formData.employmentType
@@ -1046,6 +1051,7 @@ const RosterApp = () => {
           setStaff(staff.map(s => s.id === editingStaff.id ? {
             id: updated.id,
             name: updated.name,
+            email: updated.email || '',
             hourlyRate: updated.hourly_rate,
             weekendRate: updated.weekend_rate,
             employmentType: updated.employment_type
@@ -1055,6 +1061,7 @@ const RosterApp = () => {
           setStaff([...staff, {
             id: created.id,
             name: created.name,
+            email: created.email || '',
             hourlyRate: created.hourly_rate,
             weekendRate: created.weekend_rate,
             employmentType: created.employment_type
@@ -1084,6 +1091,17 @@ const RosterApp = () => {
                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                 className="input-base"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                placeholder="staff@example.com"
+                className="input-base"
+              />
+              <p className="text-xs text-gray-400 mt-1">Used to send weekly schedules</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Weekday Hourly Rate ($)</label>
@@ -3623,11 +3641,12 @@ const RosterApp = () => {
           const stats = calculateStaffDayStats(s.id, dateKey);
           const dayOfWeek = date.getDay();
           const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-          return { dateKey, hours: stats.hours, cost: stats.cost, isWeekend, date };
+          return { dateKey, hours: stats.hours, cost: stats.cost, baseCost: stats.baseCost || 0, isWeekend, date };
         });
         const totalHours = days.reduce((sum, d) => sum + d.hours, 0);
         const totalCost = days.reduce((sum, d) => sum + d.cost, 0);
-        return { staff: s, days, totalHours, totalCost };
+        const totalBaseCost = days.reduce((sum, d) => sum + d.baseCost, 0);
+        return { staff: s, days, totalHours, totalCost, totalBaseCost };
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [orderedStaff, dates, schedule]);
@@ -3645,6 +3664,8 @@ const RosterApp = () => {
 
     const grandTotalHours = timesheetData.reduce((sum, row) => sum + row.totalHours, 0);
     const grandTotalCost = timesheetData.reduce((sum, row) => sum + row.totalCost, 0);
+    const grandTotalBaseCost = timesheetData.reduce((sum, row) => sum + row.totalBaseCost, 0);
+    const superRate = businessSettings.superannuationRate || 0;
 
     const formatValue = (hours, cost) => {
       if (timesheetMode === 'cost') return hours > 0 ? `${currency}${cost.toFixed(0)}` : '-';
@@ -3774,9 +3795,16 @@ const RosterApp = () => {
                       </td>
                     ))}
                     <td className="text-center px-4 py-3 bg-gray-50 font-bold text-gray-900 tabular-nums">
-                      {timesheetMode === 'cost'
-                        ? `${currency}${row.totalCost.toFixed(0)}`
-                        : `${row.totalHours.toFixed(2)}h`}
+                      {timesheetMode === 'cost' ? (
+                        <div>
+                          <div>{currency}{row.totalCost.toFixed(0)}</div>
+                          {superRate > 0 && row.totalBaseCost > 0 && (
+                            <div className="text-[10px] font-normal text-gray-400 leading-tight">
+                              {currency}{row.totalBaseCost.toFixed(0)} + {currency}{(row.totalCost - row.totalBaseCost).toFixed(0)} super
+                            </div>
+                          )}
+                        </div>
+                      ) : `${row.totalHours.toFixed(2)}h`}
                     </td>
                   </tr>
                 ))}
@@ -3807,9 +3835,16 @@ const RosterApp = () => {
                     </td>
                   ))}
                   <td className="text-center px-4 py-3 bg-gray-200 font-bold text-gray-900 tabular-nums">
-                    {timesheetMode === 'cost'
-                      ? `${currency}${grandTotalCost.toFixed(0)}`
-                      : `${grandTotalHours.toFixed(2)}h`}
+                    {timesheetMode === 'cost' ? (
+                      <div>
+                        <div>{currency}{grandTotalCost.toFixed(0)}</div>
+                        {superRate > 0 && grandTotalBaseCost > 0 && (
+                          <div className="text-[10px] font-normal text-gray-500">
+                            {currency}{grandTotalBaseCost.toFixed(0)} + {currency}{(grandTotalCost - grandTotalBaseCost).toFixed(0)} super
+                          </div>
+                        )}
+                      </div>
+                    ) : `${grandTotalHours.toFixed(2)}h`}
                   </td>
                 </tr>
               </tfoot>
@@ -3823,8 +3858,11 @@ const RosterApp = () => {
               <div className="text-2xl font-bold text-gray-900">{grandTotalHours.toFixed(2)}h</div>
             </div>
             <div className="bg-white rounded-lg p-4 border">
-              <div className="text-xs font-medium text-gray-500 mb-1">Total Cost</div>
+              <div className="text-xs font-medium text-gray-500 mb-1">Total Cost {superRate > 0 ? '(incl. super)' : ''}</div>
               <div className="text-2xl font-bold text-gray-900">{currency}{grandTotalCost.toFixed(0)}</div>
+              {superRate > 0 && grandTotalBaseCost > 0 && (
+                <div className="text-xs text-gray-400 mt-1">{currency}{grandTotalBaseCost.toFixed(0)} wages + {currency}{(grandTotalCost - grandTotalBaseCost).toFixed(0)} super</div>
+              )}
             </div>
             <div className="bg-white rounded-lg p-4 border">
               <div className="text-xs font-medium text-gray-500 mb-1">Avg Hours/Staff</div>
@@ -3970,10 +4008,12 @@ const RosterApp = () => {
         {/* Key Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="metric-card">
-            <div className="text-sm text-gray-500 mb-1">Total Week Cost</div>
+            <div className="text-sm text-gray-500 mb-1">Total Week Cost {businessSettings.superannuationRate > 0 ? '(incl. super)' : ''}</div>
             <div className="text-3xl font-bold text-gray-900">${weekStats.totalCost.toFixed(0)}</div>
-            <div className="text-xs text-gray-400 mt-1">{weekStats.totalHours.toFixed(2)} hours</div>
-            <div className="text-xs text-gray-400">${insights.avgCostPerHour.toFixed(2)}/hr avg</div>
+            {businessSettings.superannuationRate > 0 && weekStats.totalBaseCost > 0 && (
+              <div className="text-xs text-blue-500 mt-1">${weekStats.totalBaseCost.toFixed(0)} wages + ${(weekStats.totalCost - weekStats.totalBaseCost).toFixed(0)} super</div>
+            )}
+            <div className="text-xs text-gray-400 mt-0.5">${insights.avgCostPerHour.toFixed(2)}/hr avg</div>
           </div>
 
           <div className="metric-card">
@@ -5113,244 +5153,184 @@ Key things to verify after rebuild:
   const ExportModal = () => {
     const [selectedStaffId, setSelectedStaffId] = useState(staff[0]?.id);
     const [copiedStaffId, setCopiedStaffId] = useState(null);
-    
+
     const selectedStaff = staff.find(s => s.id === selectedStaffId);
     const scheduleByDay = selectedStaff ? generateStaffSchedule(selectedStaff) : [];
-    
-    const totalHours = scheduleByDay.reduce((total, day) => {
-      return total + day.shifts.reduce((dayTotal, shift) => {
-        // Calculate hours from time difference (15 min slots)
-        const [startH, startM] = shift.startTime.split(':').map(Number);
-        const [endH, endM] = shift.endTime.split(':').map(Number);
-        const startMinutes = startH * 60 + startM;
-        const endMinutes = endH * 60 + endM;
-        const durationMinutes = endMinutes - startMinutes + 15; // +15 to include end slot
-        return dayTotal + (durationMinutes / 60);
-      }, 0);
-    }, 0);
-    
-    const copyToClipboard = (staffId) => {
-      const staffMember = staff.find(s => s.id === staffId);
-      const scheduleByDay = generateStaffSchedule(staffMember);
-      
-      const weekRange = `${dates[0]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })} - ${dates[dates.length - 1]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-      
-      let tableHTML = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; max-width: 600px;">
-  <div style="background: linear-gradient(135deg, #2563EB 0%, #F97316 100%); padding: 24px; border-radius: 12px 12px 0 0;">
-    <h2 style="color: white; margin: 0 0 8px 0; font-size: 24px; font-weight: 700;">Your Weekly Schedule</h2>
-    <p style="color: rgba(255,255,255,0.95); margin: 0; font-size: 14px;">${weekRange}</p>
-  </div>
-  <div style="background: white; padding: 20px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-    <div style="margin-bottom: 20px; padding: 16px; background: #F1F5F9; border-radius: 8px; border-left: 4px solid #F97316;">
-      <div style="font-size: 14px; color: #64748B; margin-bottom: 4px;">Team Member</div>
-      <div style="font-size: 20px; font-weight: 700; color: #1E293B;">${staffMember.name}</div>
-    </div>
-    <table style="width: 100%; border-collapse: separate; border-spacing: 0;">
-      <thead>
-        <tr style="background: #F8FAFC;">
-          <th style="padding: 12px; text-align: left; font-size: 12px; font-weight: 600; color: #64748B; text-transform: uppercase; border-bottom: 2px solid #E2E8F0;">Day</th>
-          <th style="padding: 12px; text-align: left; font-size: 12px; font-weight: 600; color: #64748B; text-transform: uppercase; border-bottom: 2px solid #E2E8F0;">Time</th>
-          <th style="padding: 12px; text-align: right; font-size: 12px; font-weight: 600; color: #64748B; text-transform: uppercase; border-bottom: 2px solid #E2E8F0;">Hours</th>
-        </tr>
-      </thead>
-      <tbody>`;
+    const weekRange = `${dates[0]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} – ${dates[dates.length - 1]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`;
 
-      let totalHours = 0;
-      
-      scheduleByDay.forEach((day) => {
+    const shiftHours = (shift) => {
+      const [sh, sm] = shift.startTime.split(':').map(Number);
+      const [eh, em] = shift.endTime.split(':').map(Number);
+      return ((eh * 60 + em) - (sh * 60 + sm) + 15) / 60;
+    };
+
+    const actualEnd = (shift) => {
+      const [eh, em] = shift.endTime.split(':').map(Number);
+      const mins = eh * 60 + em + 15;
+      return `${Math.floor(mins / 60).toString().padStart(2, '0')}:${(mins % 60).toString().padStart(2, '0')}`;
+    };
+
+    const totalHours = scheduleByDay.reduce((t, day) => t + day.shifts.reduce((dt, s) => dt + shiftHours(s), 0), 0);
+    
+    const copyToClipboard = () => {
+      const s = selectedStaff;
+      const sched = scheduleByDay;
+      let rows = '';
+      sched.forEach(day => {
         if (day.shifts.length === 0) {
-          // Show empty day
-          tableHTML += `<tr style="border-bottom: 1px solid #F1F5F9;">
-          <td style="padding: 14px 12px;">
-            <div style="font-weight: 600; color: #1E293B; font-size: 14px;">${day.date.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase()}</div>
-            <div style="font-size: 12px; color: #64748B;">${day.date.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</div>
-          </td>
-          <td style="padding: 14px 12px;"><div style="font-size: 14px; color: #94A3B8; font-style: italic;">Not rostered</div></td>
-          <td style="padding: 14px 12px; text-align: right; font-weight: 600; color: #94A3B8; font-size: 14px;">-</td>
-        </tr>`;
+          rows += `<tr style="border-bottom:1px solid #F1F5F9">
+            <td style="padding:10px 12px"><div style="font-weight:600;color:#1E293B;font-size:13px">${day.date.toLocaleDateString('en-AU',{weekday:'short'}).toUpperCase()}</div><div style="font-size:11px;color:#64748B">${day.date.toLocaleDateString('en-AU',{month:'short',day:'numeric'})}</div></td>
+            <td style="padding:10px 12px;font-size:13px;color:#94A3B8;font-style:italic">Not rostered</td>
+            <td style="padding:10px 12px;text-align:right;color:#94A3B8;font-size:13px">–</td></tr>`;
         } else {
-          // Show each shift for this day
-          day.shifts.forEach((shift, shiftIdx) => {
-            // Calculate hours from time difference
-            const [startH, startM] = shift.startTime.split(':').map(Number);
-            const [endH, endM] = shift.endTime.split(':').map(Number);
-            const startMinutes = startH * 60 + startM;
-            const endMinutes = endH * 60 + endM;
-            const durationMinutes = endMinutes - startMinutes + 15;
-            const hours = (durationMinutes / 60).toFixed(2);
-            totalHours += parseFloat(hours);
-            
-            // Calculate actual end time (add 15 min to last slot)
-            const actualEndMinutes = endMinutes + 15;
-            const actualEndTime = `${Math.floor(actualEndMinutes / 60).toString().padStart(2, '0')}:${(actualEndMinutes % 60).toString().padStart(2, '0')}`;
-            
-            tableHTML += `<tr style="border-bottom: 1px solid #F1F5F9;">
-            <td style="padding: 14px 12px;">
-              <div style="font-weight: 600; color: #1E293B; font-size: 14px;">${shift.date.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase()}</div>
-              <div style="font-size: 12px; color: #64748B;">${shift.date.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</div>
-            </td>
-            <td style="padding: 14px 12px;"><div style="font-size: 14px; color: #1E293B;">${shift.startTime} - ${actualEndTime}</div></td>
-            <td style="padding: 14px 12px; text-align: right; font-weight: 600; color: #1E293B; font-size: 14px;">${hours}h</td>
-          </tr>`;
+          day.shifts.forEach(shift => {
+            const h = shiftHours(shift).toFixed(2);
+            rows += `<tr style="border-bottom:1px solid #F1F5F9">
+              <td style="padding:10px 12px"><div style="font-weight:600;color:#1E293B;font-size:13px">${shift.date.toLocaleDateString('en-AU',{weekday:'short'}).toUpperCase()}</div><div style="font-size:11px;color:#64748B">${shift.date.toLocaleDateString('en-AU',{month:'short',day:'numeric'})}</div></td>
+              <td style="padding:10px 12px;font-size:13px;color:#1E293B;font-family:monospace">${shift.startTime} – ${actualEnd(shift)}</td>
+              <td style="padding:10px 12px;text-align:right;font-weight:600;color:#1E293B;font-size:13px">${h}h</td></tr>`;
           });
         }
       });
-      
-      tableHTML += `</tbody></table>
-    <div style="margin-top: 20px; padding: 16px; background: linear-gradient(135deg, #EFF6FF 0%, #FFF7ED 100%); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-      <span style="font-size: 16px; font-weight: 600; color: #1E293B;">Total Hours</span>
-      <span style="font-size: 24px; font-weight: 700; color: #F97316;">${totalHours.toFixed(2)}h</span>
+      const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;max-width:520px">
+  <div style="background:#3B5BDB;padding:16px 20px;border-radius:10px 10px 0 0">
+    <div style="color:rgba(255,255,255,0.75);font-size:11px;text-transform:uppercase;letter-spacing:0.05em">Your roster</div>
+    <div style="color:white;font-size:20px;font-weight:700;margin-top:2px">${s.name}</div>
+    <div style="color:rgba(255,255,255,0.8);font-size:12px;margin-top:2px">${weekRange}</div>
+  </div>
+  <div style="background:white;border:1px solid #E2E8F0;border-top:none;border-radius:0 0 10px 10px;overflow:hidden">
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:#F8FAFC">
+        <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;border-bottom:1px solid #E2E8F0">Day</th>
+        <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;border-bottom:1px solid #E2E8F0">Time</th>
+        <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;border-bottom:1px solid #E2E8F0">Hours</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="padding:12px 16px;background:#EEF2FF;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:13px;font-weight:600;color:#1E293B">Total hours</span>
+      <span style="font-size:18px;font-weight:700;color:#3B5BDB">${totalHours.toFixed(2)}h</span>
     </div>
   </div>
 </div>`;
-
-      const blob = new Blob([tableHTML], { type: 'text/html' });
-      const clipboardItem = new ClipboardItem({ 'text/html': blob });
-      
-      navigator.clipboard.write([clipboardItem]).then(() => {
-        setCopiedStaffId(staffId);
+      const blob = new Blob([html], { type: 'text/html' });
+      navigator.clipboard.write([new ClipboardItem({ 'text/html': blob })]).then(() => {
+        setCopiedStaffId(selectedStaffId);
         setTimeout(() => setCopiedStaffId(null), 2000);
       });
     };
-    
+
+    const handleEmailStaff = () => {
+      const s = selectedStaff;
+      if (!s.email) return;
+      const lines = scheduleByDay.map(day => {
+        if (day.shifts.length === 0) return `  ${day.date.toLocaleDateString('en-AU',{weekday:'long'})}: Off`;
+        return day.shifts.map(sh => `  ${sh.date.toLocaleDateString('en-AU',{weekday:'long'})}: ${sh.startTime} – ${actualEnd(sh)} (${shiftHours(sh).toFixed(1)}h)`).join('\n');
+      }).join('\n');
+      const subject = encodeURIComponent(`Your roster – ${weekRange}`);
+      const body = encodeURIComponent(`Hi ${s.name},\n\nHere is your roster for ${weekRange}:\n\n${lines}\n\nTotal: ${totalHours.toFixed(1)} hours\n\nPlease confirm receipt.\n\n${businessSettings.businessName || 'Management'}`);
+      window.open(`mailto:${s.email}?subject=${subject}&body=${body}`);
+    };
+
     return (
       <div className="modal-overlay">
-        <div className="modal-container max-w-4xl max-h-[90vh]">
+        <div className="modal-container max-w-lg max-h-[90vh]">
           <div className="modal-header">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Export Staff Schedules</h2>
-              <p className="text-sm text-gray-500 mt-0.5">Select a team member to view and copy their schedule</p>
+              <h2 className="text-base font-semibold text-gray-900">Send Schedule</h2>
+              <p className="text-xs text-gray-500 mt-0.5">{weekRange}</p>
             </div>
-            <button onClick={() => setShowExportModal(false)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
-              <X size={18} className="text-gray-400" />
-            </button>
+            <button onClick={() => setShowExportModal(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X size={16} className="text-gray-400" /></button>
           </div>
-          
-          <div className="p-6 overflow-auto" style={{ maxHeight: 'calc(90vh - 100px)' }}>
-            <div className="mb-5">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Team Member</label>
-              <select
-                value={selectedStaffId}
-                onChange={(e) => setSelectedStaffId(e.target.value)}
-                className="input-base"
-              >
-                {activeStaff.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+
+          <div className="p-4 overflow-auto" style={{ maxHeight: 'calc(90vh - 100px)' }}>
+            {/* Staff selector */}
+            <div className="flex gap-2 mb-4 flex-wrap">
+              {activeStaff.map(s => (
+                <button key={s.id} onClick={() => setSelectedStaffId(s.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${selectedStaffId === s.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
+                  {s.name}
+                  {s.email && <span className="ml-1 opacity-60">✓</span>}
+                </button>
+              ))}
             </div>
 
             {selectedStaff && (
-              <div>
-                <div className="bg-blue-50 rounded-2xl p-6 mb-6 border border-blue-200">
-                  <div className="flex justify-between items-center mb-4">
-                    <div>
-                      <div className="text-sm font-medium text-gray-600 mb-1">Viewing schedule for</div>
-                      <div className="text-2xl font-bold text-gray-900">{selectedStaff.name}</div>
-                      <div className="text-sm text-gray-600 mt-1">
-                        {dates[0]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })} - {dates[dates.length - 1]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-medium text-gray-600 mb-1">Total Hours</div>
-                      <div className="text-4xl font-bold text-blue-600">
-                        {totalHours.toFixed(2)}h
-                      </div>
-                    </div>
+              <>
+                {/* Summary + action bar */}
+                <div className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 mb-4 border border-gray-200">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">{selectedStaff.name}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{totalHours.toFixed(1)}h this week</div>
+                    {selectedStaff.email
+                      ? <div className="text-xs text-blue-600 mt-0.5">{selectedStaff.email}</div>
+                      : <button onClick={() => { setShowExportModal(false); setEditingStaff(selectedStaff); setShowStaffModal(true); }} className="text-xs text-orange-500 hover:text-orange-600 mt-0.5">+ Add email address</button>
+                    }
                   </div>
-                  
-                  <button
-                    onClick={() => copyToClipboard(selectedStaffId)}
-                    className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl font-semibold text-lg transition-all shadow-lg ${
-                      copiedStaffId === selectedStaffId 
-                        ? 'bg-green-500 text-white' 
-                        : 'bg-blue-600 hover:bg-blue-700 text-white'
-                    }`}
-                  >
-                    <Clipboard size={20} />
-                    {copiedStaffId === selectedStaffId ? 'Copied to Clipboard!' : 'Copy Schedule for Email'}
-                  </button>
+                  <div className="flex gap-2">
+                    <button onClick={copyToClipboard}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all border ${copiedStaffId === selectedStaffId ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}>
+                      <Clipboard size={13} />
+                      {copiedStaffId === selectedStaffId ? 'Copied!' : 'Copy HTML'}
+                    </button>
+                    <button onClick={handleEmailStaff} disabled={!selectedStaff.email}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${selectedStaff.email ? 'btn-primary' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
+                      <CalendarDays size={13} />
+                      Send Email
+                    </button>
+                  </div>
                 </div>
-                
-                <div className="bg-white rounded-xl border-2 border-gray-100 overflow-hidden">
-                  <div className="bg-gray-50 px-6 py-3 border-b-2 border-gray-100">
-                    <h3 className="font-semibold text-gray-800">Schedule Preview</h3>
+
+                {/* Schedule preview */}
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
+                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Schedule Preview</span>
                   </div>
                   <table className="w-full">
                     <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200">
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Day</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Time</th>
-                        <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Hours</th>
+                      <tr className="border-b border-gray-100">
+                        <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Day</th>
+                        <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Time</th>
+                        <th className="px-4 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Hours</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {scheduleByDay.length === 0 ? (
-                        <tr>
-                          <td colSpan="3" className="px-6 py-12 text-center text-gray-400">
-                            No days in current view
-                          </td>
-                        </tr>
-                      ) : (
-                        scheduleByDay.map((day, dayIdx) => {
-                          if (day.shifts.length === 0) {
-                            // Show empty day
-                            return (
-                              <tr key={`${day.dateKey}-empty`} className="hover:bg-gray-50 transition-colors">
-                                <td className="px-6 py-4">
-                                  <div className="font-semibold text-gray-900">{day.date.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase()}</div>
-                                  <div className="text-sm text-gray-500">{day.date.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</div>
-                                </td>
-                                <td className="px-6 py-4 text-gray-400 italic">Not rostered</td>
-                                <td className="px-6 py-4 text-right text-gray-400">-</td>
-                              </tr>
-                            );
-                          } else {
-                            // Show each shift for this day
-                            return day.shifts.map((shift, shiftIdx) => {
-                              // Calculate hours from time difference
-                              const [startH, startM] = shift.startTime.split(':').map(Number);
-                              const [endH, endM] = shift.endTime.split(':').map(Number);
-                              const startMinutes = startH * 60 + startM;
-                              const endMinutes = endH * 60 + endM;
-                              const durationMinutes = endMinutes - startMinutes + 15;
-                              const hours = (durationMinutes / 60).toFixed(2);
-                              
-                              // Calculate actual end time
-                              const actualEndMinutes = endMinutes + 15;
-                              const actualEndTime = `${Math.floor(actualEndMinutes / 60).toString().padStart(2, '0')}:${(actualEndMinutes % 60).toString().padStart(2, '0')}`;
-                              
-                              return (
-                                <tr key={`${day.dateKey}-${shiftIdx}`} className="hover:bg-gray-50 transition-colors">
-                                  <td className="px-6 py-4">
-                                    <div className="font-semibold text-gray-900">{shift.date.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase()}</div>
-                                    <div className="text-sm text-gray-500">{shift.date.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</div>
-                                  </td>
-                                  <td className="px-6 py-4 text-gray-700 font-mono">{shift.startTime} - {actualEndTime}</td>
-                                  <td className="px-6 py-4 text-right font-semibold text-gray-900">{hours}h</td>
-                                </tr>
-                              );
-                            });
-                          }
-                        })
-                      )}
+                    <tbody className="divide-y divide-gray-50">
+                      {scheduleByDay.map((day, di) => {
+                        if (day.shifts.length === 0) return (
+                          <tr key={di} className="text-gray-400">
+                            <td className="px-4 py-2.5">
+                              <div className="text-xs font-semibold">{day.date.toLocaleDateString('en-AU',{weekday:'short'}).toUpperCase()}</div>
+                              <div className="text-[10px]">{day.date.toLocaleDateString('en-AU',{month:'short',day:'numeric'})}</div>
+                            </td>
+                            <td className="px-4 py-2.5 text-xs italic">Off</td>
+                            <td className="px-4 py-2.5 text-right text-xs">–</td>
+                          </tr>
+                        );
+                        return day.shifts.map((shift, si) => (
+                          <tr key={`${di}-${si}`}>
+                            <td className="px-4 py-2.5">
+                              <div className="text-xs font-semibold text-gray-800">{shift.date.toLocaleDateString('en-AU',{weekday:'short'}).toUpperCase()}</div>
+                              <div className="text-[10px] text-gray-400">{shift.date.toLocaleDateString('en-AU',{month:'short',day:'numeric'})}</div>
+                            </td>
+                            <td className="px-4 py-2.5 text-xs font-mono text-gray-700">{shift.startTime} – {actualEnd(shift)}</td>
+                            <td className="px-4 py-2.5 text-right text-xs font-semibold text-gray-900">{shiftHours(shift).toFixed(1)}h</td>
+                          </tr>
+                        ));
+                      })}
                     </tbody>
+                    <tfoot>
+                      <tr className="border-t border-gray-200 bg-gray-50">
+                        <td colSpan={2} className="px-4 py-2 text-xs font-semibold text-gray-600">Total</td>
+                        <td className="px-4 py-2 text-right text-sm font-bold text-blue-600">{totalHours.toFixed(1)}h</td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
 
-                <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-200">
-                  <div className="flex items-start gap-3">
-                    <Lightbulb size={18} className="text-blue-600 mt-0.5 shrink-0" />
-                    <div>
-                      <div className="font-semibold text-blue-900 mb-1">How to use</div>
-                      <div className="text-sm text-blue-800">
-                        Click "Copy Schedule for Email" to copy the beautifully formatted schedule. 
-                        Then paste it directly into Gmail, Outlook, or any email client. The formatting will be preserved!
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                <p className="text-[10px] text-gray-400 mt-3 text-center">
+                  "Copy HTML" pastes a formatted table into Gmail/Outlook · "Send Email" opens your mail client pre-filled
+                </p>
+              </>
             )}
           </div>
         </div>

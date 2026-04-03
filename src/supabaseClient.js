@@ -56,6 +56,7 @@ export const db = {
     return (data || []).map(staff => ({
       id: staff.id,
       name: staff.name,
+      email: staff.email || '',
       hourlyRate: staff.hourly_rate,
       weekendRate: staff.weekend_rate,
       employmentType: staff.employment_type,
