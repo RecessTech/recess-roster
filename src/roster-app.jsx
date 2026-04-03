@@ -4,8 +4,21 @@ import { useAuth, signOut } from './Auth';
 import { db } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
 
+const THEMES = [
+  { id: 'cream',  dot: '#3B5BDB', bg: '#F3EDDB', label: 'Cream' },
+  { id: 'orange', dot: '#E85018', bg: '#E85018', label: 'Orange' },
+  { id: 'dark',   dot: '#E85018', bg: '#171717', label: 'Dark' },
+];
+
 const RosterApp = () => {
   const { user } = useAuth();
+
+  const [theme, setTheme] = useState(() => localStorage.getItem('rshift-theme') || 'orange');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('rshift-theme', theme);
+  }, [theme]);
 
   const [org, setOrg] = useState(null);
   const [showOrgOnboarding, setShowOrgOnboarding] = useState(false);
@@ -5324,7 +5337,7 @@ Key things to verify after rebuild:
 
   return (
 
-    <div className="h-screen bg-surface-50 flex overflow-hidden">
+    <div className="h-screen flex overflow-hidden" style={{ background: 'var(--app-bg)' }}>
       <Toaster
         position="bottom-right"
         toastOptions={{
@@ -5336,47 +5349,70 @@ Key things to verify after rebuild:
       />
 
       {/* Sidebar */}
-      <aside className="w-16 bg-surface-900 flex flex-col items-center py-4 gap-1 sticky top-0 h-screen z-50 shrink-0">
-        <div className="mb-5">
-          {businessSettings.logoUrl ? (
-            <img src={businessSettings.logoUrl} alt="" className="h-9 w-9 rounded-lg object-contain" onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }} />
-          ) : null}
-          <div className={`bg-brand-500 p-2 rounded-lg ${businessSettings.logoUrl ? 'hidden' : ''}`}>
-            <Users size={20} className="text-white" />
-          </div>
+      <aside className="w-16 flex flex-col items-center py-4 gap-1 shrink-0 z-50" style={{ background: 'var(--sb-bg)' }}>
+        {/* Logo mark */}
+        <div className="mb-5 w-9 h-9 rounded-xl flex items-center justify-center font-black text-lg select-none"
+          style={{ background: 'var(--sb-logo-bg)', color: 'var(--sb-logo-fg)' }}>
+          R
         </div>
 
-        <nav className="flex flex-col gap-0.5 flex-1">
-          <button onClick={() => setActiveView('roster')} className={`p-3 rounded-xl transition-colors group relative ${activeView === 'roster' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="Grid View">
-            <CalendarDays size={20} />
-            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-surface-900 border border-white/10 text-white text-xs rounded-lg shadow-elevated opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Grid View</span>
-          </button>
-          <button onClick={() => setActiveView('staff-view')} className={`p-3 rounded-xl transition-colors group relative ${activeView === 'staff-view' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="Staff View">
-            <Users size={20} />
-            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-surface-900 border border-white/10 text-white text-xs rounded-lg shadow-elevated opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Staff View</span>
-          </button>
-          <button onClick={() => setActiveView('timesheet')} className={`p-3 rounded-xl transition-colors group relative ${activeView === 'timesheet' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="Timesheet">
-            <FileSpreadsheet size={20} />
-            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-surface-900 border border-white/10 text-white text-xs rounded-lg shadow-elevated opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Timesheet</span>
-          </button>
-          <button onClick={() => setActiveView('analytics')} className={`p-3 rounded-xl transition-colors group relative ${activeView === 'analytics' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="Analytics">
-            <BarChart3 size={20} />
-            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-surface-900 border border-white/10 text-white text-xs rounded-lg shadow-elevated opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Analytics</span>
-          </button>
+        {/* Nav */}
+        <nav className="flex flex-col gap-0.5 flex-1 w-full px-2">
+          {[
+            { view: 'roster',     icon: <CalendarDays size={20} />, label: 'Grid View' },
+            { view: 'staff-view', icon: <Users size={20} />,        label: 'Staff View' },
+            { view: 'timesheet',  icon: <FileSpreadsheet size={20} />, label: 'Timesheet' },
+            { view: 'analytics',  icon: <BarChart3 size={20} />,    label: 'Analytics' },
+          ].map(({ view, icon, label }) => (
+            <button key={view} onClick={() => setActiveView(view)}
+              className={`sb-btn group w-full flex justify-center ${activeView === view ? 'active' : ''}`}
+              title={label}>
+              {icon}
+              <span className="absolute left-full ml-3 px-2.5 py-1.5 text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50"
+                style={{ background: 'var(--sb-tooltip-bg)', color: 'var(--sb-icon-active)', border: '1px solid var(--sb-tooltip-bd)' }}>
+                {label}
+              </span>
+            </button>
+          ))}
         </nav>
 
-        <div className="flex flex-col gap-0.5 mt-auto">
-          <button onClick={() => setShowSettingsModal(true)} className="p-3 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors group relative" title="Settings">
+        {/* Theme switcher */}
+        <div className="flex gap-1.5 mb-2 px-2">
+          {THEMES.map(t => (
+            <button key={t.id} onClick={() => setTheme(t.id)} title={t.label}
+              className="w-3.5 h-3.5 rounded-full transition-all"
+              style={{
+                background: t.bg,
+                boxShadow: theme === t.id
+                  ? `0 0 0 1.5px var(--sb-bg), 0 0 0 3px var(--sb-icon-active)`
+                  : 'none',
+                opacity: theme === t.id ? 1 : 0.5,
+              }} />
+          ))}
+        </div>
+
+        {/* Bottom actions */}
+        <div className="flex flex-col gap-0.5 w-full px-2">
+          <button onClick={() => setShowSettingsModal(true)} className="sb-btn group w-full flex justify-center" title="Settings">
             <Settings size={20} />
-            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-surface-900 border border-white/10 text-white text-xs rounded-lg shadow-elevated opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Settings</span>
+            <span className="absolute left-full ml-3 px-2.5 py-1.5 text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50"
+              style={{ background: 'var(--sb-tooltip-bg)', color: 'var(--sb-icon-active)', border: '1px solid var(--sb-tooltip-bd)' }}>
+              Settings
+            </span>
           </button>
-          <button onClick={() => setShowHelpModal(true)} className="p-3 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors group relative" title="Help">
+          <button onClick={() => setShowHelpModal(true)} className="sb-btn group w-full flex justify-center" title="Help">
             <HelpCircle size={20} />
-            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-surface-900 border border-white/10 text-white text-xs rounded-lg shadow-elevated opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Help</span>
+            <span className="absolute left-full ml-3 px-2.5 py-1.5 text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50"
+              style={{ background: 'var(--sb-tooltip-bg)', color: 'var(--sb-icon-active)', border: '1px solid var(--sb-tooltip-bd)' }}>
+              Help
+            </span>
           </button>
-          <button onClick={signOut} className="p-3 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors group relative" title="Sign Out">
+          <button onClick={signOut} className="sb-btn sb-btn-danger group w-full flex justify-center" title="Sign Out">
             <LogOut size={20} />
-            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-surface-900 border border-white/10 text-white text-xs rounded-lg shadow-elevated opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Sign Out</span>
+            <span className="absolute left-full ml-3 px-2.5 py-1.5 text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50"
+              style={{ background: 'var(--sb-tooltip-bg)', color: 'var(--sb-icon-active)', border: '1px solid var(--sb-tooltip-bd)' }}>
+              Sign Out
+            </span>
           </button>
         </div>
       </aside>
@@ -5384,7 +5420,7 @@ Key things to verify after rebuild:
       {/* Main content */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <div className="bg-white border-b border-gray-200 shadow-soft shrink-0 z-40">
+        <div className="border-b shadow-soft shrink-0 z-40" style={{ background: 'var(--top-bg)', borderColor: 'var(--top-border)' }}>
           <div className="px-4 py-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
