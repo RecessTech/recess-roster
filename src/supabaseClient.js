@@ -1,6 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Replace these with your actual Supabase credentials
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || 'YOUR_SUPABASE_URL';
 const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY || 'YOUR_SUPABASE_ANON_KEY';
 
@@ -8,34 +7,69 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Database helper functions
 export const db = {
-  // Staff operations
-  async getStaff(userId) {
+
+  // ── Org / onboarding ─────────────────────────────────────────────────────────
+
+  // Returns the org record for this user, or null if they have none yet.
+  async getOrgForUser(userId) {
+    const { data, error } = await supabase
+      .from('org_members')
+      .select('org_id, organisations(id, name, timezone, config)')
+      .eq('user_id', userId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    if (!data) return null;
+    return data.organisations;
+  },
+
+  // Create a new org and make this user its owner. Returns the new org record.
+  async createOrg(userId, orgName) {
+    const { data: org, error: orgError } = await supabase
+      .from('organisations')
+      .insert([{ name: orgName }])
+      .select()
+      .single();
+
+    if (orgError) throw orgError;
+
+    const { error: memberError } = await supabase
+      .from('org_members')
+      .insert([{ org_id: org.id, user_id: userId, role: 'owner' }]);
+
+    if (memberError) throw memberError;
+
+    return org;
+  },
+
+  // ── Staff ────────────────────────────────────────────────────────────────────
+
+  async getStaff(orgId) {
     const { data, error } = await supabase
       .from('staff')
       .select('*')
-      .eq('user_id', userId)
+      .eq('org_id', orgId)
       .order('created_at', { ascending: true });
 
     if (error) throw error;
 
-    // Transform snake_case to camelCase
     return (data || []).map(staff => ({
       id: staff.id,
       name: staff.name,
       hourlyRate: staff.hourly_rate,
       weekendRate: staff.weekend_rate,
       employmentType: staff.employment_type,
-      active: staff.active !== false // Default to true for existing records without the field
+      active: staff.active !== false
     }));
   },
 
-  async createStaff(userId, staffData) {
+  async createStaff(orgId, userId, staffData) {
     const { data, error } = await supabase
       .from('staff')
-      .insert([{ ...staffData, user_id: userId }])
+      .insert([{ ...staffData, org_id: orgId, user_id: userId }])
       .select()
       .single();
-    
+
     if (error) throw error;
     return data;
   },
@@ -47,13 +81,12 @@ export const db = {
       .eq('id', staffId)
       .select()
       .single();
-    
+
     if (error) throw error;
     return data;
   },
 
   async deleteStaff(staffId) {
-    // Soft-delete: mark as inactive instead of removing
     const { error } = await supabase
       .from('staff')
       .update({ active: false })
@@ -71,13 +104,11 @@ export const db = {
     if (error) throw error;
   },
 
-  // Schedule operations
-  async getSchedules(userId) {
+  // ── Schedules ────────────────────────────────────────────────────────────────
+
+  async getSchedules(orgId) {
     console.log('📥 Loading schedules...');
 
-    // Supabase has 1000 row default limit - must paginate
-    // CRITICAL: .order() is required for consistent pagination with .range()
-    // Without it, rows can shift between pages and be skipped or duplicated
     let allData = [];
     let page = 0;
     const pageSize = 1000;
@@ -87,7 +118,7 @@ export const db = {
       const { data, error } = await supabase
         .from('schedules')
         .select('*')
-        .eq('user_id', userId)
+        .eq('org_id', orgId)
         .order('date_key', { ascending: true })
         .order('staff_id', { ascending: true })
         .order('time_slot', { ascending: true })
@@ -107,7 +138,6 @@ export const db = {
 
     console.log(`✅ Loaded all ${allData.length} schedule slots`);
 
-    // Convert to the format the app expects
     const scheduleObj = {};
     allData.forEach(item => {
       const key = `${item.date_key}|${item.staff_id}|${item.time_slot}`;
@@ -121,11 +151,11 @@ export const db = {
     return scheduleObj;
   },
 
-  async saveSchedules(userId, scheduleObj) {
-    // CRITICAL SAFETY CHECK: Prevent saving empty schedules
+  async saveSchedules(orgId, userId, scheduleObj) {
     const scheduleArray = Object.entries(scheduleObj).map(([key, value]) => {
       const [dateKey, staffId, timeSlot] = key.split('|');
       return {
+        org_id: orgId,
         user_id: userId,
         date_key: dateKey,
         staff_id: staffId,
@@ -143,7 +173,6 @@ export const db = {
 
     console.log(`💾 Saving ${scheduleArray.length} schedule slots...`);
 
-    // Get ALL existing schedule keys (paginated with deterministic ordering)
     let existing = [];
     let page = 0;
     const pageSize = 1000;
@@ -153,7 +182,7 @@ export const db = {
       const { data } = await supabase
         .from('schedules')
         .select('date_key, staff_id, time_slot')
-        .eq('user_id', userId)
+        .eq('org_id', orgId)
         .order('date_key', { ascending: true })
         .order('staff_id', { ascending: true })
         .order('time_slot', { ascending: true })
@@ -170,18 +199,15 @@ export const db = {
 
     console.log(`📋 Found ${existing.length} existing slots`);
 
-    // Build set of keys we're keeping
     const newKeys = new Set(
       scheduleArray.map(s => `${s.date_key}|${s.staff_id}|${s.time_slot}`)
     );
 
-    // Find keys to delete (exist in DB but not in new schedule)
     const toDelete = existing.filter(row => {
       const key = `${row.date_key}|${row.staff_id}|${row.time_slot}`;
       return !newKeys.has(key);
     });
 
-    // Batch delete using OR filters (not one-by-one)
     if (toDelete.length > 0) {
       const batchSize = 100;
       for (let i = 0; i < toDelete.length; i += batchSize) {
@@ -193,7 +219,7 @@ export const db = {
         const { error } = await supabase
           .from('schedules')
           .delete()
-          .eq('user_id', userId)
+          .eq('org_id', orgId)
           .or(conditions.join(','));
 
         if (error) {
@@ -204,7 +230,6 @@ export const db = {
       console.log(`🗑️ Deleted ${toDelete.length} removed slots`);
     }
 
-    // Batch upserts
     const batchSize = 500;
     let totalUpserted = 0;
 
@@ -214,7 +239,7 @@ export const db = {
       const { error: upsertError } = await supabase
         .from('schedules')
         .upsert(batch, {
-          onConflict: 'user_id,date_key,staff_id,time_slot'
+          onConflict: 'org_id,date_key,staff_id,time_slot'
         });
 
       if (upsertError) {
@@ -229,17 +254,16 @@ export const db = {
     console.log(`✅ Successfully saved all ${scheduleArray.length} slots`);
   },
 
-  // Delta-based save: only upsert/delete what actually changed
-  async saveSchedulesDelta(userId, newSchedule, previousSchedule) {
+  async saveSchedulesDelta(orgId, userId, newSchedule, previousSchedule) {
     const toUpsert = [];
     const toDeleteKeys = [];
 
-    // Find added or changed entries
     for (const [key, value] of Object.entries(newSchedule)) {
       const prev = previousSchedule[key];
       if (!prev || prev.roleId !== value.roleId || prev.roleCode !== value.roleCode || prev.roleColor !== value.roleColor) {
         const [dateKey, staffId, timeSlot] = key.split('|');
         toUpsert.push({
+          org_id: orgId,
           user_id: userId,
           date_key: dateKey,
           staff_id: staffId,
@@ -251,7 +275,6 @@ export const db = {
       }
     }
 
-    // Find deleted entries
     for (const key of Object.keys(previousSchedule)) {
       if (!newSchedule[key]) {
         toDeleteKeys.push(key);
@@ -265,12 +288,10 @@ export const db = {
 
     console.log(`💾 Delta save: ${toUpsert.length} upserts, ${toDeleteKeys.length} deletes`);
 
-    // Batch delete using OR filters (much faster than one-by-one)
     if (toDeleteKeys.length > 0) {
       const batchSize = 100;
       for (let i = 0; i < toDeleteKeys.length; i += batchSize) {
         const batch = toDeleteKeys.slice(i, i + batchSize);
-        // Build composite key filter for batch deletion
         const conditions = batch.map(key => {
           const [dateKey, staffId, timeSlot] = key.split('|');
           return `and(date_key.eq.${dateKey},staff_id.eq.${staffId},time_slot.eq.${timeSlot})`;
@@ -279,7 +300,7 @@ export const db = {
         const { error } = await supabase
           .from('schedules')
           .delete()
-          .eq('user_id', userId)
+          .eq('org_id', orgId)
           .or(conditions.join(','));
 
         if (error) {
@@ -290,14 +311,13 @@ export const db = {
       console.log(`🗑️ Deleted ${toDeleteKeys.length} removed slots`);
     }
 
-    // Batch upsert
     if (toUpsert.length > 0) {
       const batchSize = 500;
       for (let i = 0; i < toUpsert.length; i += batchSize) {
         const batch = toUpsert.slice(i, i + batchSize);
         const { error } = await supabase
           .from('schedules')
-          .upsert(batch, { onConflict: 'user_id,date_key,staff_id,time_slot' });
+          .upsert(batch, { onConflict: 'org_id,date_key,staff_id,time_slot' });
 
         if (error) {
           console.error('❌ Batch upsert error:', error);
@@ -308,103 +328,91 @@ export const db = {
     }
   },
 
-  // Settings operations
-  async getSettings(userId) {
+  // ── Settings ─────────────────────────────────────────────────────────────────
+
+  async getSettings(orgId) {
     const { data, error } = await supabase
       .from('business_settings')
       .select('*')
-      .eq('user_id', userId)
+      .eq('org_id', orgId)
       .single();
-    
-    if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows
+
+    if (error && error.code !== 'PGRST116') throw error;
     return data;
   },
 
-  async saveSettings(userId, settings) {
-    // Check if settings exist
-    const existing = await this.getSettings(userId);
-    
+  async saveSettings(orgId, userId, settings) {
+    const existing = await this.getSettings(orgId);
+
     if (existing) {
-      // Update
       const { data, error } = await supabase
         .from('business_settings')
-        .update({
-          ...settings,
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', userId)
+        .update({ ...settings, updated_at: new Date().toISOString() })
+        .eq('org_id', orgId)
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     } else {
-      // Insert
       const { data, error } = await supabase
         .from('business_settings')
-        .insert([{ ...settings, user_id: userId }])
+        .insert([{ ...settings, org_id: orgId, user_id: userId }])
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     }
   },
 
-  // Staff order operations
-  async getStaffOrder(userId) {
+  // ── Staff order ───────────────────────────────────────────────────────────────
+
+  async getStaffOrder(orgId) {
     const { data, error } = await supabase
       .from('staff_order')
       .select('*')
-      .eq('user_id', userId)
+      .eq('org_id', orgId)
       .single();
-    
+
     if (error && error.code !== 'PGRST116') throw error;
     return data?.staff_ids || [];
   },
 
-  async saveStaffOrder(userId, staffIds) {
+  async saveStaffOrder(orgId, userId, staffIds) {
     const existing = await supabase
       .from('staff_order')
       .select('id')
-      .eq('user_id', userId)
+      .eq('org_id', orgId)
       .single();
-    
+
     if (existing.data) {
-      // Update
       const { error } = await supabase
         .from('staff_order')
-        .update({
-          staff_ids: staffIds,
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', userId);
-      
+        .update({ staff_ids: staffIds, updated_at: new Date().toISOString() })
+        .eq('org_id', orgId);
+
       if (error) throw error;
     } else {
-      // Insert
       const { error } = await supabase
         .from('staff_order')
-        .insert([{
-          user_id: userId,
-          staff_ids: staffIds
-        }]);
-      
+        .insert([{ org_id: orgId, user_id: userId, staff_ids: staffIds }]);
+
       if (error) throw error;
     }
   },
 
-  // Shift Template operations
-  async getTemplates(userId) {
+  // ── Shift templates ───────────────────────────────────────────────────────────
+
+  async getTemplates(orgId) {
     const { data, error } = await supabase
       .from('shift_templates')
       .select('*')
-      .eq('user_id', userId)
+      .eq('org_id', orgId)
       .order('created_at', { ascending: true });
-    
+
     if (error) throw error;
-    
-    // Convert to the format the app expects
+
     return (data || []).map(template => ({
       id: template.id,
       name: template.name,
@@ -416,11 +424,12 @@ export const db = {
     }));
   },
 
-  async saveTemplate(userId, template) {
+  async saveTemplate(orgId, userId, template) {
     const { data, error } = await supabase
       .from('shift_templates')
       .insert([{
         id: template.id,
+        org_id: orgId,
         user_id: userId,
         name: template.name,
         role_id: template.roleId,
@@ -431,7 +440,7 @@ export const db = {
       }])
       .select()
       .single();
-    
+
     if (error) throw error;
     return data;
   },
@@ -441,23 +450,23 @@ export const db = {
       .from('shift_templates')
       .delete()
       .eq('id', templateId);
-    
+
     if (error) throw error;
   },
 
-  // Revenue tracking operations
-  async getRevenue(userId, startDate, endDate) {
+  // ── Revenue ───────────────────────────────────────────────────────────────────
+
+  async getRevenue(orgId, startDate, endDate) {
     const { data, error } = await supabase
       .from('daily_revenue')
       .select('*')
-      .eq('user_id', userId)
+      .eq('org_id', orgId)
       .gte('date', startDate)
       .lte('date', endDate)
       .order('date', { ascending: true });
-    
+
     if (error) throw error;
-    
-    // Convert to object keyed by date
+
     const revenueByDate = {};
     (data || []).forEach(row => {
       revenueByDate[row.date] = {
@@ -466,21 +475,19 @@ export const db = {
         notes: row.notes || ''
       };
     });
-    
+
     return revenueByDate;
   },
 
-  async saveRevenue(userId, date, revenueData) {
-    // Check if entry exists
+  async saveRevenue(orgId, userId, date, revenueData) {
     const { data: existing } = await supabase
       .from('daily_revenue')
       .select('id')
-      .eq('user_id', userId)
+      .eq('org_id', orgId)
       .eq('date', date)
       .single();
-    
+
     if (existing) {
-      // Update
       const { error } = await supabase
         .from('daily_revenue')
         .update({
@@ -489,49 +496,51 @@ export const db = {
           notes: revenueData.notes,
           updated_at: new Date().toISOString()
         })
-        .eq('user_id', userId)
+        .eq('org_id', orgId)
         .eq('date', date);
-      
+
       if (error) throw error;
     } else {
-      // Insert
       const { error } = await supabase
         .from('daily_revenue')
         .insert([{
+          org_id: orgId,
           user_id: userId,
           date: date,
           projected_revenue: revenueData.projectedRevenue,
           other_revenue: revenueData.otherRevenue,
           notes: revenueData.notes
         }]);
-      
+
       if (error) throw error;
     }
   },
 
-  async deleteRevenue(userId, date) {
+  async deleteRevenue(orgId, date) {
     const { error } = await supabase
       .from('daily_revenue')
       .delete()
-      .eq('user_id', userId)
+      .eq('org_id', orgId)
       .eq('date', date);
-    
+
     if (error) throw error;
   },
 
-  // User profile operations
+  // ── User profile ──────────────────────────────────────────────────────────────
+
   async getUserProfile(userId) {
     const { data, error } = await supabase
       .from('user_profiles')
       .select('*')
       .eq('user_id', userId)
       .single();
-    
+
     if (error && error.code !== 'PGRST116') throw error;
     return data;
   },
 
-  // Availability operations
+  // ── Availability ──────────────────────────────────────────────────────────────
+
   async getAvailability(staffId, startDate, endDate) {
     const { data, error } = await supabase
       .from('staff_availability')
@@ -540,15 +549,16 @@ export const db = {
       .gte('date', startDate)
       .lte('date', endDate)
       .order('date', { ascending: true });
-    
+
     if (error) throw error;
     return data || [];
   },
 
-  async setAvailability(staffId, date, status, startTime = null, endTime = null, notes = null) {
+  async setAvailability(orgId, staffId, date, status, startTime = null, endTime = null, notes = null) {
     const { error } = await supabase
       .from('staff_availability')
       .upsert({
+        org_id: orgId,
         staff_id: staffId,
         date: date,
         status: status,
@@ -562,7 +572,7 @@ export const db = {
     if (error) throw error;
   },
 
-  // ── Packaging Items ─────────────────────────────────────────────────────────
+  // ── Packaging Items ───────────────────────────────────────────────────────────
 
   async getPackagingItems(userId) {
     const { data, error } = await supabase
@@ -615,7 +625,7 @@ export const db = {
     if (error) throw error;
   },
 
-  // ── Packaging Inventory Events (stocktakes + inbound deliveries) ────────────
+  // ── Packaging Inventory ───────────────────────────────────────────────────────
 
   async getInventoryEvents(userId) {
     const { data, error } = await supabase
@@ -656,7 +666,7 @@ export const db = {
     if (error) throw error;
   },
 
-  // ── Ordering: Distributors ───────────────────────────────────────────────────
+  // ── Ordering: Distributors ────────────────────────────────────────────────────
 
   async getOrderingDistributors(userId) {
     const { data, error } = await supabase
@@ -686,7 +696,7 @@ export const db = {
     if (error) throw error;
   },
 
-  // ── Ordering: Items ──────────────────────────────────────────────────────────
+  // ── Ordering: Items ───────────────────────────────────────────────────────────
 
   async getOrderingItems(userId) {
     const { data, error } = await supabase
@@ -763,7 +773,7 @@ export const db = {
     if (error) throw error;
   },
 
-  // ── Ordering: Order History ──────────────────────────────────────────────────
+  // ── Ordering: Order History ───────────────────────────────────────────────────
 
   async getOrderHistory(userId) {
     const { data, error } = await supabase

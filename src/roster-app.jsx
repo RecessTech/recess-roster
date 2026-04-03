@@ -9,7 +9,12 @@ import OrderingApp from './OrderingApp';
 
 const RosterApp = () => {
   const { user } = useAuth();
-  
+
+  const [org, setOrg] = useState(null);
+  const [showOrgOnboarding, setShowOrgOnboarding] = useState(false);
+  const [orgNameInput, setOrgNameInput] = useState('');
+  const [orgCreating, setOrgCreating] = useState(false);
+
   const defaultRoles = [
     { id: 'barista', name: 'Barista', code: 'B', color: '#F97316' },
     { id: 'foh', name: 'Front of House', code: 'FOH', color: '#2563EB' },
@@ -64,6 +69,34 @@ const RosterApp = () => {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Load org for this user — gate all data loading on this
+  useEffect(() => {
+    if (!user) return;
+    db.getOrgForUser(user.id).then(orgData => {
+      if (orgData) {
+        setOrg(orgData);
+      } else {
+        setShowOrgOnboarding(true);
+      }
+    }).catch(err => console.error('Error loading org:', err));
+  }, [user]);
+
+  const handleCreateOrg = async () => {
+    if (!orgNameInput.trim() || !user) return;
+    setOrgCreating(true);
+    try {
+      const newOrg = await db.createOrg(user.id, orgNameInput.trim());
+      setOrg(newOrg);
+      setShowOrgOnboarding(false);
+    } catch (err) {
+      console.error('Error creating org:', err);
+      toast.error('Failed to create workspace. Please try again.');
+    } finally {
+      setOrgCreating(false);
+    }
+  };
+
   const [analyticsTab, setAnalyticsTab] = useState('overview');
   const [selectedStaffView, setSelectedStaffView] = useState(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -109,7 +142,7 @@ const RosterApp = () => {
   const pendingSaveRef = useRef(null);
   const lastSavedScheduleRef = useRef(null);
 
-  const executeSave = useCallback(async (userId, scheduleToSave) => {
+  const executeSave = useCallback(async (orgId, userId, scheduleToSave) => {
     if (saveInProgressRef.current) {
       // Queue this save for when the current one finishes
       pendingSaveRef.current = scheduleToSave;
@@ -138,7 +171,7 @@ const RosterApp = () => {
         const backup = {
           schedule: scheduleToSave,
           timestamp: new Date().toISOString(),
-          userId,
+          orgId,
           scheduleSize
         };
         localStorage.setItem('roster_backup', JSON.stringify(backup));
@@ -149,9 +182,9 @@ const RosterApp = () => {
       // Compute delta against last saved state for efficient saving
       const lastSaved = lastSavedScheduleRef.current;
       if (lastSaved) {
-        await db.saveSchedulesDelta(userId, scheduleToSave, lastSaved);
+        await db.saveSchedulesDelta(orgId, userId, scheduleToSave, lastSaved);
       } else {
-        await db.saveSchedules(userId, scheduleToSave);
+        await db.saveSchedules(orgId, userId, scheduleToSave);
       }
 
       lastSavedScheduleRef.current = scheduleToSave;
@@ -167,22 +200,22 @@ const RosterApp = () => {
       if (pendingSaveRef.current) {
         const nextSave = pendingSaveRef.current;
         pendingSaveRef.current = null;
-        executeSave(userId, nextSave);
+        executeSave(orgId, userId, nextSave);
       }
     }
   }, []);
 
   useEffect(() => {
     const loadData = async () => {
-      if (!user) return;
-      
+      if (!user || !org) return;
+
       try {
         const [staffData, scheduleData, orderData, settingsData, templatesData] = await Promise.all([
-          db.getStaff(user.id),
-          db.getSchedules(user.id),
-          db.getStaffOrder(user.id),
-          db.getSettings(user.id),
-          db.getTemplates ? db.getTemplates(user.id) : Promise.resolve([])
+          db.getStaff(org.id),
+          db.getSchedules(org.id),
+          db.getStaffOrder(org.id),
+          db.getSettings(org.id),
+          db.getTemplates ? db.getTemplates(org.id) : Promise.resolve([])
         ]);
         
         setStaff(staffData);
@@ -202,7 +235,7 @@ const RosterApp = () => {
         };
         
         const revenueData = await db.getRevenue(
-          user.id,
+          org.id,
           formatLocalDate(startDate),
           formatLocalDate(endDate)
         );
@@ -217,7 +250,7 @@ const RosterApp = () => {
             
             if (backupStr && !alreadyPrompted) {
               const backup = JSON.parse(backupStr);
-              if (backup.userId === user.id && backup.schedule && Object.keys(backup.schedule).length > 0) {
+              if (backup.orgId === org.id && backup.schedule && Object.keys(backup.schedule).length > 0) {
                 sessionStorage.setItem(promptedKey, 'true');
                 const backupDate = new Date(backup.timestamp);
                 const shouldRestore = window.confirm(
@@ -290,7 +323,7 @@ const RosterApp = () => {
     
     loadData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, org]);
 
   const activeStaff = useMemo(() => staff.filter(s => s.active !== false), [staff]);
   const archivedStaff = useMemo(() => staff.filter(s => s.active === false), [staff]);
@@ -311,35 +344,35 @@ const RosterApp = () => {
   }, [activeView]);
 
   useEffect(() => {
-    if (!isLoaded || !user) return;
+    if (!isLoaded || !user || !org) return;
 
     const timeoutId = setTimeout(() => {
-      executeSave(user.id, schedule);
+      executeSave(org.id, user.id, schedule);
     }, 1000); // Debounce 1 second
 
     return () => clearTimeout(timeoutId);
-  }, [schedule, isLoaded, user, executeSave]);
+  }, [schedule, isLoaded, user, org, executeSave]);
 
   useEffect(() => {
-    if (!isLoaded || !user || staffOrder.length === 0) return;
-    
+    if (!isLoaded || !user || !org || staffOrder.length === 0) return;
+
     const saveOrder = async () => {
       try {
-        await db.saveStaffOrder(user.id, staffOrder);
+        await db.saveStaffOrder(org.id, user.id, staffOrder);
       } catch (error) {
         console.error('Error saving staff order:', error);
       }
     };
-    
+
     saveOrder();
-  }, [staffOrder, isLoaded, user]);
+  }, [staffOrder, isLoaded, user, org]);
 
   useEffect(() => {
-    if (!isLoaded || !user) return;
-    
+    if (!isLoaded || !user || !org) return;
+
     const saveSettings = async () => {
       try {
-        await db.saveSettings(user.id, {
+        await db.saveSettings(org.id, user.id, {
           business_name: businessSettings.businessName,
           logo_url: businessSettings.logoUrl,
           operational_hours: businessSettings.operationalHours,
@@ -353,10 +386,10 @@ const RosterApp = () => {
         console.error('Error saving settings:', error);
       }
     };
-    
+
     const timeoutId = setTimeout(saveSettings, 1000);
     return () => clearTimeout(timeoutId);
-  }, [businessSettings, isLoaded, user]);
+  }, [businessSettings, isLoaded, user, org]);
 
   // Helper to check if a time slot is within operational hours
   const isWithinOperationalHours = (date, timeSlot) => {
@@ -414,6 +447,7 @@ const RosterApp = () => {
 
   // Get all time slots that should be filled for a given time slot
   // This ensures that painting at coarse intervals (1h) fills all finer intervals (15m, 30m)
+  // eslint-disable-next-line no-unused-vars
   const getAllSubIntervals = (timeSlot) => {
     const [hour, minute] = timeSlot.split(':').map(Number);
     const slots = [timeSlot]; // Always include the clicked slot
@@ -459,7 +493,7 @@ const RosterApp = () => {
 
     try {
       if (db.saveTemplate) {
-        await db.saveTemplate(user.id, newTemplate);
+        await db.saveTemplate(org.id, user.id, newTemplate);
       }
       setShiftTemplates([...shiftTemplates, newTemplate]);
       setShowTemplateModal(false);
@@ -918,7 +952,7 @@ const RosterApp = () => {
             employmentType: updated.employment_type
           } : s));
         } else {
-          const created = await db.createStaff(user.id, finalData);
+          const created = await db.createStaff(org.id, user.id, finalData);
           setStaff([...staff, {
             id: created.id,
             name: created.name,
@@ -2878,8 +2912,8 @@ const RosterApp = () => {
       };
 
       try {
-        await db.saveRevenue(user.id, revenueEditDate, revenueData);
-        
+        await db.saveRevenue(org.id, user.id, revenueEditDate, revenueData);
+
         // Update local state
         setDailyRevenue(prev => ({
           ...prev,
@@ -2903,7 +2937,7 @@ const RosterApp = () => {
         confirmLabel: 'Delete',
         onConfirm: async () => {
           try {
-            await db.deleteRevenue(user.id, revenueEditDate);
+            await db.deleteRevenue(org.id, revenueEditDate);
             setDailyRevenue(prev => {
               const updated = { ...prev };
               delete updated[revenueEditDate];
@@ -4289,7 +4323,7 @@ const RosterApp = () => {
             notes: editingCell.field === 'notes' ? editValue : existingRevenue.notes
           };
 
-          await db.saveRevenue(user.id, dateKey, updatedRevenue);
+          await db.saveRevenue(org.id, user.id, dateKey, updatedRevenue);
           
           // Update local state
           setDailyRevenue(prev => ({
@@ -5585,6 +5619,41 @@ Key things to verify after rebuild:
       <HelpModal />
       <ContextMenu />
       <ConfirmDialog />
+
+      {/* Org onboarding modal — shown on first login before any data loads */}
+      {showOrgOnboarding && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black bg-opacity-60">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4">
+            <div className="text-center mb-6">
+              <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Rocket size={28} className="text-blue-600" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome to R-Shift</h2>
+              <p className="text-gray-500 text-sm">Let's set up your workspace. You can change this name any time in Settings.</p>
+            </div>
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Business name</label>
+              <input
+                type="text"
+                value={orgNameInput}
+                onChange={e => setOrgNameInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleCreateOrg()}
+                placeholder="e.g. Sunrise Café"
+                autoFocus
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <button
+              onClick={handleCreateOrg}
+              disabled={!orgNameInput.trim() || orgCreating}
+              className="w-full py-3 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors"
+            >
+              {orgCreating ? 'Creating workspace…' : 'Create workspace'}
+            </button>
+          </div>
+        </div>
+      )}
+
       </div>
     </div>
   );
