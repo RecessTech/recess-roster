@@ -136,7 +136,7 @@ const RosterApp = () => {
   const [revenueEditDate, setRevenueEditDate] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null); // { title, message, onConfirm, danger? }
   const [businessSettings, setBusinessSettings] = useState({
-    businessName: 'Recess',
+    businessName: '',
     logoUrl: '', // URL for business logo
     operationalHours: {
       monday: { open: '06:30', close: '15:45', closed: false },
@@ -2683,7 +2683,7 @@ const RosterApp = () => {
                   <Users size={20} className="text-white" />
                 </div>
                 <div>
-                  <h1 className="text-lg font-bold text-gray-800">{businessSettings.businessName}</h1>
+                  <h1 className="text-lg font-bold text-gray-800">{businessSettings.businessName || org?.name}</h1>
                   <p className="text-xs text-gray-500">Mobile View</p>
                 </div>
               </div>
@@ -5321,7 +5321,7 @@ Key things to verify after rebuild:
           <div className="px-6 py-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <h1 className="text-lg font-semibold text-gray-900">{businessSettings.businessName}</h1>
+                <h1 className="text-lg font-semibold text-gray-900">{businessSettings.businessName || org?.name}</h1>
                 <span className="text-sm text-gray-400">|</span>
                 <span className="text-sm text-gray-500 capitalize">{activeView === 'roster' ? 'Grid View' : activeView === 'staff-view' ? 'Staff View' : activeView === 'timesheet' ? 'Timesheet' : activeView === 'analytics' ? 'Analytics' : activeView}</span>
               </div>
