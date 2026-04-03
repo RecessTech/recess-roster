@@ -23,6 +23,18 @@ export const db = {
     return data.organisations;
   },
 
+  // Update fields on the org record (e.g. config jsonb).
+  async updateOrg(orgId, updates) {
+    const { data, error } = await supabase
+      .from('organisations')
+      .update(updates)
+      .eq('id', orgId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
   // Create a new org and make this user its owner. Returns the new org record.
   async createOrg(userId, orgName) {
     const { data, error } = await supabase.rpc('create_org_for_user', { org_name: orgName });

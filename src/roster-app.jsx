@@ -1,11 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, ArchiveRestore, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, LayoutDashboard, Package, ShoppingCart } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, ChevronDown, ChevronUp, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, ArchiveRestore, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
-import BusinessDashboard from './BusinessDashboard';
-import PackagingApp from './PackagingApp';
-import OrderingApp from './OrderingApp';
 
 const RosterApp = () => {
   const { user } = useAuth();
@@ -14,6 +11,8 @@ const RosterApp = () => {
   const [showOrgOnboarding, setShowOrgOnboarding] = useState(false);
   const [orgNameInput, setOrgNameInput] = useState('');
   const [orgCreating, setOrgCreating] = useState(false);
+  const [showSetupFunnel, setShowSetupFunnel] = useState(false);
+  const [setupStep, setSetupStep] = useState(1);
 
   const defaultRoles = [
     { id: 'barista', name: 'Barista', code: 'B', color: '#F97316' },
@@ -95,6 +94,27 @@ const RosterApp = () => {
     } finally {
       setOrgCreating(false);
     }
+  };
+
+  // Show setup funnel for new orgs that haven't completed setup
+  useEffect(() => {
+    if (!isLoaded || !org) return;
+    if (!org.config?.setup_complete && staff.length === 0) {
+      setShowSetupFunnel(true);
+      setSetupStep(1);
+    }
+  }, [isLoaded, org, staff.length]);
+
+  const completeSetup = async () => {
+    try {
+      const updated = await db.updateOrg(org.id, {
+        config: { ...org.config, setup_complete: true }
+      });
+      setOrg(updated);
+    } catch (err) {
+      console.error('Error completing setup:', err);
+    }
+    setShowSetupFunnel(false);
   };
 
   const [analyticsTab, setAnalyticsTab] = useState('overview');
@@ -2687,16 +2707,6 @@ const RosterApp = () => {
                 Timesheet
               </button>
               <button
-                onClick={() => setActiveView('dashboard')}
-                className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  activeView === 'dashboard'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'bg-gray-100 text-gray-700'
-                }`}
-              >
-                Dashboard
-              </button>
-              <button
                 onClick={() => setShowHelpModal(true)}
                 className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium bg-purple-100 text-purple-700"
               >
@@ -5275,18 +5285,6 @@ Key things to verify after rebuild:
             <BarChart3 size={20} />
             <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Analytics</span>
           </button>
-          <button onClick={() => setActiveView('dashboard')} className={`p-3 rounded-lg transition-colors group relative ${activeView === 'dashboard' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`} title="Business Dashboard">
-            <LayoutDashboard size={20} />
-            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Business Dashboard</span>
-          </button>
-          <button onClick={() => setActiveView('packaging')} className={`p-3 rounded-lg transition-colors group relative ${activeView === 'packaging' ? 'bg-orange-50 text-orange-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`} title="Packaging">
-            <Package size={20} />
-            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Packaging</span>
-          </button>
-          <button onClick={() => setActiveView('ordering')} className={`p-3 rounded-lg transition-colors group relative ${activeView === 'ordering' ? 'bg-green-50 text-green-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`} title="Ordering">
-            <ShoppingCart size={20} />
-            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Ordering</span>
-          </button>
         </nav>
 
         <div className="flex flex-col gap-1 mt-auto">
@@ -5314,7 +5312,7 @@ Key things to verify after rebuild:
               <div className="flex items-center gap-3">
                 <h1 className="text-lg font-semibold text-gray-900">{businessSettings.businessName}</h1>
                 <span className="text-sm text-gray-400">|</span>
-                <span className="text-sm text-gray-500 capitalize">{activeView === 'roster' ? 'Grid View' : activeView === 'staff-view' ? 'Staff View' : activeView === 'dashboard' ? 'Business Dashboard' : activeView === 'packaging' ? 'Packaging' : activeView === 'ordering' ? 'Ordering' : activeView}</span>
+                <span className="text-sm text-gray-500 capitalize">{activeView === 'roster' ? 'Grid View' : activeView === 'staff-view' ? 'Staff View' : activeView === 'timesheet' ? 'Timesheet' : activeView === 'analytics' ? 'Analytics' : activeView}</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg">
@@ -5417,13 +5415,7 @@ Key things to verify after rebuild:
         </div>
 
       <div className="view-transition">
-      {activeView === 'ordering' ? (
-        <OrderingApp user={user} />
-      ) : activeView === 'packaging' ? (
-        <PackagingApp user={user} />
-      ) : activeView === 'dashboard' ? (
-        <BusinessDashboard onBack={() => setActiveView('roster')} />
-      ) : activeView === 'analytics' ? (
+      {activeView === 'analytics' ? (
         <AnalyticsView />
       ) : activeView === 'timesheet' ? (
         <TimesheetView />
@@ -5620,6 +5612,23 @@ Key things to verify after rebuild:
       <ContextMenu />
       <ConfirmDialog />
 
+      {/* Setup funnel — shown to new orgs with no staff */}
+      {showSetupFunnel && !showOrgOnboarding && (
+        <SetupFunnel
+          step={setupStep}
+          setStep={setSetupStep}
+          roles={roles}
+          setRoles={setRoles}
+          staff={staff}
+          setStaff={setStaff}
+          org={org}
+          user={user}
+          businessSettings={businessSettings}
+          setBusinessSettings={setBusinessSettings}
+          onComplete={completeSetup}
+        />
+      )}
+
       {/* Org onboarding modal — shown on first login before any data loads */}
       {showOrgOnboarding && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black bg-opacity-60">
@@ -5658,4 +5667,290 @@ Key things to verify after rebuild:
     </div>
   );
 };
+
+// ── Setup Funnel ─────────────────────────────────────────────────────────────
+
+const STEP_LABELS = ['Roles', 'Staff', 'Hours'];
+
+const SetupFunnel = ({ step, setStep, roles, setRoles, staff, setStaff, org, user, businessSettings, setBusinessSettings, onComplete }) => {
+  const totalSteps = 3;
+
+  const handleNext = () => {
+    if (step < totalSteps) setStep(step + 1);
+    else onComplete();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] bg-white flex flex-col">
+      {/* Header */}
+      <div className="border-b border-gray-200 px-8 py-5 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Set up {org?.name}</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Step {step} of {totalSteps} — {STEP_LABELS[step - 1]}</p>
+        </div>
+        <button onClick={onComplete} className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
+          Skip setup
+        </button>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-1 bg-gray-100">
+        <div
+          className="h-1 bg-blue-500 transition-all duration-300"
+          style={{ width: `${(step / totalSteps) * 100}%` }}
+        />
+      </div>
+
+      {/* Step content */}
+      <div className="flex-1 overflow-y-auto px-8 py-8 max-w-2xl mx-auto w-full">
+        {step === 1 && <SetupRolesStep roles={roles} setRoles={setRoles} />}
+        {step === 2 && <SetupStaffStep staff={staff} setStaff={setStaff} org={org} user={user} roles={roles} />}
+        {step === 3 && <SetupHoursStep businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} org={org} user={user} />}
+      </div>
+
+      {/* Footer */}
+      <div className="border-t border-gray-200 px-8 py-5 flex items-center justify-between">
+        <button
+          onClick={() => setStep(s => s - 1)}
+          disabled={step === 1}
+          className="text-sm text-gray-500 hover:text-gray-700 disabled:opacity-0 transition-colors"
+        >
+          ← Back
+        </button>
+        <button
+          onClick={handleNext}
+          className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors"
+        >
+          {step === totalSteps ? 'Finish setup' : 'Continue'}
+          {step < totalSteps && <ChevronRight size={16} />}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const SetupRolesStep = ({ roles, setRoles }) => {
+  const [form, setForm] = useState({ name: '', code: '', color: '#3B82F6' });
+  const COLORS = ['#F97316','#2563EB','#FB923C','#EA580C','#1D4ED8','#3B82F6','#8B5CF6','#10B981','#EF4444','#F59E0B'];
+
+  const addRole = () => {
+    if (!form.name.trim() || !form.code.trim()) return;
+    setRoles(prev => [...prev, { id: crypto.randomUUID(), ...form, name: form.name.trim(), code: form.code.trim().toUpperCase() }]);
+    setForm({ name: '', code: '', color: '#3B82F6' });
+  };
+
+  const removeRole = (id) => setRoles(prev => prev.filter(r => r.id !== id));
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-gray-900 mb-1">Roles</h2>
+        <p className="text-sm text-gray-500">These are the shift types your staff can be assigned to. You can edit these any time in Settings.</p>
+      </div>
+
+      <div className="space-y-2">
+        {roles.map(role => (
+          <div key={role.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: role.color }}>
+                {role.code}
+              </div>
+              <span className="font-medium text-gray-800">{role.name}</span>
+            </div>
+            <button onClick={() => removeRole(role.id)} className="text-gray-400 hover:text-red-500 transition-colors p-1">
+              <X size={16} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="border-t border-gray-200 pt-4">
+        <p className="text-sm font-semibold text-gray-700 mb-3">Add a role</p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Role name"
+            value={form.name}
+            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400"
+          />
+          <input
+            type="text"
+            placeholder="Code"
+            maxLength={4}
+            value={form.code}
+            onChange={e => setForm(f => ({ ...f, code: e.target.value }))}
+            className="w-20 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 uppercase"
+          />
+          <div className="flex gap-1">
+            {COLORS.map(c => (
+              <button
+                key={c}
+                onClick={() => setForm(f => ({ ...f, color: c }))}
+                className={`w-7 h-7 rounded-full transition-transform ${form.color === c ? 'scale-125 ring-2 ring-offset-1 ring-gray-400' : ''}`}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+          <button onClick={addRole} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
+            Add
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const SetupStaffStep = ({ staff, setStaff, org, user, roles }) => {
+  const [form, setForm] = useState({ name: '', employmentType: 'Casual', hourlyRate: '', weekendRate: '' });
+  const [saving, setSaving] = useState(false);
+
+  const addStaff = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    try {
+      const created = await db.createStaff(org.id, user.id, {
+        name: form.name.trim(),
+        employment_type: form.employmentType,
+        hourly_rate: parseFloat(form.hourlyRate) || null,
+        weekend_rate: parseFloat(form.weekendRate) || null,
+        active: true,
+      });
+      setStaff(prev => [...prev, {
+        id: created.id,
+        name: created.name,
+        hourlyRate: created.hourly_rate,
+        weekendRate: created.weekend_rate,
+        employmentType: created.employment_type,
+        active: true,
+      }]);
+      setForm({ name: '', employmentType: 'Casual', hourlyRate: '', weekendRate: '' });
+    } catch (err) {
+      console.error('Error adding staff:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-gray-900 mb-1">Staff members</h2>
+        <p className="text-sm text-gray-500">Add your team. You can add more and edit details any time from the Staff section.</p>
+      </div>
+
+      {staff.length > 0 && (
+        <div className="space-y-2">
+          {staff.map(s => (
+            <div key={s.id} className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <CheckCircle size={16} className="text-green-600 flex-shrink-0" />
+              <span className="font-medium text-gray-800">{s.name}</span>
+              <span className="text-xs text-gray-500 ml-auto">{s.employmentType}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="border border-gray-200 rounded-xl p-4 space-y-3">
+        <p className="text-sm font-semibold text-gray-700">Add a staff member</p>
+        <div className="grid grid-cols-2 gap-3">
+          <input
+            type="text"
+            placeholder="Full name *"
+            value={form.name}
+            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            onKeyDown={e => e.key === 'Enter' && addStaff()}
+            className="col-span-2 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400"
+          />
+          <select
+            value={form.employmentType}
+            onChange={e => setForm(f => ({ ...f, employmentType: e.target.value }))}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
+          >
+            {['Full-time', 'Part-time', 'Casual'].map(t => <option key={t}>{t}</option>)}
+          </select>
+          <input
+            type="number"
+            placeholder="Hourly rate (optional)"
+            value={form.hourlyRate}
+            onChange={e => setForm(f => ({ ...f, hourlyRate: e.target.value }))}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400"
+          />
+        </div>
+        <button
+          onClick={addStaff}
+          disabled={!form.name.trim() || saving}
+          className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          {saving ? 'Adding…' : '+ Add staff member'}
+        </button>
+      </div>
+
+      {staff.length === 0 && (
+        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Add at least one staff member to get started, or skip to add them later.
+        </p>
+      )}
+    </div>
+  );
+};
+
+const SetupHoursStep = ({ businessSettings, setBusinessSettings, org, user }) => {
+  const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+  const hours = businessSettings.operationalHours;
+
+  const update = (day, field, value) => {
+    setBusinessSettings(prev => ({
+      ...prev,
+      operationalHours: {
+        ...prev.operationalHours,
+        [day]: { ...prev.operationalHours[day], [field]: value }
+      }
+    }));
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-gray-900 mb-1">Operating hours</h2>
+        <p className="text-sm text-gray-500">Set when your business is open each day. This controls which time slots appear on the roster.</p>
+      </div>
+
+      <div className="space-y-2">
+        {days.map(day => (
+          <div key={day} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="w-24 text-sm font-medium text-gray-700 capitalize">{day}</div>
+            <label className="flex items-center gap-2 text-sm text-gray-500 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hours[day].closed}
+                onChange={e => update(day, 'closed', e.target.checked)}
+                className="rounded"
+              />
+              Closed
+            </label>
+            {!hours[day].closed && (
+              <>
+                <input
+                  type="time"
+                  value={hours[day].open}
+                  onChange={e => update(day, 'open', e.target.value)}
+                  className="px-2 py-1 border border-gray-200 rounded text-sm focus:outline-none focus:border-blue-400"
+                />
+                <span className="text-gray-400 text-sm">to</span>
+                <input
+                  type="time"
+                  value={hours[day].close}
+                  onChange={e => update(day, 'close', e.target.value)}
+                  className="px-2 py-1 border border-gray-200 rounded text-sm focus:outline-none focus:border-blue-400"
+                />
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export default RosterApp;
