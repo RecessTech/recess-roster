@@ -5269,8 +5269,8 @@ Key things to verify after rebuild:
       />
 
       {/* Sidebar */}
-      <aside className="w-16 bg-white border-r border-gray-200 flex flex-col items-center py-4 gap-1 sticky top-0 h-screen z-50 shrink-0">
-        <div className="mb-4">
+      <aside className="w-16 bg-surface-900 flex flex-col items-center py-4 gap-1 sticky top-0 h-screen z-50 shrink-0">
+        <div className="mb-5">
           {businessSettings.logoUrl ? (
             <img src={businessSettings.logoUrl} alt="" className="h-9 w-9 rounded-lg object-contain" onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }} />
           ) : null}
@@ -5279,37 +5279,37 @@ Key things to verify after rebuild:
           </div>
         </div>
 
-        <nav className="flex flex-col gap-1 flex-1">
-          <button onClick={() => setActiveView('roster')} className={`p-3 rounded-lg transition-colors group relative ${activeView === 'roster' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`} title="Grid View">
+        <nav className="flex flex-col gap-0.5 flex-1">
+          <button onClick={() => setActiveView('roster')} className={`p-3 rounded-xl transition-colors group relative ${activeView === 'roster' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="Grid View">
             <CalendarDays size={20} />
-            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Grid View</span>
+            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-surface-900 border border-white/10 text-white text-xs rounded-lg shadow-elevated opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Grid View</span>
           </button>
-          <button onClick={() => setActiveView('staff-view')} className={`p-3 rounded-lg transition-colors group relative ${activeView === 'staff-view' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`} title="Staff View">
+          <button onClick={() => setActiveView('staff-view')} className={`p-3 rounded-xl transition-colors group relative ${activeView === 'staff-view' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="Staff View">
             <Users size={20} />
-            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Staff View</span>
+            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-surface-900 border border-white/10 text-white text-xs rounded-lg shadow-elevated opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Staff View</span>
           </button>
-          <button onClick={() => setActiveView('timesheet')} className={`p-3 rounded-lg transition-colors group relative ${activeView === 'timesheet' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`} title="Timesheet">
+          <button onClick={() => setActiveView('timesheet')} className={`p-3 rounded-xl transition-colors group relative ${activeView === 'timesheet' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="Timesheet">
             <FileSpreadsheet size={20} />
-            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Timesheet</span>
+            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-surface-900 border border-white/10 text-white text-xs rounded-lg shadow-elevated opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Timesheet</span>
           </button>
-          <button onClick={() => setActiveView('analytics')} className={`p-3 rounded-lg transition-colors group relative ${activeView === 'analytics' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`} title="Analytics">
+          <button onClick={() => setActiveView('analytics')} className={`p-3 rounded-xl transition-colors group relative ${activeView === 'analytics' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`} title="Analytics">
             <BarChart3 size={20} />
-            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Analytics</span>
+            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-surface-900 border border-white/10 text-white text-xs rounded-lg shadow-elevated opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Analytics</span>
           </button>
         </nav>
 
-        <div className="flex flex-col gap-1 mt-auto">
-          <button onClick={() => setShowSettingsModal(true)} className="p-3 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors group relative" title="Settings">
+        <div className="flex flex-col gap-0.5 mt-auto">
+          <button onClick={() => setShowSettingsModal(true)} className="p-3 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors group relative" title="Settings">
             <Settings size={20} />
-            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Settings</span>
+            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-surface-900 border border-white/10 text-white text-xs rounded-lg shadow-elevated opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Settings</span>
           </button>
-          <button onClick={() => setShowHelpModal(true)} className="p-3 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors group relative" title="Help">
+          <button onClick={() => setShowHelpModal(true)} className="p-3 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors group relative" title="Help">
             <HelpCircle size={20} />
-            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Help</span>
+            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-surface-900 border border-white/10 text-white text-xs rounded-lg shadow-elevated opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Help</span>
           </button>
-          <button onClick={signOut} className="p-3 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors group relative" title="Sign Out">
+          <button onClick={signOut} className="p-3 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors group relative" title="Sign Out">
             <LogOut size={20} />
-            <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Sign Out</span>
+            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-surface-900 border border-white/10 text-white text-xs rounded-lg shadow-elevated opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">Sign Out</span>
           </button>
         </div>
       </aside>
@@ -5317,13 +5317,13 @@ Key things to verify after rebuild:
       {/* Main content */}
       <div className="flex-1 min-w-0">
         {/* Top bar */}
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
+        <div className="bg-white border-b border-gray-200 shadow-soft sticky top-0 z-40">
           <div className="px-6 py-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <h1 className="text-lg font-semibold text-gray-900">{businessSettings.businessName || org?.name}</h1>
-                <span className="text-sm text-gray-400">|</span>
-                <span className="text-sm text-gray-500 capitalize">{activeView === 'roster' ? 'Grid View' : activeView === 'staff-view' ? 'Staff View' : activeView === 'timesheet' ? 'Timesheet' : activeView === 'analytics' ? 'Analytics' : activeView}</span>
+                <h1 className="text-base font-bold text-gray-900 tracking-tight">{businessSettings.businessName || org?.name}</h1>
+                <span className="text-gray-300">|</span>
+                <span className="text-sm text-gray-400">{activeView === 'roster' ? 'Grid View' : activeView === 'staff-view' ? 'Staff View' : activeView === 'timesheet' ? 'Timesheet' : activeView === 'analytics' ? 'Analytics' : activeView}</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg">
@@ -5395,23 +5395,28 @@ Key things to verify after rebuild:
               ) : (
                 <>
                   {!selectedRole && (
-                    <span className="text-xs text-gray-400 italic whitespace-nowrap">← Select a role, then drag to fill shifts</span>
+                    <span className="text-xs text-gray-400 whitespace-nowrap">Select a role below, then drag to paint shifts</span>
                   )}
-                  {roles.map(r => (
-                    <button
-                      key={r.id}
-                      onClick={() => setSelectedRole(selectedRole?.id === r.id ? null : r)}
-                      title={`Assign ${r.name} — drag across cells to fill`}
-                      style={{ backgroundColor: selectedRole?.id === r.id ? r.color : 'transparent', color: selectedRole?.id === r.id ? 'white' : r.color, borderColor: r.color }}
-                      className="px-2.5 py-1 rounded-lg border text-xs font-bold transition-colors whitespace-nowrap"
-                    >
-                      {r.name}
-                    </button>
-                  ))}
+                  {roles.map(r => {
+                    const isActive = selectedRole?.id === r.id;
+                    return (
+                      <button
+                        key={r.id}
+                        onClick={() => setSelectedRole(isActive ? null : r)}
+                        title={`Assign ${r.name} — drag across cells to fill`}
+                        style={isActive
+                          ? { backgroundColor: r.color, color: 'white', borderColor: r.color, boxShadow: `0 0 0 2px white, 0 0 0 4px ${r.color}` }
+                          : { backgroundColor: r.color + '18', color: r.color, borderColor: r.color + '60' }}
+                        className="px-3 py-1.5 rounded-full border text-xs font-semibold transition-all whitespace-nowrap"
+                      >
+                        {r.name}
+                      </button>
+                    );
+                  })}
                   <button
                     onClick={() => setSelectedRole(selectedRole?.id === 'eraser' ? null : { id: 'eraser', code: 'X', color: '#ef4444' })}
                     title="Erase shifts — drag across cells to remove"
-                    className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition-colors ${selectedRole?.id === 'eraser' ? 'bg-red-600 text-white border-red-600' : 'border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-500'}`}
+                    className={`px-3 py-1.5 rounded-full border text-xs font-semibold transition-all ${selectedRole?.id === 'eraser' ? 'bg-red-500 text-white border-red-500 shadow-[0_0_0_2px_white,0_0_0_4px_#ef4444]' : 'bg-red-50 border-red-200 text-red-500 hover:bg-red-100'}`}
                   >
                     Erase
                   </button>
@@ -5499,67 +5504,91 @@ Key things to verify after rebuild:
           <div ref={containerRef} className="card overflow-auto relative" style={{ maxHeight: 'calc(100vh - 340px)' }}>
             <table className="border-collapse table-fixed" style={{ width: `${100 + (orderedStaff.length * dates.length * columnWidth)}px`, userSelect: 'none' }}>
               <thead className="sticky top-0 z-30 bg-white">
+                {(() => {
+                  const todayKey = formatDateKey(new Date());
+                  return (
+                    <>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="border-r border-gray-200 p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-40 w-20">Time</th>
-                  {dates.map((d, i) => (
-                    <th key={formatDateKey(d)} colSpan={orderedStaff.length} className={`p-3 text-center ${i < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`}>
-                      <div className="text-xs font-semibold text-gray-700">{d.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase()}</div>
-                      <div className="text-xs text-gray-400">{d.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</div>
-                      <div className="text-xs text-blue-600 mt-0.5">{calculateDayStats(formatDateKey(d)).totalHours.toFixed(2)}h · ${calculateDayStats(formatDateKey(d)).totalCost.toFixed(0)}</div>
+                  <th className="border-r border-gray-200 p-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider sticky left-0 bg-gray-50 z-40 w-20">Time</th>
+                  {dates.map((d, i) => {
+                    const dk = formatDateKey(d);
+                    const isToday = dk === todayKey;
+                    return (
+                    <th key={dk} colSpan={orderedStaff.length} className={`p-3 text-center ${i < dates.length - 1 ? 'border-r-2 border-gray-200' : ''} ${isToday ? 'bg-brand-50' : ''}`}>
+                      <div className={`text-xs font-bold tracking-wide ${isToday ? 'text-brand-600' : 'text-gray-600'}`}>{d.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase()}</div>
+                      <div className={`text-xs mt-0.5 ${isToday ? 'text-brand-500 font-semibold' : 'text-gray-400'}`}>{d.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</div>
+                      <div className="text-xs text-blue-500 mt-0.5">{calculateDayStats(dk).totalHours.toFixed(2)}h · ${calculateDayStats(dk).totalCost.toFixed(0)}</div>
                       <div className="flex gap-0.5 justify-center mt-1.5">
-                        <button onClick={() => copyDay(formatDateKey(d))} className={`p-1 rounded hover:bg-blue-50 transition-colors ${copiedDay === formatDateKey(d) ? 'bg-blue-100' : ''}`} title="Copy day"><Copy size={12} className="text-gray-400" /></button>
-                        <button onClick={() => pasteDay(formatDateKey(d))} className="p-1 rounded hover:bg-green-50 transition-colors" title="Paste day" disabled={!copiedDay}><Clipboard size={12} className="text-gray-400" /></button>
-                        <button onClick={() => clearDay(formatDateKey(d))} className="p-1 rounded hover:bg-red-50 transition-colors" title="Clear day"><Trash size={12} className="text-red-300" /></button>
+                        <button onClick={() => copyDay(dk)} className={`p-1 rounded hover:bg-blue-50 transition-colors ${copiedDay === dk ? 'bg-blue-100' : ''}`} title="Copy day"><Copy size={12} className="text-gray-400" /></button>
+                        <button onClick={() => pasteDay(dk)} className="p-1 rounded hover:bg-green-50 transition-colors" title="Paste day" disabled={!copiedDay}><Clipboard size={12} className="text-gray-400" /></button>
+                        <button onClick={() => clearDay(dk)} className="p-1 rounded hover:bg-red-50 transition-colors" title="Clear day"><Trash size={12} className="text-red-300" /></button>
                       </div>
                     </th>
-                  ))}
+                    );
+                  })}
                 </tr>
                 <tr className="bg-white border-b border-gray-200 sticky top-[60px] z-30">
                   <th className="border-r border-gray-200 sticky left-0 bg-white z-40 p-2 text-xs text-gray-400 w-20"></th>
-                  {dates.map((d, di) => (
-                    <React.Fragment key={`s-${formatDateKey(d)}`}>
+                  {dates.map((d, di) => {
+                    const dk = formatDateKey(d);
+                    const isToday = dk === todayKey;
+                    return (
+                    <React.Fragment key={`s-${dk}`}>
                       {orderedStaff.map((s, si) => (
                         <th
-                          key={`${formatDateKey(d)}-${s.id}`}
-                          className={`border-r border-gray-100 p-1.5 text-xs text-center cursor-move hover:bg-blue-50 transition-colors ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''} ${draggedStaffId === s.id ? 'opacity-40' : ''}`}
+                          key={`${dk}-${s.id}`}
+                          className={`border-r border-gray-100 p-1.5 text-xs text-center cursor-move hover:bg-blue-50 transition-colors ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''} ${draggedStaffId === s.id ? 'opacity-40' : ''} ${isToday && si % 2 === 0 ? 'bg-brand-50/60' : isToday ? 'bg-brand-50/40' : si % 2 === 1 ? 'bg-gray-50' : ''}`}
                           style={{ width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
                           draggable
                           onDragStart={() => handleStaffDragStart(s.id)}
                           onDragOver={(e) => handleStaffDragOver(e, s.id)}
                           onDragEnd={handleStaffDragEnd}
                         >
-                          <div className="truncate text-gray-500 font-medium">{s.name.split(' ')[0]}</div>
+                          <div className="truncate text-gray-600 font-semibold">{s.name.split(' ')[0]}</div>
                         </th>
                       ))}
                     </React.Fragment>
-                  ))}
+                    );
+                  })}
                 </tr>
+                    </>
+                  );
+                })()}
               </thead>
               <tbody>
                 {timeSlots.map((t, rowIdx) => {
                   const isPeakHour = t >= '12:00' && t < '14:00';
+                  const isHour = t.endsWith(':00');
+                  const todayKey = formatDateKey(new Date());
                   return (
-                    <tr key={t} className={`border-b border-gray-50 ${isPeakHour ? 'bg-amber-50/30' : ''}`}>
-                      <td className={`border-r border-gray-200 p-2 text-xs sticky left-0 z-10 w-20 ${isPeakHour ? 'bg-amber-50 border-l-2 border-l-amber-400 font-medium text-amber-700' : 'bg-white text-gray-500'}`} style={{ height: `${rowHeight}px`, maxHeight: `${rowHeight}px` }}>
-                        <div className="flex items-center justify-center h-full overflow-hidden">
-                          <span>{t}</span>
+                    <tr key={t} className={`border-b ${isHour ? 'border-gray-200' : 'border-gray-100'} ${isPeakHour ? 'bg-amber-50/20' : ''}`}>
+                      <td className={`border-r border-gray-200 p-2 text-xs sticky left-0 z-10 w-20 ${isPeakHour ? 'bg-amber-50 border-l-2 border-l-amber-400' : 'bg-white'}`} style={{ height: `${rowHeight}px`, maxHeight: `${rowHeight}px` }}>
+                        <div className="flex items-center justify-end pr-1 h-full overflow-hidden">
+                          {isHour
+                            ? <span className={`font-bold ${isPeakHour ? 'text-amber-600' : 'text-gray-700'}`}>{t}</span>
+                            : <span className="text-gray-300 text-[10px]">{t}</span>
+                          }
                         </div>
                       </td>
                     {dates.map((d, di) => {
                       const dk = formatDateKey(d);
+                      const isToday = dk === todayKey;
                       return (
                         <React.Fragment key={`${t}-${dk}`}>
                           {orderedStaff.map((s, si) => {
                             const k = getScheduleKey(dk, s.id, t);
                             const sh = schedule[k];
+                            const altBg = isToday
+                              ? (si % 2 === 0 ? 'rgba(249,115,22,0.04)' : 'rgba(249,115,22,0.02)')
+                              : (si % 2 === 1 ? 'rgba(248,250,252,0.8)' : 'transparent');
                             return (
                               <td
                                 key={k}
-                                className={`border-r border-gray-50 p-0 relative ${selectedRole ? (selectedRole.id === 'eraser' ? 'cursor-cell' : 'cursor-crosshair') : 'cursor-pointer'} ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`}
+                                className={`border-r border-gray-100 p-0 relative ${selectedRole ? (selectedRole.id === 'eraser' ? 'cursor-cell' : 'cursor-crosshair') : 'cursor-pointer'} ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`}
                                 onMouseDown={(e) => handleMouseDown(e, dk, s.id, t, rowIdx)}
                                 onMouseEnter={() => handleMouseEnter(dk, s.id, t, rowIdx)}
                                 onContextMenu={(e) => handleRightClick(e, dk, s.id, t)}
-                                style={{ backgroundColor: sh ? sh.roleColor : 'transparent', height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
+                                style={{ backgroundColor: sh ? sh.roleColor : altBg, height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
                               >
                                 {sh && <div className="relative flex items-center justify-center text-white font-semibold h-full" style={{ fontSize: zoomLevel === 1 ? '8px' : zoomLevel === 2 ? '10px' : '12px' }}>{sh.roleCode}</div>}
                               </td>
@@ -5573,8 +5602,8 @@ Key things to verify after rebuild:
                 })}
               </tbody>
               <tfoot>
-                <tr className="bg-gray-50 border-t border-gray-200">
-                  <td className="border-r border-gray-200 p-2 text-xs font-medium text-gray-500 sticky left-0 bg-gray-50 z-20 w-20">Total</td>
+                <tr className="bg-gray-50 border-t-2 border-gray-200">
+                  <td className="border-r border-gray-200 p-2 text-xs font-semibold text-gray-500 sticky left-0 bg-gray-50 z-20 w-20">Total</td>
                   {dates.map((d, di) => {
                     const dk = formatDateKey(d);
                     return (
@@ -5583,7 +5612,7 @@ Key things to verify after rebuild:
                           const st = calculateStaffDayStats(s.id, dk);
                           return (
                             <td key={`${dk}-${s.id}`} className={`border-r border-gray-100 p-1 text-center text-xs ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`} style={{ width: '120px', maxWidth: '120px', minWidth: '120px' }}>
-                              <div className="font-medium text-gray-700">{st.hours.toFixed(2)}h</div>
+                              <div className="font-semibold text-gray-700">{st.hours.toFixed(2)}h</div>
                               <div className="text-gray-400">${st.cost.toFixed(0)}</div>
                             </td>
                           );
