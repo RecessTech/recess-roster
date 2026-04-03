@@ -157,7 +157,7 @@ const RosterApp = () => {
     currency: '$',
     timezone: 'Australia/Sydney',
     targetLaborPercentage: 30, // Target labor cost as % of revenue
-    superannuationRate: 11.5 // % on top of wages (editable in Financial settings)
+    superannuationRate: 12 // % on top of wages (editable in Financial settings)
   });
 
     const [saving, setSaving] = useState(false);
@@ -328,7 +328,7 @@ const RosterApp = () => {
             currency: settingsData.currency,
             timezone: settingsData.timezone,
             targetLaborPercentage: settingsData.target_labor_percentage ?? 30,
-            superannuationRate: settingsData.superannuation_rate ?? 11.5,
+            superannuationRate: settingsData.superannuation_rate ?? 12,
           });
         }
       } catch (error) {
@@ -1440,7 +1440,7 @@ const RosterApp = () => {
               min="0"
               max="30"
               step="0.5"
-              value={tempSettings.superannuationRate ?? 11.5}
+              value={tempSettings.superannuationRate ?? 12}
               onChange={(e) => setTempSettings(prev => ({
                 ...prev,
                 superannuationRate: parseFloat(e.target.value) || 0
@@ -1449,7 +1449,7 @@ const RosterApp = () => {
             />
             <span className="text-sm font-semibold text-gray-600">%</span>
           </div>
-          <p className="text-xs text-gray-500 mt-1">Added on top of wages in all cost calculations. Current ATO rate: 11.5%</p>
+          <p className="text-xs text-gray-500 mt-1">Added on top of wages in all cost calculations. Current ATO rate: 12%</p>
         </div>
 
         <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
