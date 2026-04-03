@@ -1100,6 +1100,8 @@ const RosterApp = () => {
   const BusinessSettingsModal = () => {
     const [tempSettings, setTempSettings] = useState(JSON.parse(JSON.stringify(businessSettings)));
     const [activeSettingsTab, setActiveSettingsTab] = useState('hours');
+    const [editingRole, setEditingRole] = useState(null);
+    const [roleForm, setRoleForm] = useState({ name: '', code: '', color: '#3B82F6' });
 
     const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
     const dayLabels = {
@@ -1117,7 +1119,7 @@ const RosterApp = () => {
       setShowSettingsModal(false);
     };
 
-    const HoursTab = () => (
+    const renderHoursTab = () => (
       <div className="space-y-4">
         <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
           <div className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-1.5"><Lightbulb size={14} /> Operational Hours</div>
@@ -1217,7 +1219,7 @@ const RosterApp = () => {
       </div>
     );
 
-    const CoverageTab = () => (
+    const renderCoverageTab = () => (
       <div className="space-y-4">
         <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
           <div className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-1.5"><BarChart3 size={14} /> Coverage Requirements</div>
@@ -1293,7 +1295,7 @@ const RosterApp = () => {
       </div>
     );
 
-    const GeneralTab = () => (
+    const renderGeneralTab = () => (
       <div className="space-y-4">
         <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
           <div className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-1.5"><Settings size={14} /> Business Information</div>
@@ -1397,7 +1399,7 @@ const RosterApp = () => {
       </div>
     );
 
-    const FinancialTab = () => (
+    const renderFinancialTab = () => (
       <div className="space-y-4">
         <div className="p-4 bg-green-50 rounded-lg border border-green-200">
           <div className="text-sm font-semibold text-green-800 mb-2 flex items-center gap-1.5"><DollarSign size={14} /> Financial Settings</div>
@@ -1459,9 +1461,7 @@ const RosterApp = () => {
       </div>
     );
 
-    const RolesTab = () => {
-      const [editingRole, setEditingRole] = useState(null);
-      const [roleForm, setRoleForm] = useState({ name: '', code: '', color: '#3B82F6' });
+    const renderRolesTab = () => {
 
       const handleAddRole = () => {
         const newRole = {
@@ -1738,11 +1738,11 @@ const RosterApp = () => {
           </div>
           
           <div className="p-8 overflow-auto" style={{ maxHeight: 'calc(90vh - 200px)' }}>
-            {activeSettingsTab === 'hours' && <HoursTab />}
-            {activeSettingsTab === 'coverage' && <CoverageTab />}
-            {activeSettingsTab === 'general' && <GeneralTab />}
-            {activeSettingsTab === 'financial' && <FinancialTab />}
-            {activeSettingsTab === 'roles' && <RolesTab />}
+            {activeSettingsTab === 'hours' && renderHoursTab()}
+            {activeSettingsTab === 'coverage' && renderCoverageTab()}
+            {activeSettingsTab === 'general' && renderGeneralTab()}
+            {activeSettingsTab === 'financial' && renderFinancialTab()}
+            {activeSettingsTab === 'roles' && renderRolesTab()}
           </div>
 
           <div className="modal-footer">
@@ -5502,7 +5502,7 @@ Key things to verify after rebuild:
 
         {activeStaff.length > 0 && (
           <div ref={containerRef} className="card overflow-auto relative" style={{ maxHeight: 'calc(100vh - 340px)' }}>
-            <table className="border-collapse table-fixed" style={{ width: `${100 + (orderedStaff.length * dates.length * columnWidth)}px`, userSelect: 'none' }}>
+            <table className="border-collapse table-fixed w-full" style={{ minWidth: `${100 + (orderedStaff.length * dates.length * columnWidth)}px`, userSelect: 'none' }}>
               <thead className="sticky top-0 z-30 bg-white">
                 {(() => {
                   const todayKey = formatDateKey(new Date());
