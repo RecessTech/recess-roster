@@ -44,17 +44,17 @@ body {
   --top-border:     #E5E7EB;
 }
 
-/* Cream / Blue theme (logo 1) */
-[data-theme="cream"] {
-  --sb-bg:          #F3EDDB;
-  --sb-icon:        rgba(59, 91, 219, 0.55);
-  --sb-icon-active: #3B5BDB;
-  --sb-active:      rgba(59, 91, 219, 0.1);
-  --sb-hover:       rgba(59, 91, 219, 0.06);
-  --sb-logo-bg:     rgba(59, 91, 219, 0.1);
-  --sb-logo-fg:     #3B5BDB;
-  --sb-tooltip-bg:  #DDD8CB;
-  --sb-tooltip-bd:  rgba(59,91,219,0.15);
+/* Blue theme — Recess blue sidebar (main colourway) */
+[data-theme="blue"] {
+  --sb-bg:          #3B5BDB;
+  --sb-icon:        rgba(255, 255, 255, 0.6);
+  --sb-icon-active: #ffffff;
+  --sb-active:      rgba(255, 255, 255, 0.18);
+  --sb-hover:       rgba(255, 255, 255, 0.1);
+  --sb-logo-bg:     rgba(255, 255, 255, 0.15);
+  --sb-logo-fg:     #ffffff;
+  --sb-tooltip-bg:  #2D4EC9;
+  --sb-tooltip-bd:  rgba(255,255,255,0.15);
 
   --primary:        #3B5BDB;
   --primary-dk:     #2D4EC9;

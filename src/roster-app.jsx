@@ -5,7 +5,7 @@ import { db } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
 
 const THEMES = [
-  { id: 'cream',  dot: '#3B5BDB', bg: '#F3EDDB', label: 'Cream' },
+  { id: 'blue',   dot: '#3B5BDB', bg: '#3B5BDB', label: 'Blue' },
   { id: 'orange', dot: '#E85018', bg: '#E85018', label: 'Orange' },
   { id: 'dark',   dot: '#E85018', bg: '#171717', label: 'Dark' },
 ];
@@ -13,7 +13,7 @@ const THEMES = [
 const RosterApp = () => {
   const { user } = useAuth();
 
-  const [theme, setTheme] = useState(() => localStorage.getItem('rshift-theme') || 'orange');
+  const [theme, setTheme] = useState(() => localStorage.getItem('rshift-theme') || 'blue');
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
