@@ -545,12 +545,12 @@ const RosterApp = () => {
     const startMinutes = startHour * 60 + startMin;
     const endMinutes = endHour * 60 + endMin;
 
-    // Generate slots at current interval
-    for (let minutes = startMinutes; minutes < endMinutes; minutes += timeInterval) {
+    // Always generate at 15m granularity regardless of display interval
+    for (let minutes = startMinutes; minutes < endMinutes; minutes += 15) {
       const hour = Math.floor(minutes / 60);
       const min = minutes % 60;
       const timeSlot = `${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
-      
+
       const key = getScheduleKey(dateKey, staffId, timeSlot);
       newSchedule[key] = {
         roleId: template.roleId,
@@ -1773,13 +1773,16 @@ const RosterApp = () => {
     saveToHistory(schedule);
 
     const newSchedule = { ...schedule };
-    const startIdx = timeSlots.indexOf(quickFillData.startTime);
-    const endIdx = timeSlots.indexOf(endTime);
 
-    // Fill from start up to (but not including) end time
-    for (let i = startIdx; i < endIdx; i++) {
-      const key = getScheduleKey(quickFillData.dateKey, quickFillData.staffId, timeSlots[i]);
-      newSchedule[key] = {
+    // Always fill at 15m granularity regardless of display interval
+    const [sh, sm] = quickFillData.startTime.split(':').map(Number);
+    const [eh, em] = endTime.split(':').map(Number);
+    const startMins = sh * 60 + sm;
+    const endMins = eh * 60 + em;
+
+    for (let m = startMins; m < endMins; m += 15) {
+      const slot = `${Math.floor(m / 60).toString().padStart(2, '0')}:${(m % 60).toString().padStart(2, '0')}`;
+      newSchedule[getScheduleKey(quickFillData.dateKey, quickFillData.staffId, slot)] = {
         roleId: selectedRole.id,
         roleCode: selectedRole.code,
         roleColor: selectedRole.color,
@@ -1914,15 +1917,18 @@ const RosterApp = () => {
     
     const newSchedule = { ...schedule };
     
+    // Copy at 15m granularity to capture all sub-slots regardless of display interval
     staff.forEach(staffMember => {
-      timeSlots.forEach(timeSlot => {
-        const sourceKey = getScheduleKey(copiedDay, staffMember.id, timeSlot);
-        const targetKey = getScheduleKey(targetDateKey, staffMember.id, timeSlot);
-        
-        if (schedule[sourceKey]) {
-          newSchedule[targetKey] = { ...schedule[sourceKey] };
+      for (let h = startHour; h < endHour; h++) {
+        for (let m = 0; m < 60; m += 15) {
+          const slot = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+          const sourceKey = getScheduleKey(copiedDay, staffMember.id, slot);
+          const targetKey = getScheduleKey(targetDateKey, staffMember.id, slot);
+          if (schedule[sourceKey]) {
+            newSchedule[targetKey] = { ...schedule[sourceKey] };
+          }
         }
-      });
+      }
     });
     
     setSchedule(newSchedule);
@@ -1943,24 +1949,22 @@ const RosterApp = () => {
     
     const newSchedule = { ...schedule };
     
+    // Helper: delete all 15m slots for a given day and staff member
+    const clearSlots = (dateKey, staffMember) => {
+      for (let h = startHour; h < endHour; h++) {
+        for (let m = 0; m < 60; m += 15) {
+          const slot = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+          delete newSchedule[getScheduleKey(dateKey, staffMember.id, slot)];
+        }
+      }
+    };
+
     if (clearTarget.type === 'day') {
-      // Clear specific day
-      staff.forEach(staffMember => {
-        timeSlots.forEach(timeSlot => {
-          const key = getScheduleKey(clearTarget.dateKey, staffMember.id, timeSlot);
-          delete newSchedule[key];
-        });
-      });
+      staff.forEach(staffMember => clearSlots(clearTarget.dateKey, staffMember));
     } else if (clearTarget.type === 'week') {
-      // Clear entire visible week
       dates.forEach(date => {
         const dateKey = formatDateKey(date);
-        staff.forEach(staffMember => {
-          timeSlots.forEach(timeSlot => {
-            const key = getScheduleKey(dateKey, staffMember.id, timeSlot);
-            delete newSchedule[key];
-          });
-        });
+        staff.forEach(staffMember => clearSlots(dateKey, staffMember));
       });
     }
     
@@ -3118,31 +3122,45 @@ const RosterApp = () => {
                   {orderedStaff.map(s => {
                     const weekStats = calculateStaffWeekStats(s.id);
                     return (
-                      <button
+                      <div
                         key={s.id}
-                        onClick={() => setSelectedStaffView(s.id)}
-                        className="bg-white hover:bg-blue-50 border-2 border-gray-200 hover:border-blue-400 rounded-xl p-6 text-left transition-all shadow-sm hover:shadow-md"
+                        className="bg-white border-2 border-gray-200 hover:border-blue-300 rounded-xl p-5 transition-all shadow-sm hover:shadow-md"
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div>
                             <h3 className="font-bold text-lg">{s.name}</h3>
-                            <p className="text-sm text-gray-600">{s.employmentType}</p>
+                            <p className="text-sm text-gray-500">{s.employmentType}</p>
                           </div>
-                          <div className="bg-white rounded-lg px-3 py-1 text-xs font-semibold text-blue-600 border border-blue-200">
+                          <span className="px-2.5 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg">
                             ${s.hourlyRate}/hr
-                          </div>
+                          </span>
                         </div>
-                        <div className="space-y-1 text-sm">
+                        <div className="space-y-1 text-sm mb-4">
                           <div className="flex justify-between">
-                            <span className="text-gray-600">This Week:</span>
+                            <span className="text-gray-500">This Week:</span>
                             <span className="font-semibold">{weekStats.hours.toFixed(2)}h</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-gray-600">Est. Pay:</span>
+                            <span className="text-gray-500">Est. Pay:</span>
                             <span className="font-semibold text-green-600">${weekStats.cost.toFixed(0)}</span>
                           </div>
                         </div>
-                      </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setSelectedStaffView(s.id)}
+                            className="flex-1 btn-ghost text-xs py-1.5"
+                          >
+                            View Schedule
+                          </button>
+                          <button
+                            onClick={() => { setEditingStaff(s); setShowStaffModal(true); }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-100 border border-gray-200 transition-colors"
+                            title="Edit staff member"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
@@ -3160,7 +3178,7 @@ const RosterApp = () => {
                         <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Weekend Rate</th>
                         <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Hours This Week</th>
                         <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Est. Pay</th>
-                        <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Action</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
@@ -3192,12 +3210,20 @@ const RosterApp = () => {
                               ${weekStats.cost.toFixed(0)}
                             </td>
                             <td className="px-4 py-4 text-center">
-                              <button
-                                onClick={() => setSelectedStaffView(s.id)}
-                                className="btn-primary text-sm py-2"
-                              >
-                                View Schedule
-                              </button>
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  onClick={() => setSelectedStaffView(s.id)}
+                                  className="btn-ghost text-sm py-1.5 px-3"
+                                >
+                                  View
+                                </button>
+                                <button
+                                  onClick={() => { setEditingStaff(s); setShowStaffModal(true); }}
+                                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 border border-gray-200 transition-colors"
+                                >
+                                  <Edit2 size={13} /> Edit
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -3305,12 +3331,20 @@ const RosterApp = () => {
         <div className="max-w-5xl mx-auto">
           {/* Header */}
           <div className="card p-8 mb-6">
-            <button
-              onClick={() => setSelectedStaffView(null)}
-              className="mb-4 btn-ghost text-sm px-3 py-1.5"
-            >
-              ← Back to Staff List
-            </button>
+            <div className="flex items-center justify-between mb-4">
+              <button
+                onClick={() => setSelectedStaffView(null)}
+                className="btn-ghost text-sm px-3 py-1.5"
+              >
+                ← Back to Staff List
+              </button>
+              <button
+                onClick={() => { setEditingStaff(selectedStaff); setShowStaffModal(true); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 border border-gray-200 transition-colors"
+              >
+                <Edit2 size={14} /> Edit Staff
+              </button>
+            </div>
 
             <div className="flex items-start justify-between">
               <div>
