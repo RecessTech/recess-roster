@@ -4,21 +4,13 @@ import { useAuth, signOut } from './Auth';
 import { db } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
 
-const THEMES = [
-  { id: 'blue',   dot: '#3B5BDB', bg: '#3B5BDB', label: 'Blue' },
-  { id: 'orange', dot: '#E85018', bg: '#E85018', label: 'Orange' },
-  { id: 'dark',   dot: '#E85018', bg: '#171717', label: 'Dark' },
-];
 
 const RosterApp = () => {
   const { user } = useAuth();
 
-  const [theme, setTheme] = useState(() => localStorage.getItem('rshift-theme') || 'blue');
-
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('rshift-theme', theme);
-  }, [theme]);
+    document.documentElement.setAttribute('data-theme', 'blue');
+  }, []);
 
   const [org, setOrg] = useState(null);
   const [showOrgOnboarding, setShowOrgOnboarding] = useState(false);
@@ -164,7 +156,8 @@ const RosterApp = () => {
     minPeakStaffCoverage: 3, // Minimum staff during peak hours
     currency: '$',
     timezone: 'Australia/Sydney',
-    targetLaborPercentage: 30 // Target labor cost as % of revenue
+    targetLaborPercentage: 30, // Target labor cost as % of revenue
+    superannuationRate: 11.5 // % on top of wages (editable in Financial settings)
   });
 
     const [saving, setSaving] = useState(false);
@@ -333,7 +326,9 @@ const RosterApp = () => {
             peakHours: settingsData.peak_hours,
             minPeakStaffCoverage: settingsData.min_peak_staff_coverage,
             currency: settingsData.currency,
-            timezone: settingsData.timezone
+            timezone: settingsData.timezone,
+            targetLaborPercentage: settingsData.target_labor_percentage ?? 30,
+            superannuationRate: settingsData.superannuation_rate ?? 11.5,
           });
         }
       } catch (error) {
@@ -413,7 +408,9 @@ const RosterApp = () => {
           peak_hours: businessSettings.peakHours,
           min_peak_staff_coverage: businessSettings.minPeakStaffCoverage,
           currency: businessSettings.currency,
-          timezone: businessSettings.timezone
+          timezone: businessSettings.timezone,
+          target_labor_percentage: businessSettings.targetLaborPercentage,
+          superannuation_rate: businessSettings.superannuationRate,
         });
       } catch (error) {
         console.error('Error saving settings:', error);
@@ -813,7 +810,8 @@ const RosterApp = () => {
     // ALWAYS calculate hours based on 15-minute slots (the underlying data structure)
     // regardless of the current view interval (15m/30m/1h)
     const hours = slots * (15 / 60);
-    return { hours, cost: hours * rate };
+    const superMultiplier = 1 + (businessSettings.superannuationRate || 0) / 100;
+    return { hours, cost: hours * rate * superMultiplier };
   };
 
   const calculateStaffWeekStats = (staffId) => {
@@ -1413,63 +1411,64 @@ const RosterApp = () => {
     );
 
     const renderFinancialTab = () => (
-      <div className="space-y-4">
-        <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-          <div className="text-sm font-semibold text-green-800 mb-2 flex items-center gap-1.5"><DollarSign size={14} /> Financial Settings</div>
-          <div className="text-xs text-green-700">
-            Set your target labor cost percentage and other financial goals. These help track your business performance.
+      <div className="space-y-3">
+        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <label className="block text-xs font-semibold text-gray-700 mb-1">Target Labor Cost %</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              value={tempSettings.targetLaborPercentage || 30}
+              onChange={(e) => setTempSettings(prev => ({
+                ...prev,
+                targetLaborPercentage: parseFloat(e.target.value) || 30
+              }))}
+              className="input-base w-24"
+            />
+            <span className="text-sm font-semibold text-gray-600">%</span>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">Industry standard for hospitality: 25–35%</p>
+        </div>
+
+        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <label className="block text-xs font-semibold text-gray-700 mb-1">Superannuation Rate</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="0"
+              max="30"
+              step="0.5"
+              value={tempSettings.superannuationRate ?? 11.5}
+              onChange={(e) => setTempSettings(prev => ({
+                ...prev,
+                superannuationRate: parseFloat(e.target.value) || 0
+              }))}
+              className="input-base w-24"
+            />
+            <span className="text-sm font-semibold text-gray-600">%</span>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">Added on top of wages in all cost calculations. Current ATO rate: 11.5%</p>
+        </div>
+
+        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="text-xs font-semibold text-gray-700 mb-1.5">Labor % Guide</div>
+          <div className="text-xs text-gray-600 space-y-0.5">
+            <div><span className="font-medium text-green-600">25–30%</span> — Excellent</div>
+            <div><span className="font-medium text-blue-600">30–35%</span> — Good (industry standard)</div>
+            <div><span className="font-medium text-orange-600">35–40%</span> — Acceptable</div>
+            <div><span className="font-medium text-red-600">40%+</span> — High, review rates</div>
           </div>
         </div>
 
-        <div className="space-y-4">
-          <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <label className="block text-sm font-semibold text-gray-800 mb-2">
-              Target Labor Cost Percentage
-            </label>
-            <div className="flex items-center gap-4">
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="1"
-                value={tempSettings.targetLaborPercentage || 30}
-                onChange={(e) => setTempSettings(prev => ({ 
-                  ...prev, 
-                  targetLaborPercentage: parseFloat(e.target.value) || 30 
-                }))}
-                className="w-32 border-2 border-gray-300 rounded-lg px-4 py-2 text-lg font-semibold focus:border-green-500 focus:outline-none"
-              />
-              <span className="text-2xl font-bold text-gray-700">%</span>
-            </div>
-            <p className="text-xs text-gray-600 mt-3">
-              Your ideal labor cost as a percentage of revenue. Industry standard for hospitality is 25-35%.
-            </p>
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="text-xs font-semibold text-blue-800 mb-2 flex items-center gap-1"><Lightbulb size={12} /> Quick Guide:</div>
-              <div className="text-xs text-blue-700 space-y-1">
-                <div>• <strong>25-30%:</strong> Excellent - Very efficient operation</div>
-                <div>• <strong>30-35%:</strong> Good - Industry standard</div>
-                <div>• <strong>35-40%:</strong> Acceptable - Room for improvement</div>
-                <div>• <strong>40%+:</strong> High - Review scheduling and rates</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-            <div className="flex items-start gap-3">
-              <BarChart3 size={24} className="text-blue-600" />
-              <div>
-                <div className="text-sm font-semibold text-gray-800 mb-1">How to Use Labor Percentage Tracking</div>
-                <ol className="text-xs text-gray-700 space-y-1 ml-4 list-decimal">
-                  <li>Go to Analytics → Revenue tab</li>
-                  <li>Enter your daily projected revenue</li>
-                  <li>Add any other revenue (delivery, catering, etc.)</li>
-                  <li>See your labor cost % automatically calculated</li>
-                  <li>Track trends over time to optimize scheduling</li>
-                </ol>
-              </div>
-            </div>
-          </div>
+        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="text-xs font-semibold text-gray-700 mb-1">How to track labor %</div>
+          <ol className="text-xs text-gray-600 space-y-0.5 ml-4 list-decimal">
+            <li>Go to Analytics → Revenue tab</li>
+            <li>Enter your daily projected revenue</li>
+            <li>Labor cost % is calculated automatically</li>
+          </ol>
         </div>
       </div>
     );
@@ -1698,59 +1697,27 @@ const RosterApp = () => {
           </div>
 
           <div className="flex border-b border-gray-200">
-            <button
-              onClick={() => setActiveSettingsTab('hours')}
-              className={`flex-1 px-6 py-4 font-semibold text-sm transition-all ${
-                activeSettingsTab === 'hours'
-                  ? 'border-b-2 border-blue-600 text-blue-600 bg-blue-50'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <Clock size={14} className="inline mr-1" /> Hours
-            </button>
-            <button
-              onClick={() => setActiveSettingsTab('coverage')}
-              className={`flex-1 px-6 py-4 font-semibold text-sm transition-all ${
-                activeSettingsTab === 'coverage'
-                  ? 'border-b-2 border-blue-600 text-blue-600 bg-blue-50'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <BarChart3 size={14} className="inline mr-1" /> Coverage
-            </button>
-            <button
-              onClick={() => setActiveSettingsTab('general')}
-              className={`flex-1 px-6 py-4 font-semibold text-sm transition-all ${
-                activeSettingsTab === 'general'
-                  ? 'border-b-2 border-blue-600 text-blue-600 bg-blue-50'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <Settings size={14} className="inline mr-1" /> General
-            </button>
-            <button
-              onClick={() => setActiveSettingsTab('financial')}
-              className={`flex-1 px-6 py-4 font-semibold text-sm transition-all ${
-                activeSettingsTab === 'financial'
-                  ? 'border-b-2 border-blue-600 text-blue-600 bg-blue-50'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <DollarSign size={14} className="inline mr-1" /> Financial
-            </button>
-            <button
-              onClick={() => setActiveSettingsTab('roles')}
-              className={`flex-1 px-6 py-4 font-semibold text-sm transition-all ${
-                activeSettingsTab === 'roles'
-                  ? 'border-b-2 border-blue-600 text-blue-600 bg-blue-50'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <Theater size={14} className="inline mr-1" /> Roles
-            </button>
+            {[
+              { id: 'hours',    icon: <Clock size={13} className="inline mr-1" />,      label: 'Hours' },
+              { id: 'coverage', icon: <BarChart3 size={13} className="inline mr-1" />,  label: 'Coverage' },
+              { id: 'general',  icon: <Settings size={13} className="inline mr-1" />,   label: 'General' },
+              { id: 'financial',icon: <DollarSign size={13} className="inline mr-1" />, label: 'Financial' },
+              { id: 'roles',    icon: <Theater size={13} className="inline mr-1" />,    label: 'Roles' },
+            ].map(({ id, icon, label }) => (
+              <button key={id}
+                onClick={() => setActiveSettingsTab(id)}
+                className={`flex-1 px-3 py-2.5 font-medium text-xs transition-all ${
+                  activeSettingsTab === id
+                    ? 'border-b-2 border-blue-600 text-blue-600 bg-blue-50'
+                    : 'text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {icon}{label}
+              </button>
+            ))}
           </div>
-          
-          <div className="p-8 overflow-auto" style={{ maxHeight: 'calc(90vh - 200px)' }}>
+
+          <div className="p-5 overflow-auto" style={{ maxHeight: 'calc(90vh - 180px)' }}>
             {activeSettingsTab === 'hours' && renderHoursTab()}
             {activeSettingsTab === 'coverage' && renderCoverageTab()}
             {activeSettingsTab === 'general' && renderGeneralTab()}
@@ -3832,15 +3799,24 @@ const RosterApp = () => {
       coverageGaps: []
     };
 
-    // Calculate staff utilization rates
+    // Calculate staff utilization rates based on hours vs available business hours
+    const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+    const weekAvailableHours = dates.reduce((sum, date) => {
+      const daySettings = businessSettings.operationalHours[dayNames[date.getDay()]];
+      if (!daySettings || daySettings.closed) return sum;
+      const [oh, om] = daySettings.open.split(':').map(Number);
+      const [ch, cm] = daySettings.close.split(':').map(Number);
+      return sum + ((ch * 60 + cm) - (oh * 60 + om)) / 60;
+    }, 0);
+
     staff.forEach(s => {
-      const totalPossibleSlots = dates.length * timeSlots.length;
-      const scheduledSlots = Object.keys(schedule).filter(key => key.includes(`-${s.id}-`)).length;
+      const scheduledHours = calculateStaffWeekStats(s.id).hours;
+      const rate = weekAvailableHours > 0 ? Math.min((scheduledHours / weekAvailableHours) * 100, 100) : 0;
       insights.utilizationRate[s.id] = {
         name: s.name,
-        rate: (scheduledSlots / totalPossibleSlots) * 100,
-        scheduledSlots,
-        totalPossibleSlots
+        rate,
+        scheduledHours: scheduledHours.toFixed(1),
+        totalPossibleHours: weekAvailableHours.toFixed(1),
       };
     });
 
@@ -4176,8 +4152,8 @@ const RosterApp = () => {
                           style={{ width: `${util.rate}%` }}
                         />
                       </div>
-                      <div className="text-xs text-gray-500 w-32 text-right">
-                        {util.scheduledSlots} of {util.totalPossibleSlots} slots
+                      <div className="text-xs text-gray-500 w-36 text-right">
+                        {util.scheduledHours}h of {util.totalPossibleHours}h available
                       </div>
                     </div>
                     <div className="mt-2 text-xs text-gray-500">
@@ -5376,20 +5352,7 @@ Key things to verify after rebuild:
           ))}
         </nav>
 
-        {/* Theme switcher */}
-        <div className="flex gap-1.5 mb-2 px-2">
-          {THEMES.map(t => (
-            <button key={t.id} onClick={() => setTheme(t.id)} title={t.label}
-              className="w-3.5 h-3.5 rounded-full transition-all"
-              style={{
-                background: t.bg,
-                boxShadow: theme === t.id
-                  ? `0 0 0 1.5px var(--sb-bg), 0 0 0 3px var(--sb-icon-active)`
-                  : 'none',
-                opacity: theme === t.id ? 1 : 0.5,
-              }} />
-          ))}
-        </div>
+        {/* Theme switcher — hidden until additional skins are ready */}
 
         {/* Bottom actions */}
         <div className="flex flex-col gap-0.5 w-full px-2">
@@ -5497,9 +5460,6 @@ Key things to verify after rebuild:
                 </>
               ) : (
                 <>
-                  {!selectedRole && (
-                    <span className="text-xs text-gray-400 whitespace-nowrap">Select a role below, then drag to paint shifts</span>
-                  )}
                   {roles.map(r => {
                     const isActive = selectedRole?.id === r.id;
                     return (
