@@ -864,8 +864,9 @@ const RosterApp = () => {
     // ALWAYS calculate hours based on 15-minute slots (the underlying data structure)
     // regardless of the current view interval (15m/30m/1h)
     const hours = slots * (15 / 60);
+    const baseCost = hours * rate;
     const superMultiplier = 1 + (businessSettings.superannuationRate || 0) / 100;
-    return { hours, cost: hours * rate * superMultiplier };
+    return { hours, baseCost, cost: baseCost * superMultiplier };
   };
 
   const calculateStaffWeekStats = (staffId) => {
@@ -885,12 +886,14 @@ const RosterApp = () => {
   const calculateDayStats = (dateKey) => {
     let totalHours = 0;
     let totalCost = 0;
+    let totalBaseCost = 0;
     activeStaff.forEach(s => {
       const stats = calculateStaffDayStats(s.id, dateKey);
       totalHours += stats.hours;
       totalCost += stats.cost;
+      totalBaseCost += stats.baseCost;
     });
-    return { totalHours, totalCost };
+    return { totalHours, totalCost, totalBaseCost };
   };
 
   const calculateWeekStats = () => {
@@ -5405,8 +5408,11 @@ Key things to verify after rebuild:
             className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors text-sm"
           >→</button>
           <div className="ml-auto flex items-center gap-3">
-            <span className="text-xs font-semibold text-gray-700">{dayStats.totalHours.toFixed(1)}h</span>
-            <span className="text-xs font-semibold text-blue-600">${dayStats.totalCost.toFixed(0)}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>{dayStats.totalHours.toFixed(1)}h</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#3B5BDB' }}>${dayStats.totalBaseCost?.toFixed(0) ?? dayStats.totalCost.toFixed(0)}</span>
+            {businessSettings.superannuationRate > 0 && dayStats.totalBaseCost > 0 && (
+              <span style={{ fontSize: 10, color: '#9CA3AF' }}>+${(dayStats.totalCost - dayStats.totalBaseCost).toFixed(0)} super</span>
+            )}
             <div className="flex gap-0.5">
               <button onClick={() => copyDay(dk)} className={`p-1 rounded hover:bg-blue-50 transition-colors ${copiedDay === dk ? 'bg-blue-100' : ''}`} title="Copy day"><Copy size={13} className="text-gray-400" /></button>
               <button onClick={() => pasteDay(dk)} className="p-1 rounded hover:bg-green-50 transition-colors" title="Paste day" disabled={!copiedDay}><Clipboard size={13} className="text-gray-400" /></button>
@@ -5419,29 +5425,39 @@ Key things to verify after rebuild:
         <div ref={containerRef} className="flex-1 overflow-auto relative" style={{ userSelect: 'none' }}>
           <table className="border-collapse" style={{ minWidth: `${STAFF_COL_W + timeSlots.length * hColW}px` }}>
             <thead className="sticky top-0 z-30">
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="sticky left-0 z-40 bg-gray-50 border-r border-gray-200 text-left px-3 py-2"
-                  style={{ width: STAFF_COL_W, minWidth: STAFF_COL_W }}>
-                  <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Staff</span>
-                </th>
-                {timeSlots.map((slot) => {
+              {/* Row 1: Hour labels (colspan groups) */}
+              {(() => {
+                const hourGroups = [];
+                timeSlots.forEach(slot => {
+                  const [h, m] = slot.split(':').map(Number);
+                  if (m === 0 || hourGroups.length === 0) hourGroups.push({ h, slots: [slot] });
+                  else hourGroups[hourGroups.length - 1].slots.push(slot);
+                });
+                return (
+                  <tr className="bg-white border-b border-gray-200" style={{ height: 24 }}>
+                    <th className="sticky left-0 z-40 bg-white border-r border-gray-200"
+                      style={{ width: STAFF_COL_W, minWidth: STAFF_COL_W }} />
+                    {hourGroups.map(({ h, slots: grpSlots }) => (
+                      <th key={h} colSpan={grpSlots.length}
+                        style={{ borderLeft: '1px solid #D1D5DB', padding: '0 0 0 4px', textAlign: 'left' }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#374151' }}>{h}:00</span>
+                      </th>
+                    ))}
+                  </tr>
+                );
+              })()}
+              {/* Row 2: Sub-slot tick marks */}
+              <tr className="bg-gray-50 border-b border-gray-200" style={{ height: 10 }}>
+                <th className="sticky left-0 z-40 bg-gray-50 border-r border-gray-200"
+                  style={{ width: STAFF_COL_W, minWidth: STAFF_COL_W }} />
+                {timeSlots.map(slot => {
                   const isHour = slot.endsWith(':00');
                   const isHalf = slot.endsWith(':30');
-                  const [h] = slot.split(':').map(Number);
                   return (
-                    <th key={slot}
-                      style={{
-                        width: hColW, minWidth: hColW, padding: 0,
-                        verticalAlign: 'bottom',
-                        borderLeft: isHour ? '1px solid #D1D5DB' : undefined,
-                        borderRight: '1px solid #F3F4F6',
-                      }}>
-                      <div style={{ height: 28, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 3 }}>
-                        {isHour && <span style={{ fontSize: 10, fontWeight: 700, color: '#4B5563' }}>{h}</span>}
-                        {isHalf && <span style={{ fontSize: 9, color: '#9CA3AF' }}>:30</span>}
-                        {!isHour && !isHalf && <div style={{ width: 1, height: 5, backgroundColor: '#E5E7EB' }} />}
-                      </div>
-                    </th>
+                    <th key={slot} style={{
+                      width: hColW, minWidth: hColW, padding: 0,
+                      borderLeft: isHour ? '1px solid #D1D5DB' : isHalf ? '1px solid #E5E7EB' : '1px solid #F3F4F6',
+                    }} />
                   );
                 })}
               </tr>
@@ -5455,11 +5471,17 @@ Key things to verify after rebuild:
                   <tr key={s.id} className={`border-b border-gray-100 ${si % 2 === 1 ? 'bg-gray-50/40' : 'bg-white'}`} style={{ height: ROW_H }}>
                     <td className="sticky left-0 z-20 border-r border-gray-200 bg-white px-3"
                       style={{ width: STAFF_COL_W, minWidth: STAFF_COL_W, height: ROW_H }}>
-                      <div className="text-xs font-semibold text-gray-800 truncate">{s.name}</div>
-                      {staffStats.hours > 0
-                        ? <div className="text-[10px] text-gray-400 mt-0.5">{staffStats.hours.toFixed(1)}h · ${staffStats.cost.toFixed(0)}</div>
-                        : <div className="text-[10px] text-gray-300 mt-0.5">${rate}/hr</div>
-                      }
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#111827' }} className="truncate">{s.name}</div>
+                      {staffStats.hours > 0 ? (
+                        <div style={{ fontSize: 10, color: '#6B7280', marginTop: 1 }}>
+                          {staffStats.hours.toFixed(1)}h · <span style={{ color: '#374151' }}>${staffStats.baseCost.toFixed(0)}</span>
+                          {businessSettings.superannuationRate > 0 && (
+                            <span style={{ color: '#9CA3AF' }}> +${(staffStats.cost - staffStats.baseCost).toFixed(0)} super</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 1 }}>${rate}/hr</div>
+                      )}
                     </td>
                     {timeSlots.map((slot, ci) => {
                       const k = getScheduleKey(dk, s.id, slot);
@@ -5496,11 +5518,11 @@ Key things to verify after rebuild:
               })}
             </tbody>
             <tfoot className="sticky bottom-0 z-20">
-              <tr style={{ height: 36 }} className="bg-white border-t-2 border-gray-200">
+              <tr style={{ height: 32 }} className="bg-white border-t border-gray-200">
                 <td className="sticky left-0 z-30 bg-white border-r border-gray-200 px-3"
                   style={{ width: STAFF_COL_W, minWidth: STAFF_COL_W }}>
-                  <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Coverage</div>
-                  <div className="text-[9px] text-gray-400 mt-0.5">staff on shift</div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: '#6B7280' }}>Coverage</div>
+                  <div style={{ fontSize: 9, color: '#9CA3AF' }}>{orderedStaff.length} staff total</div>
                 </td>
                 {timeSlots.map((slot) => {
                   const count = orderedStaff.filter(s => !!schedule[getScheduleKey(dk, s.id, slot)]).length;
@@ -5508,26 +5530,26 @@ Key things to verify after rebuild:
                   const maxPossible = Math.max(orderedStaff.length, 1);
                   const barPct = Math.min((count / maxPossible) * 100, 100);
                   const underMin = count > 0 && count < minStaff;
-                  const barColor = count === 0 ? 'transparent' : underMin ? '#FCA5A5' : '#86EFAC';
+                  // Scheme-aligned: blue for adequate, orange (brand) for under-minimum
+                  const barColor = underMin ? 'rgba(232,80,24,0.35)' : 'rgba(59,91,219,0.25)';
                   const isHour = slot.endsWith(':00');
                   return (
                     <td key={slot}
                       style={{
                         width: hColW, minWidth: hColW, padding: 0, position: 'relative',
                         verticalAlign: 'bottom',
-                        borderLeft: isHour ? '1px solid #E5E7EB' : undefined,
-                        borderRight: '1px solid #F3F4F6',
+                        borderLeft: isHour ? '1px solid #E5E7EB' : '1px solid #F9FAFB',
                       }}>
                       {count > 0 && (
                         <div style={{
-                          position: 'absolute', bottom: 0, left: 0, right: 0,
-                          height: `${barPct}%`, minHeight: count > 0 ? 4 : 0,
+                          position: 'absolute', bottom: 0, left: 1, right: 1,
+                          height: `${Math.max(barPct, 20)}%`,
                           backgroundColor: barColor,
-                          transition: 'height 0.15s',
+                          borderRadius: '2px 2px 0 0',
                         }} />
                       )}
                       {count > 0 && (
-                        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', fontSize: 9, fontWeight: 700, paddingBottom: 2, color: underMin ? '#DC2626' : '#6B7280' }}>
+                        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', fontSize: 9, fontWeight: 700, lineHeight: '32px', color: underMin ? '#C2410C' : '#3B5BDB' }}>
                           {count}
                         </div>
                       )}
