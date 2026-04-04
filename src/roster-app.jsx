@@ -5255,7 +5255,12 @@ Key things to verify after rebuild:
         setSentId(staffMember.id);
         setTimeout(() => setSentId(null), 3000);
       } catch (err) {
-        setSendError(`Failed to send to ${staffMember.name}: ${err.message || 'Unknown error'}`);
+        // Try to read the actual HTTP error body for better diagnostics
+        let detail = err.message || 'Unknown error';
+        if (err.context && typeof err.context.json === 'function') {
+          try { const body = await err.context.json(); detail = body.message || body.error || JSON.stringify(body); } catch {}
+        }
+        setSendError(`Failed to send to ${staffMember.name}: ${detail}`);
       } finally {
         setSendingId(null);
       }
