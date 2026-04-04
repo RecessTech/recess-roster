@@ -5247,7 +5247,7 @@ Key things to verify after rebuild:
             shifts: buildShifts(sched),
             totalHours: `${sched.reduce((t,d)=>t+d.shifts.reduce((dt,s)=>dt+shiftHours(s),0),0).toFixed(1)}h`,
             businessName: businessSettings.businessName || 'Management',
-            fromAddress: `roster@${businessSettings.senderDomain || 'recesstech.com.au'}`,
+            fromAddress: businessSettings.senderDomain ? `roster@${businessSettings.senderDomain}` : null,
           },
         });
         if (error) throw error;
