@@ -5240,6 +5240,9 @@ Key things to verify after rebuild:
       setSendError(null);
       try {
         const { data, error } = await supabase.functions.invoke('send-schedule-email', {
+          headers: {
+            Authorization: `Bearer ${process.env.REACT_APP_SUPABASE_ANON_KEY}`,
+          },
           body: {
             to: staffMember.email,
             staffName: staffMember.name,
