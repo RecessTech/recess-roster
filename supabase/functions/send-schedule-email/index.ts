@@ -104,7 +104,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: payload.fromAddress || 'roster@recesstech.com.au',
+        from: payload.fromAddress || 'Recess Roster <onboarding@resend.dev>',
         to: [payload.to],
         subject: `Your roster – ${payload.weekRange}`,
         html,
