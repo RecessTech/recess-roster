@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight, LayoutList, LayoutGrid } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
-import { db } from './supabaseClient';
+import { db, supabase } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
 
 
@@ -5153,6 +5153,10 @@ Key things to verify after rebuild:
   const ExportModal = () => {
     const [selectedStaffId, setSelectedStaffId] = useState(staff[0]?.id);
     const [copiedStaffId, setCopiedStaffId] = useState(null);
+    const [sendingId, setSendingId] = useState(null);   // staffId currently being sent
+    const [sentId, setSentId] = useState(null);         // staffId just successfully sent
+    const [sendError, setSendError] = useState(null);
+    const [sendingAll, setSendingAll] = useState(false);
 
     const selectedStaff = staff.find(s => s.id === selectedStaffId);
     const scheduleByDay = selectedStaff ? generateStaffSchedule(selectedStaff) : [];
@@ -5220,16 +5224,54 @@ Key things to verify after rebuild:
       });
     };
 
-    const handleEmailStaff = () => {
-      const s = selectedStaff;
-      if (!s.email) return;
-      const lines = scheduleByDay.map(day => {
-        if (day.shifts.length === 0) return `  ${day.date.toLocaleDateString('en-AU',{weekday:'long'})}: Off`;
-        return day.shifts.map(sh => `  ${sh.date.toLocaleDateString('en-AU',{weekday:'long'})}: ${sh.startTime} – ${actualEnd(sh)} (${shiftHours(sh).toFixed(1)}h)`).join('\n');
-      }).join('\n');
-      const subject = encodeURIComponent(`Your roster – ${weekRange}`);
-      const body = encodeURIComponent(`Hi ${s.name},\n\nHere is your roster for ${weekRange}:\n\n${lines}\n\nTotal: ${totalHours.toFixed(1)} hours\n\nPlease confirm receipt.\n\n${businessSettings.businessName || 'Management'}`);
-      window.open(`mailto:${s.email}?subject=${subject}&body=${body}`);
+    const buildShifts = (sched) => sched.map(day => {
+      if (day.shifts.length === 0) return { date: day.date.toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'}), time: '', hours: '', isOff: true };
+      return day.shifts.map(sh => ({
+        date: sh.date.toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'}),
+        time: `${sh.startTime} – ${actualEnd(sh)}`,
+        hours: `${shiftHours(sh).toFixed(1)}h`,
+        isOff: false,
+      }));
+    }).flat();
+
+    const sendSchedule = async (staffMember, sched) => {
+      if (!staffMember?.email) return;
+      setSendingId(staffMember.id);
+      setSendError(null);
+      try {
+        const { error } = await supabase.functions.invoke('send-schedule-email', {
+          body: {
+            to: staffMember.email,
+            staffName: staffMember.name,
+            weekRange,
+            shifts: buildShifts(sched),
+            totalHours: `${sched.reduce((t,d)=>t+d.shifts.reduce((dt,s)=>dt+shiftHours(s),0),0).toFixed(1)}h`,
+            businessName: businessSettings.businessName || 'Management',
+            fromAddress: `roster@${businessSettings.senderDomain || 'recesstech.com.au'}`,
+          },
+        });
+        if (error) throw error;
+        setSentId(staffMember.id);
+        setTimeout(() => setSentId(null), 3000);
+      } catch (err) {
+        setSendError(`Failed to send to ${staffMember.name}: ${err.message || 'Unknown error'}`);
+      } finally {
+        setSendingId(null);
+      }
+    };
+
+    const handleEmailStaff = () => sendSchedule(selectedStaff, scheduleByDay);
+
+    const handleSendAll = async () => {
+      const staffWithEmail = activeStaff.filter(s => s.email);
+      if (!staffWithEmail.length) return;
+      setSendingAll(true);
+      setSendError(null);
+      for (const s of staffWithEmail) {
+        const sched = generateStaffSchedule(s);
+        await sendSchedule(s, sched);
+      }
+      setSendingAll(false);
     };
 
     return (
@@ -5273,10 +5315,14 @@ Key things to verify after rebuild:
                       <Clipboard size={13} />
                       {copiedStaffId === selectedStaffId ? 'Copied!' : 'Copy HTML'}
                     </button>
-                    <button onClick={handleEmailStaff} disabled={!selectedStaff.email}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${selectedStaff.email ? 'btn-primary' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
+                    <button onClick={handleEmailStaff}
+                      disabled={!selectedStaff.email || sendingId === selectedStaff.id}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                        sentId === selectedStaff.id ? 'bg-green-500 text-white' :
+                        selectedStaff.email ? 'btn-primary' : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      }`}>
                       <CalendarDays size={13} />
-                      Send Email
+                      {sendingId === selectedStaff.id ? 'Sending…' : sentId === selectedStaff.id ? 'Sent ✓' : 'Send Email'}
                     </button>
                   </div>
                 </div>
@@ -5327,8 +5373,21 @@ Key things to verify after rebuild:
                   </table>
                 </div>
 
+                {sendError && (
+                  <div className="mt-3 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">{sendError}</div>
+                )}
+
+                {/* Send All */}
+                {activeStaff.filter(s => s.email).length > 1 && (
+                  <button onClick={handleSendAll} disabled={sendingAll}
+                    className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50">
+                    <CalendarDays size={13} />
+                    {sendingAll ? 'Sending to all…' : `Send to all staff with email (${activeStaff.filter(s=>s.email).length})`}
+                  </button>
+                )}
+
                 <p className="text-[10px] text-gray-400 mt-3 text-center">
-                  "Copy HTML" pastes a formatted table into Gmail/Outlook · "Send Email" opens your mail client pre-filled
+                  Emails sent via Resend · "Copy HTML" pastes a formatted table into Gmail/Outlook
                 </p>
               </>
             )}
