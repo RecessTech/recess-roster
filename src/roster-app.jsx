@@ -5239,7 +5239,7 @@ Key things to verify after rebuild:
       setSendingId(staffMember.id);
       setSendError(null);
       try {
-        const { error } = await supabase.functions.invoke('send-schedule-email', {
+        const { data, error } = await supabase.functions.invoke('send-schedule-email', {
           body: {
             to: staffMember.email,
             staffName: staffMember.name,
@@ -5251,6 +5251,7 @@ Key things to verify after rebuild:
           },
         });
         if (error) throw error;
+        if (data?.error) throw new Error(data.error);
         setSentId(staffMember.id);
         setTimeout(() => setSentId(null), 3000);
       } catch (err) {

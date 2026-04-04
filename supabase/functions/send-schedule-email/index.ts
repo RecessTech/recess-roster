@@ -114,9 +114,10 @@ serve(async (req) => {
     const data = await res.json();
 
     if (!res.ok) {
-      console.error('Resend error:', data);
-      return new Response(JSON.stringify({ error: data.message || 'Send failed' }), {
-        status: res.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      console.error('Resend error:', JSON.stringify(data));
+      return new Response(JSON.stringify({ error: data.message || data.name || 'Resend rejected the request', detail: data }), {
+        status: 200, // return 200 so the client can read the body
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
@@ -126,8 +127,9 @@ serve(async (req) => {
 
   } catch (err) {
     console.error('Edge function error:', err);
-    return new Response(JSON.stringify({ error: 'Internal error' }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    return new Response(JSON.stringify({ error: String(err) }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
