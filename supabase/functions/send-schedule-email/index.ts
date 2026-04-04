@@ -26,56 +26,83 @@ interface Payload {
 }
 
 function buildHtml(p: Payload): string {
-  const rows = p.shifts.map(s => s.isOff
-    ? `<tr>
-        <td style="padding:10px 16px;border-bottom:1px solid #F1F5F9">
-          <span style="font-weight:600;color:#1E293B;font-size:13px">${s.date}</span>
-        </td>
-        <td style="padding:10px 16px;border-bottom:1px solid #F1F5F9;color:#94A3B8;font-style:italic;font-size:13px">Off</td>
-        <td style="padding:10px 16px;border-bottom:1px solid #F1F5F9;text-align:right;color:#94A3B8;font-size:13px">–</td>
-      </tr>`
-    : `<tr>
-        <td style="padding:10px 16px;border-bottom:1px solid #F1F5F9">
-          <span style="font-weight:600;color:#1E293B;font-size:13px">${s.date}</span>
-        </td>
-        <td style="padding:10px 16px;border-bottom:1px solid #F1F5F9;font-size:13px;color:#1E293B;font-family:monospace">${s.time}</td>
-        <td style="padding:10px 16px;border-bottom:1px solid #F1F5F9;text-align:right;font-weight:600;color:#1E293B;font-size:13px">${s.hours}</td>
-      </tr>`
-  ).join('');
+  const lastIdx = p.shifts.length - 1;
+  const rows = p.shifts.map((s, i) => {
+    const borderBottom = i < lastIdx ? 'border-bottom:1px solid #F1F5F9;' : '';
+    if (s.isOff) {
+      return `<tr style="background:#FAFAFA">
+        <td style="padding:11px 16px;${borderBottom}width:110px;font-size:13px;font-weight:600;color:#94A3B8">${s.date}</td>
+        <td style="padding:11px 16px;${borderBottom}font-size:13px;color:#94A3B8;font-style:italic">Off</td>
+        <td style="padding:11px 16px;${borderBottom}text-align:right;font-size:13px;color:#CBD5E1;width:60px">–</td>
+      </tr>`;
+    }
+    return `<tr>
+      <td style="padding:11px 16px;${borderBottom}width:110px;font-size:13px;font-weight:600;color:#1E293B">${s.date}</td>
+      <td style="padding:11px 16px;${borderBottom}font-size:13px;color:#334155;font-family:'Courier New',Courier,monospace;letter-spacing:0.01em">${s.time}</td>
+      <td style="padding:11px 16px;${borderBottom}text-align:right;font-size:13px;font-weight:700;color:#3B5BDB;width:60px">${s.hours}</td>
+    </tr>`;
+  }).join('');
 
   return `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:24px;background:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif">
-  <div style="max-width:520px;margin:0 auto">
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Your roster – ${p.weekRange}</title>
+</head>
+<body style="margin:0;padding:0;background:#F1F5F9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:32px 16px">
+    <tr><td align="center">
+      <table width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
 
-    <div style="background:#3B5BDB;padding:20px 24px;border-radius:10px 10px 0 0">
-      <div style="color:rgba(255,255,255,0.7);font-size:11px;text-transform:uppercase;letter-spacing:0.06em">Your roster</div>
-      <div style="color:white;font-size:22px;font-weight:700;margin-top:3px">${p.staffName}</div>
-      <div style="color:rgba(255,255,255,0.8);font-size:12px;margin-top:2px">${p.weekRange}</div>
-    </div>
+        <!-- Header -->
+        <tr>
+          <td style="background:#3B5BDB;padding:24px 28px;border-radius:10px 10px 0 0">
+            <div style="color:rgba(255,255,255,0.65);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">Your roster</div>
+            <div style="color:#ffffff;font-size:24px;font-weight:700;line-height:1.2;margin-bottom:4px">${p.staffName}</div>
+            <div style="color:rgba(255,255,255,0.75);font-size:13px">${p.weekRange}</div>
+          </td>
+        </tr>
 
-    <div style="background:white;border:1px solid #E2E8F0;border-top:none;border-radius:0 0 10px 10px;overflow:hidden">
-      <table style="width:100%;border-collapse:collapse">
-        <thead>
-          <tr style="background:#F8FAFC">
-            <th style="padding:8px 16px;text-align:left;font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #E2E8F0">Day</th>
-            <th style="padding:8px 16px;text-align:left;font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #E2E8F0">Time</th>
-            <th style="padding:8px 16px;text-align:right;font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #E2E8F0">Hours</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
+        <!-- Schedule table -->
+        <tr>
+          <td style="background:#ffffff;border-left:1px solid #E2E8F0;border-right:1px solid #E2E8F0;padding:0">
+            <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
+              <thead>
+                <tr style="background:#F8FAFC">
+                  <th style="padding:9px 16px;text-align:left;font-size:10px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:0.07em;border-bottom:1px solid #E2E8F0;width:110px">Day</th>
+                  <th style="padding:9px 16px;text-align:left;font-size:10px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:0.07em;border-bottom:1px solid #E2E8F0">Time</th>
+                  <th style="padding:9px 16px;text-align:right;font-size:10px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:0.07em;border-bottom:1px solid #E2E8F0;width:60px">Hrs</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Total footer -->
+        <tr>
+          <td style="background:#EEF2FF;border:1px solid #C7D2FE;border-top:none;border-radius:0 0 10px 10px;padding:0">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding:13px 16px;font-size:13px;font-weight:600;color:#3730A3">Total hours</td>
+                <td style="padding:13px 16px;text-align:right;font-size:20px;font-weight:700;color:#3B5BDB">${p.totalHours}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding:20px 0 8px;text-align:center;font-size:11px;color:#94A3B8">
+            Sent by ${p.businessName} via Recess Roster
+          </td>
+        </tr>
+
       </table>
-      <div style="padding:12px 16px;background:#EEF2FF;display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:13px;font-weight:600;color:#1E293B">Total hours</span>
-        <span style="font-size:18px;font-weight:700;color:#3B5BDB">${p.totalHours}</span>
-      </div>
-    </div>
-
-    <p style="text-align:center;color:#94A3B8;font-size:11px;margin-top:16px">
-      Sent by ${p.businessName} via Recess Roster
-    </p>
-  </div>
+    </td></tr>
+  </table>
 </body>
 </html>`;
 }
