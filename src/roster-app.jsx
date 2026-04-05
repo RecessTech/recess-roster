@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Link } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Link, Mail } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db, supabase } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
@@ -5341,7 +5341,7 @@ Key things to verify after rebuild:
 
     return (
       <div className="modal-overlay">
-        <div className="modal-container max-w-lg max-h-[90vh]">
+        <div className="modal-container max-w-md max-h-[90vh]">
           <div className="modal-header">
             <div>
               <h2 className="text-base font-semibold text-gray-900">Send Schedule</h2>
@@ -5352,55 +5352,44 @@ Key things to verify after rebuild:
 
           <div className="p-4 overflow-auto" style={{ maxHeight: 'calc(90vh - 100px)' }}>
             {/* Staff selector */}
-            <div className="flex gap-2 mb-4 flex-wrap">
+            <div className="flex gap-1.5 mb-4 flex-wrap">
               {activeStaff.map(s => (
                 <button key={s.id} onClick={() => setSelectedStaffId(s.id)}
                   className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${selectedStaffId === s.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
                   {s.name}
-                  {s.email && <span className="ml-1 opacity-60">✓</span>}
+                  {s.email && <span className="ml-1 text-[10px] opacity-50">✓</span>}
                 </button>
               ))}
             </div>
 
             {selectedStaff && (
               <>
-                {/* Summary + action bar */}
-                <div className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 mb-4 border border-gray-200">
-                  <div>
-                    <div className="text-sm font-semibold text-gray-900">{selectedStaff.name}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">{totalHours.toFixed(1)}h this week</div>
-                    {selectedStaff.email
-                      ? <div className="text-xs text-blue-600 mt-0.5">{selectedStaff.email}</div>
-                      : <button onClick={() => { setShowExportModal(false); setEditingStaff(selectedStaff); setShowStaffModal(true); }} className="text-xs text-orange-500 hover:text-orange-600 mt-0.5">+ Add email address</button>
-                    }
+                {/* Staff info + send */}
+                <div className="mb-4 border border-gray-200 rounded-xl overflow-hidden">
+                  <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">{selectedStaff.name}</div>
+                      {selectedStaff.email
+                        ? <div className="text-xs text-gray-400 mt-0.5">{selectedStaff.email}</div>
+                        : <button onClick={() => { setShowExportModal(false); setEditingStaff(selectedStaff); setShowStaffModal(true); }} className="text-xs text-orange-500 hover:text-orange-600 mt-0.5">+ Add email</button>
+                      }
+                    </div>
+                    <span className="text-lg font-bold text-blue-600">{totalHours.toFixed(1)}h</span>
                   </div>
-                  <div className="flex gap-2 flex-wrap">
-                    {selectedStaff.publicToken && (
-                      <button
-                        onClick={() => {
-                          const url = `${window.location.origin}/s/${selectedStaff.publicToken}`;
-                          navigator.clipboard.writeText(url);
-                          toast.success('Schedule link copied');
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all border bg-white text-gray-600 border-gray-200 hover:border-gray-300"
-                        title="Copy shareable schedule link for this staff member"
-                      >
-                        <Link size={13} /> Copy Link
-                      </button>
-                    )}
+                  <div className="px-4 py-3 flex items-center justify-between bg-white">
                     <button onClick={copyToClipboard}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all border ${copiedStaffId === selectedStaffId ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}>
-                      <Clipboard size={13} />
-                      {copiedStaffId === selectedStaffId ? 'Copied!' : 'Copy HTML'}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border ${copiedStaffId === selectedStaffId ? 'bg-green-50 text-green-600 border-green-200' : 'text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700'}`}>
+                      <Clipboard size={12} />
+                      {copiedStaffId === selectedStaffId ? 'Copied' : 'Copy HTML'}
                     </button>
                     <button onClick={handleEmailStaff}
                       disabled={!selectedStaff.email || sendingId === selectedStaff.id}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
                         sentId === selectedStaff.id ? 'bg-green-500 text-white' :
                         selectedStaff.email ? 'btn-primary' : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                       }`}>
-                      <CalendarDays size={13} />
-                      {sendingId === selectedStaff.id ? 'Sending…' : sentId === selectedStaff.id ? 'Sent ✓' : 'Send Email'}
+                      <Mail size={14} />
+                      {sendingId === selectedStaff.id ? 'Sending…' : sentId === selectedStaff.id ? 'Sent ✓' : 'Send'}
                     </button>
                   </div>
                 </div>
