@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db, supabase } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
@@ -54,7 +54,11 @@ const RosterApp = () => {
   const [quickFillData, setQuickFillData] = useState(null);
   const [copiedDay, setCopiedDay] = useState(null);
   const [publishedWeeks, setPublishedWeeks] = useState([]);
-  const [nowTime, setNowTime] = useState(new Date()); // ticks every minute for the "now" line
+  const [nowTime, setNowTime] = useState(new Date());
+  // swapRequests: Set of "${dateKey}|${staffId}" for open requests
+  const [swapRequests, setSwapRequests] = useState(new Set());
+  const [showSwapModal, setShowSwapModal] = useState(false);
+  const [swapTarget, setSwapTarget] = useState(null); // { dateKey, staffId }
   const [showExportModal, setShowExportModal] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearTarget, setClearTarget] = useState(null);
@@ -244,15 +248,17 @@ const RosterApp = () => {
       if (!user || !org) return;
 
       try {
-        const [staffData, scheduleData, orderData, settingsData, templatesData, publishedData] = await Promise.all([
+        const [staffData, scheduleData, orderData, settingsData, templatesData, publishedData, swapData] = await Promise.all([
           db.getStaff(org.id),
           db.getSchedules(org.id),
           db.getStaffOrder(org.id),
           db.getSettings(org.id),
           db.getTemplates ? db.getTemplates(org.id) : Promise.resolve([]),
-          db.getPublishedWeeks ? db.getPublishedWeeks(org.id).catch(() => []) : Promise.resolve([])
+          db.getPublishedWeeks ? db.getPublishedWeeks(org.id).catch(() => []) : Promise.resolve([]),
+          db.getSwapRequests ? db.getSwapRequests(org.id, formatLocalDate(startDate), formatLocalDate(endDate)).catch(() => []) : Promise.resolve([])
         ]);
         setPublishedWeeks(publishedData || []);
+        setSwapRequests(new Set((swapData || []).map(r => `${r.date_key}|${r.staff_id}`)));
         
         setStaff(staffData);
         
@@ -2104,6 +2110,47 @@ const RosterApp = () => {
     setShowClearModal(true);
   };
 
+  const flagForSwap = async (dateKey, staffId, timeSlot) => {
+    const key = `${dateKey}|${staffId}`;
+    if (swapRequests.has(key)) return;
+    try {
+      await db.createSwapRequest(org.id, dateKey, staffId, timeSlot);
+      setSwapRequests(prev => new Set([...prev, key]));
+      toast.success('Shift flagged for swap');
+    } catch (e) { toast.error('Failed to flag shift'); console.error(e); }
+  };
+
+  const unflagForSwap = async (dateKey, staffId) => {
+    const key = `${dateKey}|${staffId}`;
+    try {
+      await db.cancelSwapRequest(org.id, dateKey, staffId);
+      setSwapRequests(prev => { const s = new Set(prev); s.delete(key); return s; });
+      toast('Swap flag removed');
+    } catch (e) { toast.error('Failed to remove flag'); console.error(e); }
+  };
+
+  const reassignSwap = async (dateKey, fromStaffId, toStaffId) => {
+    // Copy all shifts from fromStaff to toStaff for this day, clear fromStaff
+    const newSchedule = { ...schedule };
+    Object.keys(newSchedule).forEach(k => {
+      const [dk, sid] = k.split('|');
+      if (dk === dateKey && sid === fromStaffId) {
+        const slot = k.split('|')[2];
+        newSchedule[`${dk}|${toStaffId}|${slot}`] = { ...newSchedule[k] };
+        delete newSchedule[k];
+      }
+    });
+    saveToHistory(schedule);
+    setSchedule(newSchedule);
+    try {
+      await db.resolveSwapRequest(org.id, dateKey, fromStaffId);
+      setSwapRequests(prev => { const s = new Set(prev); s.delete(`${dateKey}|${fromStaffId}`); return s; });
+      toast.success(`Shift reassigned to ${staff.find(s => s.id === toStaffId)?.name}`);
+    } catch (e) { console.error(e); }
+    setShowSwapModal(false);
+    setSwapTarget(null);
+  };
+
   const clearWeek = () => {
     setClearTarget({ type: 'week' });
     setShowClearModal(true);
@@ -2377,6 +2424,69 @@ const RosterApp = () => {
     );
   };
 
+  const SwapModal = () => {
+    if (!showSwapModal || !swapTarget) return null;
+    const { dateKey, staffId } = swapTarget;
+    const fromStaff = staff.find(s => s.id === staffId);
+    // Build list of shifts for this person on this day
+    const daySlots = Object.entries(schedule)
+      .filter(([k]) => { const [dk, sid] = k.split('|'); return dk === dateKey && sid === staffId; })
+      .map(([, v]) => v.roleCode)
+      .filter(Boolean);
+    const uniqueRoles = [...new Set(daySlots)];
+    // Eligible staff: active, not the flagged person, not already working that day
+    const eligible = activeStaff.filter(s => {
+      if (s.id === staffId) return false;
+      const worksDay = Object.keys(schedule).some(k => { const [dk, sid] = k.split('|'); return dk === dateKey && sid === s.id; });
+      return !worksDay;
+    });
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowSwapModal(false); setSwapTarget(null); }}>
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="bg-amber-50 border-b border-amber-100 px-5 py-4 flex items-center gap-3">
+            <ArrowLeftRight size={18} className="text-amber-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-gray-800">Reassign Shift</div>
+              <div className="text-xs text-gray-500 truncate">{fromStaff?.name} · {dateKey} {uniqueRoles.length > 0 && `· ${uniqueRoles.join(', ')}`}</div>
+            </div>
+            <button onClick={() => { setShowSwapModal(false); setSwapTarget(null); }} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+          </div>
+          <div className="px-5 py-4">
+            {eligible.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">No available staff to reassign to.</p>
+            ) : (
+              <>
+                <p className="text-xs text-gray-500 mb-3">Select a staff member to take this shift:</p>
+                <div className="space-y-1 max-h-64 overflow-y-auto">
+                  {eligible.map(s => {
+                    const avail = availability[`${s.id}|${dateKey}`];
+                    const isUnavailable = avail?.status === 'unavailable';
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => reassignSwap(dateKey, staffId, s.id)}
+                        disabled={isUnavailable}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-colors ${isUnavailable ? 'opacity-40 cursor-not-allowed bg-gray-50' : 'hover:bg-blue-50 cursor-pointer'}`}
+                      >
+                        <div>
+                          <div className="text-sm font-medium text-gray-800">{s.name}</div>
+                          {s.role && <div className="text-xs text-gray-400">{s.role}</div>}
+                        </div>
+                        {avail?.status === 'preferred' && <span className="text-xs text-green-600 font-medium">Preferred</span>}
+                        {isUnavailable && <span className="text-xs text-red-400">Unavailable</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const ContextMenu = () => {
     if (!contextMenu) return null;
     
@@ -2477,10 +2587,10 @@ const RosterApp = () => {
         {selectedRole && selectedRole.id !== 'eraser' && (
           <button
             onClick={() => {
-              setQuickFillData({ 
-                dateKey: contextMenu.dateKey, 
-                staffId: contextMenu.staffId, 
-                startTime: contextMenu.timeSlot 
+              setQuickFillData({
+                dateKey: contextMenu.dateKey,
+                staffId: contextMenu.staffId,
+                startTime: contextMenu.timeSlot
               });
               setShowQuickFillModal(true);
               setContextMenu(null);
@@ -2491,6 +2601,41 @@ const RosterApp = () => {
             Quick Fill Shift
           </button>
         )}
+
+        {contextMenu.hasShift && (() => {
+          const swapKey = `${contextMenu.dateKey}|${contextMenu.staffId}`;
+          const isFlagged = swapRequests.has(swapKey);
+          return isFlagged ? (
+            <>
+              <div className="border-t border-gray-100 my-1" />
+              <button
+                onClick={() => { unflagForSwap(contextMenu.dateKey, contextMenu.staffId); setContextMenu(null); }}
+                className="w-full px-4 py-2 text-left hover:bg-amber-50 flex items-center gap-2 text-amber-600 font-medium"
+              >
+                <span style={{ fontSize: 14 }}>↔</span>
+                Remove Swap Flag
+              </button>
+              <button
+                onClick={() => { setSwapTarget({ dateKey: contextMenu.dateKey, staffId: contextMenu.staffId }); setShowSwapModal(true); setContextMenu(null); }}
+                className="w-full px-4 py-2 text-left hover:bg-green-50 flex items-center gap-2 text-green-600 font-medium"
+              >
+                <ArrowLeftRight size={16} />
+                Reassign Shift
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="border-t border-gray-100 my-1" />
+              <button
+                onClick={() => { flagForSwap(contextMenu.dateKey, contextMenu.staffId, contextMenu.timeSlot); setContextMenu(null); }}
+                className="w-full px-4 py-2 text-left hover:bg-amber-50 flex items-center gap-2 text-amber-600 font-medium"
+              >
+                <span style={{ fontSize: 14 }}>↔</span>
+                Flag for Swap
+              </button>
+            </>
+          );
+        })()}
       </div>
     );
   };
@@ -5775,6 +5920,9 @@ Key things to verify after rebuild:
                           {availability[`${s.id}|${dk}`]?.status === 'unavailable' && isShiftStart && (
                             <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-orange-400 pointer-events-none z-20" title="Staff unavailable this day" />
                           )}
+                          {swapRequests.has(`${dk}|${s.id}`) && isShiftStart && (
+                            <div className="absolute bottom-1 right-1 pointer-events-none z-20 text-white font-bold leading-none" style={{ fontSize: 9 }} title="Flagged for swap">↔</div>
+                          )}
                         </td>
                       );
                     })}
@@ -6161,6 +6309,9 @@ Key things to verify after rebuild:
                                 {availability[`${s.id}|${dk}`]?.status === 'unavailable' && (
                                   <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-orange-400 pointer-events-none z-10" title="Staff unavailable this day" />
                                 )}
+                                {swapRequests.has(`${dk}|${s.id}`) && (
+                                  <div className="absolute bottom-0.5 right-0.5 pointer-events-none z-10 text-white font-bold leading-none" style={{ fontSize: 8 }} title="Flagged for swap">↔</div>
+                                )}
                               </td>
                             );
                           })}
@@ -6212,6 +6363,7 @@ Key things to verify after rebuild:
 
       </div>
 
+      {showSwapModal && <SwapModal />}
       {showStaffModal && <StaffModal key={editingStaff ? editingStaff.id : 'new'} />}
       {showTimeSettings && <TimeSettingsModal />}
       {showSettingsModal && <BusinessSettingsModal />}
