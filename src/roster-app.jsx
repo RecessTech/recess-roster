@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight, LayoutList, LayoutGrid } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Link } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db, supabase } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
@@ -53,6 +53,7 @@ const RosterApp = () => {
   const [showQuickFillModal, setShowQuickFillModal] = useState(false);
   const [quickFillData, setQuickFillData] = useState(null);
   const [copiedDay, setCopiedDay] = useState(null);
+  const [publishedWeeks, setPublishedWeeks] = useState([]); // array of 'YYYY-MM-DD' week_start strings
   const [showExportModal, setShowExportModal] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearTarget, setClearTarget] = useState(null);
@@ -237,13 +238,15 @@ const RosterApp = () => {
       if (!user || !org) return;
 
       try {
-        const [staffData, scheduleData, orderData, settingsData, templatesData] = await Promise.all([
+        const [staffData, scheduleData, orderData, settingsData, templatesData, publishedData] = await Promise.all([
           db.getStaff(org.id),
           db.getSchedules(org.id),
           db.getStaffOrder(org.id),
           db.getSettings(org.id),
-          db.getTemplates ? db.getTemplates(org.id) : Promise.resolve([])
+          db.getTemplates ? db.getTemplates(org.id) : Promise.resolve([]),
+          db.getPublishedWeeks ? db.getPublishedWeeks(org.id).catch(() => []) : Promise.resolve([])
         ]);
+        setPublishedWeeks(publishedData || []);
         
         setStaff(staffData);
         
@@ -1997,6 +2000,59 @@ const RosterApp = () => {
   const clearWeek = () => {
     setClearTarget({ type: 'week' });
     setShowClearModal(true);
+  };
+
+  const copyPreviousWeek = () => {
+    const currentDateKeys = new Set(dates.map(d => formatDateKey(d)));
+    const prevDateKeys = dates.map(d => {
+      const prev = new Date(d);
+      prev.setDate(prev.getDate() - 7);
+      return formatDateKey(prev);
+    });
+
+    const hasCurrentShifts = Object.keys(schedule).some(k => currentDateKeys.has(k.split('|')[0]));
+    if (hasCurrentShifts && !window.confirm('This will replace the current week\'s roster with last week\'s. Continue?')) return;
+
+    saveToHistory(schedule);
+    const newSchedule = { ...schedule };
+
+    // Clear current week
+    Object.keys(newSchedule).forEach(k => {
+      if (currentDateKeys.has(k.split('|')[0])) delete newSchedule[k];
+    });
+
+    // Copy prev week slots to current week
+    Object.entries(schedule).forEach(([key, value]) => {
+      const [dk, staffId, timeSlot] = key.split('|');
+      const prevIdx = prevDateKeys.indexOf(dk);
+      if (prevIdx === -1) return;
+      const newDk = formatDateKey(dates[prevIdx]);
+      newSchedule[`${newDk}|${staffId}|${timeSlot}`] = { ...value };
+    });
+
+    setSchedule(newSchedule);
+    toast.success('Copied last week\'s roster');
+  };
+
+  const currentWeekStart = dates[0] ? formatDateKey(dates[0]) : null;
+  const isCurrentWeekPublished = currentWeekStart ? publishedWeeks.includes(currentWeekStart) : false;
+
+  const togglePublishWeek = async () => {
+    if (!org || !currentWeekStart) return;
+    try {
+      if (isCurrentWeekPublished) {
+        await db.unpublishWeek(org.id, currentWeekStart);
+        setPublishedWeeks(pw => pw.filter(w => w !== currentWeekStart));
+        toast.success('Roster unpublished');
+      } else {
+        await db.publishWeek(org.id, user.id, currentWeekStart);
+        setPublishedWeeks(pw => [...pw, currentWeekStart]);
+        toast.success('Roster published');
+      }
+    } catch (err) {
+      toast.error('Failed to update publish status');
+      console.error(err);
+    }
   };
 
   const confirmClear = () => {
@@ -5318,7 +5374,20 @@ Key things to verify after rebuild:
                       : <button onClick={() => { setShowExportModal(false); setEditingStaff(selectedStaff); setShowStaffModal(true); }} className="text-xs text-orange-500 hover:text-orange-600 mt-0.5">+ Add email address</button>
                     }
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
+                    {selectedStaff.publicToken && (
+                      <button
+                        onClick={() => {
+                          const url = `${window.location.origin}/s/${selectedStaff.publicToken}`;
+                          navigator.clipboard.writeText(url);
+                          toast.success('Schedule link copied');
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all border bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                        title="Copy shareable schedule link for this staff member"
+                      >
+                        <Link size={13} /> Copy Link
+                      </button>
+                    )}
                     <button onClick={copyToClipboard}
                       className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all border ${copiedStaffId === selectedStaffId ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}>
                       <Clipboard size={13} />
@@ -5805,6 +5874,16 @@ Key things to verify after rebuild:
               <span className="text-xs px-2.5 py-1.5 bg-gray-100 rounded-lg text-gray-600 font-medium">{dates[0]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })} – {dates[dates.length - 1]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</span>
               <button onClick={() => setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() + 7)))} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors text-xs">→</button>
               <button onClick={() => setCurrentDate(new Date())} className="btn-primary text-xs py-1.5 px-2.5">Today</button>
+              <button onClick={copyPreviousWeek} className="text-xs py-1.5 px-2.5 rounded-lg text-gray-600 hover:bg-gray-100 font-medium transition-colors flex items-center gap-1" title="Copy last week's roster to this week">
+                <Copy size={12} /> Last week
+              </button>
+              <button
+                onClick={togglePublishWeek}
+                title={isCurrentWeekPublished ? 'Unpublish this week' : 'Publish this week'}
+                className={`text-xs py-1.5 px-2.5 rounded-lg font-medium transition-colors flex items-center gap-1 ${isCurrentWeekPublished ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'text-gray-600 hover:bg-gray-100'}`}
+              >
+                {isCurrentWeekPublished ? <><Lock size={12} /> Published</> : <><Unlock size={12} /> Publish</>}
+              </button>
               <button onClick={clearWeek} className="text-xs py-1.5 px-2.5 rounded-lg text-red-600 hover:bg-red-50 font-medium transition-colors">Clear Week</button>
             </div>
           </div>}

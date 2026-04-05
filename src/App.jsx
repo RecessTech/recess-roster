@@ -1,6 +1,11 @@
 import React from 'react';
 import { useAuth, Auth } from './Auth';
 import RosterApp from './roster-app';
+import PublicScheduleView from './PublicScheduleView';
+
+// Resolve public schedule route before auth: /s/<token>
+const publicMatch = window.location.pathname.match(/^\/s\/([^/]+)/);
+const PUBLIC_TOKEN = publicMatch ? publicMatch[1] : null;
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -29,7 +34,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-function App() {
+function AuthenticatedApp() {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -56,6 +61,13 @@ function App() {
       <RosterApp />
     </ErrorBoundary>
   );
+}
+
+function App() {
+  if (PUBLIC_TOKEN) {
+    return <PublicScheduleView token={PUBLIC_TOKEN} />;
+  }
+  return <AuthenticatedApp />;
 }
 
 export default App;

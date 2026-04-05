@@ -57,6 +57,7 @@ export const db = {
       id: staff.id,
       name: staff.name,
       email: staff.email || '',
+      publicToken: staff.public_token || null,
       hourlyRate: staff.hourly_rate,
       weekendRate: staff.weekend_rate,
       employmentType: staff.employment_type,
@@ -664,6 +665,33 @@ export const db = {
       .from('packaging_inventory')
       .delete()
       .eq('id', eventId);
+    if (error) throw error;
+  },
+
+  // ── Published weeks ───────────────────────────────────────────────────────────
+
+  async getPublishedWeeks(orgId) {
+    const { data, error } = await supabase
+      .from('published_weeks')
+      .select('week_start')
+      .eq('org_id', orgId);
+    if (error) throw error;
+    return (data || []).map(r => r.week_start); // array of 'YYYY-MM-DD' strings
+  },
+
+  async publishWeek(orgId, userId, weekStart) {
+    const { error } = await supabase
+      .from('published_weeks')
+      .upsert({ org_id: orgId, week_start: weekStart, published_by: userId, published_at: new Date().toISOString() }, { onConflict: 'org_id,week_start' });
+    if (error) throw error;
+  },
+
+  async unpublishWeek(orgId, weekStart) {
+    const { error } = await supabase
+      .from('published_weeks')
+      .delete()
+      .eq('org_id', orgId)
+      .eq('week_start', weekStart);
     if (error) throw error;
   },
 
