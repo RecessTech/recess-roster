@@ -248,6 +248,19 @@ const RosterApp = () => {
       if (!user || !org) return;
 
       try {
+        // Date range helpers — defined early so they can be used in Promise.all
+        const startDate = new Date(currentDate);
+        startDate.setDate(startDate.getDate() - 30); // Load 30 days back
+        const endDate = new Date(currentDate);
+        endDate.setDate(endDate.getDate() + 30); // Load 30 days forward
+
+        const formatLocalDate = (date) => {
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        };
+
         const [staffData, scheduleData, orderData, settingsData, templatesData, publishedData, swapData] = await Promise.all([
           db.getStaff(org.id),
           db.getSchedules(org.id),
@@ -259,22 +272,8 @@ const RosterApp = () => {
         ]);
         setPublishedWeeks(publishedData || []);
         setSwapRequests(new Set((swapData || []).map(r => `${r.date_key}|${r.staff_id}`)));
-        
+
         setStaff(staffData);
-        
-        // Load revenue data for current date range
-        const startDate = new Date(currentDate);
-        startDate.setDate(startDate.getDate() - 30); // Load 30 days back
-        const endDate = new Date(currentDate);
-        endDate.setDate(endDate.getDate() + 30); // Load 30 days forward
-        
-        // Format dates as local YYYY-MM-DD strings
-        const formatLocalDate = (date) => {
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const day = String(date.getDate()).padStart(2, '0');
-          return `${year}-${month}-${day}`;
-        };
         
         const revenueData = await db.getRevenue(
           org.id,
@@ -370,6 +369,7 @@ const RosterApp = () => {
   }, [user, org]);
 
   // Load availability for all active staff whenever the visible week changes
+  // eslint-disable-next-line no-use-before-define
   useEffect(() => {
     if (!org || !dates.length || !activeStaff.length) return;
     const startDate = formatDateKey(dates[0]);
@@ -384,7 +384,7 @@ const RosterApp = () => {
       })
       .catch(err => console.error('Error loading availability:', err));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [org, dates[0]?.toISOString()]);
+  }, [org, dates[0]?.toISOString()]); // eslint-disable-line no-use-before-define
 
   const activeStaff = useMemo(() => staff.filter(s => s.active !== false), [staff]);
   // eslint-disable-next-line no-unused-vars
