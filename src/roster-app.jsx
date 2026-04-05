@@ -2351,18 +2351,64 @@ const RosterApp = () => {
   // ── Availability View ────────────────────────────────────────────────────────
   const AvailabilityView = () => {
     const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
     const OPTIONS = [
       { value: 'available',   icon: '✓', activeStyle: { background: '#f0fdf4', border: '1.5px solid #86efac', color: '#16a34a' } },
       { value: 'preferred',   icon: '★', activeStyle: { background: '#eff6ff', border: '1.5px solid #93c5fd', color: '#2563eb' } },
       { value: 'unavailable', icon: '✕', activeStyle: { background: '#fef2f2', border: '1.5px solid #fca5a5', color: '#dc2626' } },
     ];
 
+    // Local week state — independent from the roster's currentDate
+    const [avWeekStart, setAvWeekStart] = useState(() => {
+      const d = new Date();
+      const day = d.getDay();
+      d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+      d.setHours(0, 0, 0, 0);
+      return d;
+    });
+    const [loadingWeek, setLoadingWeek] = useState(false);
+
+    const avDates = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(avWeekStart);
+      d.setDate(d.getDate() + i);
+      return d;
+    });
+
+    // Fetch availability for this view-week whenever it changes
+    useEffect(() => {
+      if (!org || !activeStaff.length) return;
+      const startDk = formatDateKey(avDates[0]);
+      const endDk = formatDateKey(avDates[6]);
+      setLoadingWeek(true);
+      Promise.all(activeStaff.map(s => db.getAvailability(s.id, startDk, endDk)))
+        .then(results => {
+          setAvailability(prev => {
+            const updated = { ...prev };
+            results.forEach((rows, i) => {
+              rows.forEach(r => {
+                updated[`${activeStaff[i].id}|${r.date}`] = { status: r.status, startTime: r.start_time, endTime: r.end_time };
+              });
+            });
+            return updated;
+          });
+        })
+        .catch(err => console.error('Availability load error:', err))
+        .finally(() => setLoadingWeek(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [org, avWeekStart.toISOString()]);
+
+    const shiftWeek = (delta) => {
+      setAvWeekStart(prev => {
+        const d = new Date(prev);
+        d.setDate(d.getDate() + delta * 7);
+        return d;
+      });
+    };
+
     const handleSet = async (staffId, dowIdx, value) => {
-      const dk = formatDateKey(dates[dowIdx]);
+      const dk = formatDateKey(avDates[dowIdx]);
       const key = `${staffId}|${dk}`;
       const current = availability[key]?.status || null;
-      const next = current === value ? null : value; // clicking active status clears it
+      const next = current === value ? null : value;
       setAvailability(prev => {
         const updated = { ...prev };
         if (next === null) { delete updated[key]; }
@@ -2378,15 +2424,80 @@ const RosterApp = () => {
       }
     };
 
+    const handleSetAllAvailable = async (staffId) => {
+      const updates = avDates.map((d) => {
+        const dk = formatDateKey(d);
+        return { key: `${staffId}|${dk}`, dk };
+      });
+      setAvailability(prev => {
+        const updated = { ...prev };
+        updates.forEach(({ key }) => { updated[key] = { status: 'available', startTime: null, endTime: null }; });
+        return updated;
+      });
+      try {
+        await Promise.all(updates.map(({ dk }) => db.setAvailability(org.id, staffId, dk, 'available', null, null)));
+      } catch (e) {
+        toast.error('Failed to save');
+        console.error(e);
+      }
+    };
+
+    const handleCopyFromLastWeek = async () => {
+      // Build prev-week date keys mapped to this-week date keys
+      const pairs = avDates.map((d, i) => {
+        const prev = new Date(d);
+        prev.setDate(prev.getDate() - 7);
+        return { prevDk: formatDateKey(prev), thisDk: formatDateKey(d) };
+      });
+
+      // Collect existing prev-week entries from availability state
+      const writes = [];
+      const optimistic = {};
+      activeStaff.forEach(s => {
+        pairs.forEach(({ prevDk, thisDk }) => {
+          const src = availability[`${s.id}|${prevDk}`];
+          if (src?.status) {
+            const entry = { status: src.status, startTime: src.startTime || null, endTime: src.endTime || null };
+            optimistic[`${s.id}|${thisDk}`] = entry;
+            writes.push(db.setAvailability(org.id, s.id, thisDk, entry.status, entry.startTime, entry.endTime));
+          }
+        });
+      });
+
+      if (writes.length === 0) { toast('No availability set for last week'); return; }
+      setAvailability(prev => ({ ...prev, ...optimistic }));
+      try {
+        await Promise.all(writes);
+        toast.success(`Copied ${writes.length} entr${writes.length === 1 ? 'y' : 'ies'} from last week`);
+      } catch (e) {
+        toast.error('Copy failed'); console.error(e);
+      }
+    };
+
+    const weekLabel = () => {
+      const end = new Date(avWeekStart);
+      end.setDate(end.getDate() + 6);
+      return `${avWeekStart.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} – ${end.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+    };
+
     return (
       <div className="h-full flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
-          <div>
-            <h2 className="text-base font-semibold text-gray-900">Staff Availability</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Week of {dates[0]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-4 shrink-0 flex-wrap">
+          <div className="flex items-center gap-2 mr-2">
+            <button onClick={() => shiftWeek(-1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">←</button>
+            <span className="text-sm font-semibold text-gray-800 whitespace-nowrap">{weekLabel()}</span>
+            <button onClick={() => shiftWeek(1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">→</button>
+            {loadingWeek && <span className="text-xs text-gray-400 ml-1">Loading…</span>}
           </div>
-          <div className="flex items-center gap-4 text-xs text-gray-500">
+          <button
+            onClick={handleCopyFromLastWeek}
+            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 font-medium transition-colors"
+          >
+            Copy from last week
+          </button>
+          <div className="flex-1" />
+          <div className="flex items-center gap-3 text-xs text-gray-500">
             <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded flex items-center justify-center text-green-700 font-bold" style={{ background: '#f0fdf4', border: '1.5px solid #86efac' }}>✓</span>Available</span>
             <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded flex items-center justify-center text-blue-700 font-bold" style={{ background: '#eff6ff', border: '1.5px solid #93c5fd' }}>★</span>Preferred</span>
             <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded flex items-center justify-center text-red-600 font-bold" style={{ background: '#fef2f2', border: '1.5px solid #fca5a5' }}>✕</span>Unavailable</span>
@@ -2398,8 +2509,9 @@ const RosterApp = () => {
           <table className="border-collapse" style={{ width: '100%' }}>
             <thead>
               <tr>
-                <th className="text-left pb-3 pr-6 text-xs font-semibold text-gray-500 sticky left-0 bg-white z-10" style={{ minWidth: 140 }}>Staff</th>
-                {dates.map((d, i) => (
+                <th className="text-left pb-3 pr-3 text-xs font-semibold text-gray-500 sticky left-0 bg-white z-10" style={{ minWidth: 140 }}>Staff</th>
+                <th className="pb-3 text-xs font-semibold text-gray-400 whitespace-nowrap" style={{ minWidth: 70 }}></th>
+                {avDates.map((d, i) => (
                   <th key={i} className={`pb-3 text-center text-xs font-semibold ${i >= 5 ? 'text-blue-500' : 'text-gray-500'}`} style={{ minWidth: 110 }}>
                     <div>{DAYS[i]}</div>
                     <div className="font-normal text-gray-400">{d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
@@ -2410,11 +2522,20 @@ const RosterApp = () => {
             <tbody>
               {activeStaff.map((s, si) => (
                 <tr key={s.id} className={si % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}>
-                  <td className="py-2 pr-6 sticky left-0 z-10" style={{ background: 'inherit' }}>
+                  <td className="py-2 pr-3 sticky left-0 z-10" style={{ background: 'inherit' }}>
                     <div className="text-sm font-medium text-gray-800">{s.name}</div>
                     {s.role && <div className="text-xs text-gray-400">{s.role}</div>}
                   </td>
-                  {dates.map((d, dowIdx) => {
+                  <td className="py-2 pr-2">
+                    <button
+                      onClick={() => handleSetAllAvailable(s.id)}
+                      title="Set all days available"
+                      className="text-xs px-2 py-1 rounded-md border border-green-200 text-green-700 hover:bg-green-50 font-medium whitespace-nowrap transition-colors"
+                    >
+                      All ✓
+                    </button>
+                  </td>
+                  {avDates.map((d, dowIdx) => {
                     const dk = formatDateKey(d);
                     const status = availability[`${s.id}|${dk}`]?.status || null;
                     return (
@@ -2431,10 +2552,7 @@ const RosterApp = () => {
                                   width: 28, height: 28, borderRadius: 6,
                                   fontSize: 13, fontWeight: 700, cursor: 'pointer',
                                   transition: 'all 0.1s',
-                                  ...(isActive
-                                    ? opt.activeStyle
-                                    : { background: 'transparent', border: '1px solid #e5e7eb', color: '#d1d5db' }
-                                  ),
+                                  ...(isActive ? opt.activeStyle : { background: 'transparent', border: '1px solid #e5e7eb', color: '#d1d5db' }),
                                 }}
                               >
                                 {opt.icon}
