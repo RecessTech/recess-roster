@@ -557,6 +557,16 @@ export const db = {
   },
 
   async setAvailability(orgId, staffId, date, status, startTime = null, endTime = null, notes = null) {
+    if (!status) {
+      // Clear: delete the row rather than upserting null (status is NOT NULL in DB)
+      const { error } = await supabase
+        .from('staff_availability')
+        .delete()
+        .eq('staff_id', staffId)
+        .eq('date', date);
+      if (error) throw error;
+      return;
+    }
     const { error } = await supabase
       .from('staff_availability')
       .upsert({
@@ -570,7 +580,6 @@ export const db = {
       }, {
         onConflict: 'staff_id,date'
       });
-
     if (error) throw error;
   },
 

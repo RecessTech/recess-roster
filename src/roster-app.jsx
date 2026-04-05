@@ -2417,15 +2417,15 @@ const RosterApp = () => {
     }
   };
 
-  const avHandleSetAllAvailable = async (staffId) => {
+  const avHandleSetAll = async (staffId, status) => {
     const updates = avDates.map(d => ({ key: `${staffId}|${formatDateKey(d)}`, dk: formatDateKey(d) }));
     setAvailability(prev => {
       const updated = { ...prev };
-      updates.forEach(({ key }) => { updated[key] = { status: 'available', startTime: null, endTime: null }; });
+      updates.forEach(({ key }) => { updated[key] = { status, startTime: null, endTime: null }; });
       return updated;
     });
     try {
-      await Promise.all(updates.map(({ dk }) => db.setAvailability(org.id, staffId, dk, 'available', null, null)));
+      await Promise.all(updates.map(({ dk }) => db.setAvailability(org.id, staffId, dk, status, null, null)));
     } catch (e) {
       toast.error('Failed to save'); console.error(e);
     }
@@ -2511,10 +2511,16 @@ const RosterApp = () => {
                     {s.role && <div className="text-xs text-gray-400">{s.role}</div>}
                   </td>
                   <td className="py-2 pr-2">
-                    <button onClick={() => avHandleSetAllAvailable(s.id)} title="Set all days available"
-                      className="text-xs px-2 py-1 rounded-md border border-green-200 text-green-700 hover:bg-green-50 font-medium whitespace-nowrap transition-colors">
-                      All ✓
-                    </button>
+                    <div className="flex gap-1">
+                      <button onClick={() => avHandleSetAll(s.id, 'available')} title="Set all days available"
+                        className="text-xs px-2 py-1 rounded-md border border-green-200 text-green-700 hover:bg-green-50 font-medium whitespace-nowrap transition-colors">
+                        All ✓
+                      </button>
+                      <button onClick={() => avHandleSetAll(s.id, 'unavailable')} title="Set all days unavailable"
+                        className="text-xs px-2 py-1 rounded-md border border-red-200 text-red-600 hover:bg-red-50 font-medium whitespace-nowrap transition-colors">
+                        All ✕
+                      </button>
+                    </div>
                   </td>
                   {avDates.map((d, dowIdx) => {
                     const dk = formatDateKey(d);
