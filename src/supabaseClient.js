@@ -108,8 +108,8 @@ export const db = {
 
   // ── Schedules ────────────────────────────────────────────────────────────────
 
-  async getSchedules(orgId) {
-    console.log('📥 Loading schedules...');
+  async getSchedules(orgId, startDate, endDate) {
+    console.log(`📥 Loading schedules ${startDate} → ${endDate}...`);
 
     let allData = [];
     let page = 0;
@@ -117,7 +117,7 @@ export const db = {
     let hasMore = true;
 
     while (hasMore) {
-      const { data, error } = await supabase
+      let query = supabase
         .from('schedules')
         .select('*')
         .eq('org_id', orgId)
@@ -126,11 +126,15 @@ export const db = {
         .order('time_slot', { ascending: true })
         .range(page * pageSize, (page + 1) * pageSize - 1);
 
+      if (startDate) query = query.gte('date_key', startDate);
+      if (endDate)   query = query.lte('date_key', endDate);
+
+      const { data, error } = await query;
+
       if (error) throw error;
 
       if (data && data.length > 0) {
         allData = allData.concat(data);
-        console.log(`📥 Loaded page ${page + 1}: ${data.length} slots (total: ${allData.length})`);
         hasMore = data.length === pageSize;
         page++;
       } else {
@@ -138,7 +142,7 @@ export const db = {
       }
     }
 
-    console.log(`✅ Loaded all ${allData.length} schedule slots`);
+    console.log(`✅ Loaded ${allData.length} schedule slots`);
 
     const scheduleObj = {};
     allData.forEach(item => {
@@ -173,7 +177,12 @@ export const db = {
       return;
     }
 
-    console.log(`💾 Saving ${scheduleArray.length} schedule slots...`);
+    // Derive date window from the keys being saved (avoid reading entire table)
+    const dateKeys = [...new Set(scheduleArray.map(s => s.date_key))].sort();
+    const windowStart = dateKeys[0];
+    const windowEnd = dateKeys[dateKeys.length - 1];
+
+    console.log(`💾 Saving ${scheduleArray.length} slots (${windowStart} → ${windowEnd})...`);
 
     let existing = [];
     let page = 0;
@@ -185,9 +194,9 @@ export const db = {
         .from('schedules')
         .select('date_key, staff_id, time_slot')
         .eq('org_id', orgId)
+        .gte('date_key', windowStart)
+        .lte('date_key', windowEnd)
         .order('date_key', { ascending: true })
-        .order('staff_id', { ascending: true })
-        .order('time_slot', { ascending: true })
         .range(page * pageSize, (page + 1) * pageSize - 1);
 
       if (data && data.length > 0) {

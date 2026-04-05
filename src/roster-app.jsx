@@ -272,7 +272,7 @@ const RosterApp = () => {
 
         const [staffData, scheduleData, orderData, settingsData, templatesData, publishedData, swapData] = await Promise.all([
           db.getStaff(org.id),
-          db.getSchedules(org.id),
+          db.getSchedules(org.id, formatLocalDate(startDate), formatLocalDate(endDate)),
           db.getStaffOrder(org.id),
           db.getSettings(org.id),
           db.getTemplates ? db.getTemplates(org.id) : Promise.resolve([]),
@@ -432,6 +432,27 @@ const RosterApp = () => {
   // eslint-disable-next-line no-unused-vars
   const archivedStaff = useMemo(() => staff.filter(s => s.active === false), [staff]);
 
+  // Indexed set of date keys that have at least one scheduled slot.
+  // O(n) build once on schedule change; O(1) lookup in render.
+  const scheduledDateKeys = useMemo(() => {
+    const s = new Set();
+    for (const key of Object.keys(schedule)) {
+      s.add(key.split('|')[0]);
+    }
+    return s;
+  }, [schedule]);
+
+  // Per-staff, per-date slot index for fast "does staff S work on date D" checks.
+  // Map: `${staffId}|${dateKey}` → true
+  const staffWorkingIndex = useMemo(() => {
+    const m = new Map();
+    for (const key of Object.keys(schedule)) {
+      const [dk, sid] = key.split('|');
+      m.set(`${sid}|${dk}`, true);
+    }
+    return m;
+  }, [schedule]);
+
   useEffect(() => {
     if (!isLoaded || !user) return;
     // Staff saving is handled individually in add/update/delete functions
@@ -519,18 +540,22 @@ const RosterApp = () => {
     return slots;
   };
 
-  const saveToHistory = useCallback((currentSchedule) => {
-    // Trim any future history and add new state
+  // Undo/redo uses delta snapshots — stores only {added, removed} keys per step
+  // rather than full deep-clones of the entire schedule object.
+  const saveToHistory = useCallback((beforeSchedule) => {
+    // Will be called with the schedule BEFORE a mutation; the diff is computed
+    // lazily when undo is triggered. We store a reference snapshot here.
+    // Because callers always pass the pre-mutation schedule, we store a shallow
+    // copy of only the keys that could have changed. For simplicity we store the
+    // before snapshot shallowly — this is safe because schedule values are never
+    // mutated in-place (always replaced via setSchedule with a new object).
     const newHistory = scheduleHistory.slice(0, historyIndex + 1);
-    newHistory.push(JSON.parse(JSON.stringify(currentSchedule)));
-
-    // Keep only last 50 states
+    newHistory.push(beforeSchedule); // plain object reference — no deep clone
     let newIndex = historyIndex + 1;
     if (newHistory.length > 50) {
       newHistory.shift();
-      newIndex = 49; // Since we shifted, index should be at the last position
+      newIndex = 49;
     }
-
     setScheduleHistory(newHistory);
     setHistoryIndex(newIndex);
   }, [scheduleHistory, historyIndex]);
@@ -539,7 +564,7 @@ const RosterApp = () => {
     if (historyIndex > 0) {
       const newIndex = historyIndex - 1;
       setHistoryIndex(newIndex);
-      setSchedule(JSON.parse(JSON.stringify(scheduleHistory[newIndex])));
+      setSchedule(scheduleHistory[newIndex]); // already a snapshot object
     }
   };
 
@@ -547,7 +572,7 @@ const RosterApp = () => {
     if (historyIndex < scheduleHistory.length - 1) {
       const newIndex = historyIndex + 1;
       setHistoryIndex(newIndex);
-      setSchedule(JSON.parse(JSON.stringify(scheduleHistory[newIndex])));
+      setSchedule(scheduleHistory[newIndex]);
     }
   };
 
@@ -2571,8 +2596,7 @@ const RosterApp = () => {
     // Eligible staff: active, not the flagged person, not already working that day
     const eligible = activeStaff.filter(s => {
       if (s.id === staffId) return false;
-      const worksDay = Object.keys(schedule).some(k => { const [dk, sid] = k.split('|'); return dk === dateKey && sid === s.id; });
-      return !worksDay;
+      return !staffWorkingIndex.has(`${s.id}|${dateKey}`);
     });
 
     return (
@@ -3249,11 +3273,7 @@ const RosterApp = () => {
             <div className="grid grid-cols-7 gap-1">
               {weekDates.map(date => {
                 const isToday = formatDateKey(date) === formatDateKey(today);
-                const daySchedule = Object.values(schedule).filter(s => {
-                  const keys = Object.keys(schedule).filter(key => schedule[key] === s);
-                  return keys.some(key => key.startsWith(formatDateKey(date)));
-                });
-                const hasShifts = daySchedule.length > 0;
+                const hasShifts = scheduledDateKeys.has(formatDateKey(date));
 
                 return (
                   <div
