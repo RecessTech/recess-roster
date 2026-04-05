@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db, supabase } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
@@ -1056,54 +1056,6 @@ const RosterApp = () => {
   };
 
   const StaffModal = () => {
-    const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-    const STATUS_OPTIONS = [
-      { value: 'available',   label: 'Avail',  color: 'bg-green-100 text-green-700 border-green-300' },
-      { value: 'preferred',   label: 'Pref',   color: 'bg-blue-100 text-blue-700 border-blue-300' },
-      { value: 'unavailable', label: 'Unavail',color: 'bg-red-100 text-red-600 border-red-300' },
-    ];
-
-    // Local availability state — keyed by day-of-week index (0=Mon..6=Sun)
-    const [availData, setAvailData] = useState(() => {
-      if (!editingStaff) return {};
-      // Pre-populate from the current week's loaded availability
-      const map = {};
-      dates.forEach((d, i) => {
-        const dow = i; // dates are Mon-Sun ordered
-        const dk = formatDateKey(d);
-        const existing = availability[`${editingStaff.id}|${dk}`];
-        if (existing) map[dow] = { status: existing.status, startTime: existing.startTime || '', endTime: existing.endTime || '' };
-      });
-      return map;
-    });
-
-    const setDayAvail = async (dowIdx, status) => {
-      if (!editingStaff || !org) return;
-      const date = formatDateKey(dates[dowIdx]);
-      const entry = availData[dowIdx] || {};
-      const newEntry = { status, startTime: entry.startTime || null, endTime: entry.endTime || null };
-      setAvailData(prev => ({ ...prev, [dowIdx]: { ...newEntry } }));
-      // Persist immediately
-      try {
-        await db.setAvailability(org.id, editingStaff.id, date, status, newEntry.startTime, newEntry.endTime);
-        setAvailability(prev => ({ ...prev, [`${editingStaff.id}|${date}`]: newEntry }));
-      } catch (e) { console.error('Availability save error:', e); toast.error('Failed to save availability'); }
-    };
-
-    const setDayTime = async (dowIdx, field, value) => {
-      if (!editingStaff || !org) return;
-      const date = formatDateKey(dates[dowIdx]);
-      const entry = availData[dowIdx] || {};
-      const newEntry = { ...entry, [field]: value || null };
-      setAvailData(prev => ({ ...prev, [dowIdx]: newEntry }));
-      if (newEntry.status) {
-        try {
-          await db.setAvailability(org.id, editingStaff.id, date, newEntry.status, newEntry.startTime, newEntry.endTime);
-          setAvailability(prev => ({ ...prev, [`${editingStaff.id}|${date}`]: newEntry }));
-        } catch (e) { console.error('Availability save error:', e); }
-      }
-    };
-
     const [formData, setFormData] = useState(() => {
       if (editingStaff) {
         return {
@@ -1227,42 +1179,6 @@ const RosterApp = () => {
                 <option value="Casual">Casual</option>
               </select>
             </div>
-            {editingStaff && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Availability <span className="text-xs font-normal text-gray-400 ml-1">week of {dates[0]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</span>
-                </label>
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  {DAYS.map((day, dowIdx) => {
-                    const entry = availData[dowIdx];
-                    const status = entry?.status || null;
-                    return (
-                      <div key={day} className={`flex items-center gap-2 px-3 py-2 ${dowIdx < DAYS.length - 1 ? 'border-b border-gray-100' : ''} ${dowIdx >= 5 ? 'bg-blue-50/30' : 'bg-white'}`}>
-                        <span className="text-xs font-semibold text-gray-500 w-7 shrink-0">{day}</span>
-                        <div className="flex gap-1">
-                          {STATUS_OPTIONS.map(opt => (
-                            <button key={opt.value}
-                              onClick={() => setDayAvail(dowIdx, status === opt.value ? null : opt.value)}
-                              className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-all ${status === opt.value ? opt.color : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'}`}>
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                        {status && status !== 'unavailable' && (
-                          <div className="flex items-center gap-1 ml-auto">
-                            <input type="time" value={entry?.startTime || ''} onChange={e => setDayTime(dowIdx, 'startTime', e.target.value)}
-                              className="text-[11px] border border-gray-200 rounded px-1 py-0.5 text-gray-600 w-20" />
-                            <span className="text-gray-300 text-xs">–</span>
-                            <input type="time" value={entry?.endTime || ''} onChange={e => setDayTime(dowIdx, 'endTime', e.target.value)}
-                              className="text-[11px] border border-gray-200 rounded px-1 py-0.5 text-gray-600 w-20" />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </div>
           <div className="modal-footer">
             <button onClick={() => { setShowStaffModal(false); setEditingStaff(null); }} className="btn-secondary">Cancel</button>
@@ -2427,6 +2343,135 @@ const RosterApp = () => {
           <div className="px-6 py-4 bg-gray-50 border-t text-sm text-gray-600">
             Click a template to enter apply mode, then click on the roster to place it.
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Availability View ────────────────────────────────────────────────────────
+  const AvailabilityView = () => {
+    const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const CYCLE = [null, 'available', 'preferred', 'unavailable'];
+
+    const handleToggle = async (staffId, dowIdx) => {
+      const dk = formatDateKey(dates[dowIdx]);
+      const key = `${staffId}|${dk}`;
+      const current = availability[key]?.status || null;
+      const next = CYCLE[(CYCLE.indexOf(current) + 1) % CYCLE.length];
+      // Optimistic update
+      setAvailability(prev => {
+        const updated = { ...prev };
+        if (next === null) {
+          delete updated[key];
+        } else {
+          updated[key] = { status: next, startTime: prev[key]?.startTime || null, endTime: prev[key]?.endTime || null };
+        }
+        return updated;
+      });
+      try {
+        if (next === null) {
+          await db.setAvailability(org.id, staffId, dk, null, null, null);
+        } else {
+          await db.setAvailability(org.id, staffId, dk, next, availability[key]?.startTime || null, availability[key]?.endTime || null);
+        }
+      } catch (e) {
+        console.error('Availability save error:', e);
+        toast.error('Failed to save availability');
+        // Revert
+        setAvailability(prev => ({ ...prev }));
+      }
+    };
+
+    return (
+      <div className="h-full flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Staff Availability</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Week of {dates[0]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Legend */}
+            <div className="flex items-center gap-3 text-xs text-gray-500">
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-green-100 border border-green-300 inline-block" />Available</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-blue-100 border border-blue-300 inline-block" />Preferred</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm inline-block" style={{ background: 'repeating-linear-gradient(135deg,rgba(239,68,68,0.35) 0px,rgba(239,68,68,0.35) 2px,#fee2e2 2px,#fee2e2 7px)', border: '1px solid #fca5a5' }} />Unavailable</span>
+            </div>
+            <span className="text-xs text-gray-400">Click a cell to cycle</span>
+          </div>
+        </div>
+
+        {/* Grid */}
+        <div className="flex-1 overflow-auto p-4">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th className="text-left pb-2 pr-4 text-xs font-semibold text-gray-500 w-36 sticky left-0 bg-white z-10">Staff</th>
+                {dates.map((d, i) => {
+                  const isWeekend = i >= 5;
+                  return (
+                    <th key={i} className={`pb-2 text-center text-xs font-semibold ${isWeekend ? 'text-blue-500' : 'text-gray-500'}`} style={{ minWidth: 90 }}>
+                      <div>{DAYS[i]}</div>
+                      <div className="font-normal text-gray-400">{d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {activeStaff.map((s) => (
+                <tr key={s.id} className="group">
+                  <td className="pr-4 py-1.5 sticky left-0 bg-white z-10">
+                    <div className="text-sm font-medium text-gray-800 truncate max-w-[130px]">{s.name}</div>
+                    {s.role && <div className="text-xs text-gray-400 truncate max-w-[130px]">{s.role}</div>}
+                  </td>
+                  {dates.map((d, dowIdx) => {
+                    const dk = formatDateKey(d);
+                    const avail = availability[`${s.id}|${dk}`];
+                    const status = avail?.status || null;
+                    const isWeekend = dowIdx >= 5;
+
+                    let cellBg, cellBorder, cellLabel, labelColor;
+                    if (status === 'available') {
+                      cellBg = '#f0fdf4'; cellBorder = '#86efac'; cellLabel = '✓'; labelColor = '#16a34a';
+                    } else if (status === 'preferred') {
+                      cellBg = '#eff6ff'; cellBorder = '#93c5fd'; cellLabel = '★'; labelColor = '#2563eb';
+                    } else if (status === 'unavailable') {
+                      cellBg = null; cellBorder = '#fca5a5'; cellLabel = '✕'; labelColor = '#dc2626';
+                    } else {
+                      cellBg = isWeekend ? '#f8faff' : '#fafafa'; cellBorder = '#e5e7eb'; cellLabel = null; labelColor = null;
+                    }
+
+                    return (
+                      <td key={dowIdx} className="py-1.5 px-1 text-center">
+                        <button
+                          onClick={() => handleToggle(s.id, dowIdx)}
+                          title={status ? `${status} — click to change` : 'No preference — click to set'}
+                          style={{
+                            width: '100%', minWidth: 76, height: 36, borderRadius: 8,
+                            border: `1px solid ${cellBorder}`,
+                            background: status === 'unavailable'
+                              ? `repeating-linear-gradient(135deg, rgba(239,68,68,0.18) 0px, rgba(239,68,68,0.18) 2px, #fee2e2 2px, #fee2e2 7px)`
+                              : cellBg,
+                            cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 16, color: labelColor,
+                            transition: 'all 0.1s',
+                          }}
+                        >
+                          {cellLabel}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {activeStaff.length === 0 && (
+            <div className="flex items-center justify-center h-48 text-sm text-gray-400">No staff added yet.</div>
+          )}
         </div>
       </div>
     );
@@ -5892,11 +5937,19 @@ Key things to verify after rebuild:
                       const shiftEndTime = slotAddMins(shiftEndSlot, 15);
                       const shiftHrsVal = (shiftLen * 15) / 60;
 
+                      const availStatus = availability[`${s.id}|${dk}`]?.status;
+                      const unavailOverlay = availStatus === 'unavailable'
+                        ? 'repeating-linear-gradient(135deg, rgba(239,68,68,0.18) 0px, rgba(239,68,68,0.18) 2px, transparent 2px, transparent 7px)'
+                        : availStatus === 'preferred'
+                        ? 'linear-gradient(rgba(34,197,94,0.08), rgba(34,197,94,0.08))'
+                        : undefined;
+
                       return (
                         <td key={slot}
                           style={{
                             height: ROW_H, width: hColW, minWidth: hColW, position: 'relative',
                             backgroundColor: sh ? sh.roleColor : undefined,
+                            backgroundImage: unavailOverlay,
                             opacity: sh ? 1 : (isOff ? 0.4 : 1),
                             borderRight: sh
                               ? (isShiftEnd ? '2px solid rgba(255,255,255,0.5)' : 'none')
@@ -5924,9 +5977,6 @@ Key things to verify after rebuild:
                                 <span className="text-white font-semibold whitespace-nowrap" style={{ fontSize: 10 }}>{sh.roleCode}</span>
                               ) : null}
                             </div>
-                          )}
-                          {availability[`${s.id}|${dk}`]?.status === 'unavailable' && isShiftStart && (
-                            <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-orange-400 pointer-events-none z-20" title="Staff unavailable this day" />
                           )}
                           {swapRequests.has(`${dk}|${s.id}`) && isShiftStart && (
                             <div className="absolute bottom-1 right-1 pointer-events-none z-20 text-white font-bold leading-none" style={{ fontSize: 9 }} title="Flagged for swap">↔</div>
@@ -6012,10 +6062,11 @@ Key things to verify after rebuild:
         {/* Nav */}
         <nav className="flex flex-col gap-0.5 flex-1 w-full px-2">
           {[
-            { view: 'roster',     icon: <CalendarDays size={20} />, label: 'Grid View' },
-            { view: 'staff-view', icon: <Users size={20} />,        label: 'Staff View' },
-            { view: 'timesheet',  icon: <FileSpreadsheet size={20} />, label: 'Timesheet' },
-            { view: 'analytics',  icon: <BarChart3 size={20} />,    label: 'Analytics' },
+            { view: 'roster',       icon: <CalendarDays size={20} />,    label: 'Grid View' },
+            { view: 'staff-view',   icon: <Users size={20} />,           label: 'Staff View' },
+            { view: 'availability', icon: <CalendarCheck size={20} />,   label: 'Availability' },
+            { view: 'timesheet',    icon: <FileSpreadsheet size={20} />, label: 'Timesheet' },
+            { view: 'analytics',    icon: <BarChart3 size={20} />,       label: 'Analytics' },
           ].map(({ view, icon, label }) => (
             <button key={view} onClick={() => setActiveView(view)}
               className={`sb-btn group w-full flex justify-center ${activeView === view ? 'active' : ''}`}
@@ -6202,6 +6253,8 @@ Key things to verify after rebuild:
         <div className="h-full overflow-auto"><TimesheetView /></div>
       ) : activeView === 'staff-view' ? (
         <div className="h-full overflow-auto"><StaffRosterView /></div>
+      ) : activeView === 'availability' ? (
+        <div className="h-full overflow-hidden"><AvailabilityView /></div>
       ) : (
         <div className="h-full flex flex-col p-3">
         {activeStaff.length === 0 && (
@@ -6304,6 +6357,12 @@ Key things to verify after rebuild:
                             const altBg = isToday
                               ? (si % 2 === 0 ? 'rgba(249,115,22,0.04)' : 'rgba(249,115,22,0.02)')
                               : (si % 2 === 1 ? 'rgba(248,250,252,0.8)' : 'transparent');
+                            const wkAvailStatus = availability[`${s.id}|${dk}`]?.status;
+                            const wkOverlay = wkAvailStatus === 'unavailable'
+                              ? 'repeating-linear-gradient(135deg, rgba(239,68,68,0.18) 0px, rgba(239,68,68,0.18) 2px, transparent 2px, transparent 7px)'
+                              : wkAvailStatus === 'preferred'
+                              ? 'linear-gradient(rgba(34,197,94,0.08), rgba(34,197,94,0.08))'
+                              : undefined;
                             return (
                               <td
                                 key={k}
@@ -6311,12 +6370,9 @@ Key things to verify after rebuild:
                                 onMouseDown={(e) => handleMouseDown(e, dk, s.id, t, rowIdx)}
                                 onMouseEnter={() => handleMouseEnter(dk, s.id, t, rowIdx)}
                                 onContextMenu={(e) => handleRightClick(e, dk, s.id, t)}
-                                style={{ backgroundColor: sh ? sh.roleColor : altBg, height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
+                                style={{ backgroundColor: sh ? sh.roleColor : altBg, backgroundImage: wkOverlay, height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
                               >
                                 {sh && <div className="relative flex items-center justify-center text-white font-semibold h-full" style={{ fontSize: zoomLevel === 1 ? '8px' : zoomLevel === 2 ? '10px' : '12px' }}>{sh.roleCode}</div>}
-                                {availability[`${s.id}|${dk}`]?.status === 'unavailable' && (
-                                  <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-orange-400 pointer-events-none z-10" title="Staff unavailable this day" />
-                                )}
                                 {swapRequests.has(`${dk}|${s.id}`) && (
                                   <div className="absolute bottom-0.5 right-0.5 pointer-events-none z-10 text-white font-bold leading-none" style={{ fontSize: 8 }} title="Flagged for swap">↔</div>
                                 )}
