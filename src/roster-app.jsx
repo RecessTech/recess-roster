@@ -368,12 +368,20 @@ const RosterApp = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, org]);
 
-  // Load availability for all active staff whenever the visible week changes
-  // eslint-disable-next-line no-use-before-define
+  // Load availability for all active staff whenever the visible week changes.
+  // Depends on currentDate (the state that drives dates) — avoids referencing
+  // the `dates` const before it is initialised (TDZ crash in production build).
   useEffect(() => {
-    if (!org || !dates.length || !activeStaff.length) return;
-    const startDate = formatDateKey(dates[0]);
-    const endDate = formatDateKey(dates[dates.length - 1]);
+    if (!org || !activeStaff.length) return;
+    // Derive the Monday of the current week directly from currentDate
+    const base = new Date(currentDate);
+    const day = base.getDay();
+    base.setDate(base.getDate() + (day === 0 ? -6 : 1 - day));
+    const weekMonday = base.toISOString().split('T')[0];
+    const weekSunday = new Date(base);
+    weekSunday.setDate(weekSunday.getDate() + 6);
+    const startDate = weekMonday;
+    const endDate = weekSunday.toISOString().split('T')[0];
     Promise.all(activeStaff.map(s => db.getAvailability(s.id, startDate, endDate)))
       .then(results => {
         const map = {};
@@ -384,7 +392,7 @@ const RosterApp = () => {
       })
       .catch(err => console.error('Error loading availability:', err));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [org, dates[0]?.toISOString()]); // eslint-disable-line no-use-before-define
+  }, [org, currentDate.toISOString()]);
 
   const activeStaff = useMemo(() => staff.filter(s => s.active !== false), [staff]);
   // eslint-disable-next-line no-unused-vars
