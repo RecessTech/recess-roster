@@ -3674,11 +3674,11 @@ const RosterApp = () => {
                               </span>
                             </td>
                             <td className="px-4 py-4 text-right font-medium text-gray-700">
-                              ${s.hourlyRate.toFixed(2)}/hr
+                              ${(s.hourlyRate ?? 0).toFixed(2)}/hr
                             </td>
                             <td className="px-4 py-4 text-right font-medium text-gray-700">
-                              {s.weekendRate && s.weekendRate !== s.hourlyRate 
-                                ? `$${s.weekendRate.toFixed(2)}/hr`
+                              {s.weekendRate && s.weekendRate !== s.hourlyRate
+                                ? `$${(s.weekendRate ?? 0).toFixed(2)}/hr`
                                 : '-'
                               }
                             </td>
