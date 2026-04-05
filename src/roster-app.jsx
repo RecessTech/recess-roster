@@ -142,7 +142,9 @@ const RosterApp = () => {
   const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
   const [showHelpModal, setShowHelpModal] = useState(false);
-  const [dailyRevenue, setDailyRevenue] = useState({}); // Keyed by date string YYYY-MM-DD
+  const [dailyRevenue, setDailyRevenue] = useState({});
+  // availability[`${staffId}|${dateKey}`] = { status: 'available'|'unavailable'|'preferred', startTime, endTime }
+  const [availability, setAvailability] = useState({});
   const [showRevenueModal, setShowRevenueModal] = useState(false);
   const [revenueEditDate, setRevenueEditDate] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null); // { title, message, onConfirm, danger? }
@@ -360,6 +362,23 @@ const RosterApp = () => {
     loadData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, org]);
+
+  // Load availability for all active staff whenever the visible week changes
+  useEffect(() => {
+    if (!org || !dates.length || !activeStaff.length) return;
+    const startDate = formatDateKey(dates[0]);
+    const endDate = formatDateKey(dates[dates.length - 1]);
+    Promise.all(activeStaff.map(s => db.getAvailability(s.id, startDate, endDate)))
+      .then(results => {
+        const map = {};
+        results.forEach((rows, i) => {
+          rows.forEach(r => { map[`${activeStaff[i].id}|${r.date}`] = { status: r.status, startTime: r.start_time, endTime: r.end_time }; });
+        });
+        setAvailability(map);
+      })
+      .catch(err => console.error('Error loading availability:', err));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [org, dates[0]?.toISOString()]);
 
   const activeStaff = useMemo(() => staff.filter(s => s.active !== false), [staff]);
   // eslint-disable-next-line no-unused-vars
@@ -1023,6 +1042,54 @@ const RosterApp = () => {
   };
 
   const StaffModal = () => {
+    const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const STATUS_OPTIONS = [
+      { value: 'available',   label: 'Avail',  color: 'bg-green-100 text-green-700 border-green-300' },
+      { value: 'preferred',   label: 'Pref',   color: 'bg-blue-100 text-blue-700 border-blue-300' },
+      { value: 'unavailable', label: 'Unavail',color: 'bg-red-100 text-red-600 border-red-300' },
+    ];
+
+    // Local availability state — keyed by day-of-week index (0=Mon..6=Sun)
+    const [availData, setAvailData] = useState(() => {
+      if (!editingStaff) return {};
+      // Pre-populate from the current week's loaded availability
+      const map = {};
+      dates.forEach((d, i) => {
+        const dow = i; // dates are Mon-Sun ordered
+        const dk = formatDateKey(d);
+        const existing = availability[`${editingStaff.id}|${dk}`];
+        if (existing) map[dow] = { status: existing.status, startTime: existing.startTime || '', endTime: existing.endTime || '' };
+      });
+      return map;
+    });
+
+    const setDayAvail = async (dowIdx, status) => {
+      if (!editingStaff || !org) return;
+      const date = formatDateKey(dates[dowIdx]);
+      const entry = availData[dowIdx] || {};
+      const newEntry = { status, startTime: entry.startTime || null, endTime: entry.endTime || null };
+      setAvailData(prev => ({ ...prev, [dowIdx]: { ...newEntry } }));
+      // Persist immediately
+      try {
+        await db.setAvailability(org.id, editingStaff.id, date, status, newEntry.startTime, newEntry.endTime);
+        setAvailability(prev => ({ ...prev, [`${editingStaff.id}|${date}`]: newEntry }));
+      } catch (e) { console.error('Availability save error:', e); toast.error('Failed to save availability'); }
+    };
+
+    const setDayTime = async (dowIdx, field, value) => {
+      if (!editingStaff || !org) return;
+      const date = formatDateKey(dates[dowIdx]);
+      const entry = availData[dowIdx] || {};
+      const newEntry = { ...entry, [field]: value || null };
+      setAvailData(prev => ({ ...prev, [dowIdx]: newEntry }));
+      if (newEntry.status) {
+        try {
+          await db.setAvailability(org.id, editingStaff.id, date, newEntry.status, newEntry.startTime, newEntry.endTime);
+          setAvailability(prev => ({ ...prev, [`${editingStaff.id}|${date}`]: newEntry }));
+        } catch (e) { console.error('Availability save error:', e); }
+      }
+    };
+
     const [formData, setFormData] = useState(() => {
       if (editingStaff) {
         return {
@@ -1146,6 +1213,42 @@ const RosterApp = () => {
                 <option value="Casual">Casual</option>
               </select>
             </div>
+            {editingStaff && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Availability <span className="text-xs font-normal text-gray-400 ml-1">week of {dates[0]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</span>
+                </label>
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  {DAYS.map((day, dowIdx) => {
+                    const entry = availData[dowIdx];
+                    const status = entry?.status || null;
+                    return (
+                      <div key={day} className={`flex items-center gap-2 px-3 py-2 ${dowIdx < DAYS.length - 1 ? 'border-b border-gray-100' : ''} ${dowIdx >= 5 ? 'bg-blue-50/30' : 'bg-white'}`}>
+                        <span className="text-xs font-semibold text-gray-500 w-7 shrink-0">{day}</span>
+                        <div className="flex gap-1">
+                          {STATUS_OPTIONS.map(opt => (
+                            <button key={opt.value}
+                              onClick={() => setDayAvail(dowIdx, status === opt.value ? null : opt.value)}
+                              className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-all ${status === opt.value ? opt.color : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'}`}>
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                        {status && status !== 'unavailable' && (
+                          <div className="flex items-center gap-1 ml-auto">
+                            <input type="time" value={entry?.startTime || ''} onChange={e => setDayTime(dowIdx, 'startTime', e.target.value)}
+                              className="text-[11px] border border-gray-200 rounded px-1 py-0.5 text-gray-600 w-20" />
+                            <span className="text-gray-300 text-xs">–</span>
+                            <input type="time" value={entry?.endTime || ''} onChange={e => setDayTime(dowIdx, 'endTime', e.target.value)}
+                              className="text-[11px] border border-gray-200 rounded px-1 py-0.5 text-gray-600 w-20" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
           <div className="modal-footer">
             <button onClick={() => { setShowStaffModal(false); setEditingStaff(null); }} className="btn-secondary">Cancel</button>
@@ -5669,6 +5772,9 @@ Key things to verify after rebuild:
                               ) : null}
                             </div>
                           )}
+                          {availability[`${s.id}|${dk}`]?.status === 'unavailable' && isShiftStart && (
+                            <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-orange-400 pointer-events-none z-20" title="Staff unavailable this day" />
+                          )}
                         </td>
                       );
                     })}
@@ -6052,6 +6158,9 @@ Key things to verify after rebuild:
                                 style={{ backgroundColor: sh ? sh.roleColor : altBg, height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
                               >
                                 {sh && <div className="relative flex items-center justify-center text-white font-semibold h-full" style={{ fontSize: zoomLevel === 1 ? '8px' : zoomLevel === 2 ? '10px' : '12px' }}>{sh.roleCode}</div>}
+                                {availability[`${s.id}|${dk}`]?.status === 'unavailable' && (
+                                  <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-orange-400 pointer-events-none z-10" title="Staff unavailable this day" />
+                                )}
                               </td>
                             );
                           })}
