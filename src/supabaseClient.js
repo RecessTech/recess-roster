@@ -14,7 +14,7 @@ export const db = {
   async getOrgForUser(userId) {
     const { data, error } = await supabase
       .from('org_members')
-      .select('org_id, organisations(id, name, timezone, config)')
+      .select('org_id, organisations(id, name, timezone, config, plan, plan_staff_limit, trial_ends_at, stripe_customer_id, stripe_subscription_id)')
       .eq('user_id', userId)
       .single();
 
