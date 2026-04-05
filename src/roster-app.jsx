@@ -3593,96 +3593,51 @@ const RosterApp = () => {
     // If no staff selected yet, show selection screen
     if (!selectedStaffView) {
       return (
-        <div className="p-6">
-          <div className="max-w-6xl mx-auto">
-            <div className="bg-white rounded-2xl shadow-lg p-8 mb-6">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold mb-2">Select Staff Member</h2>
-                  <p className="text-gray-600">View individual schedules and work summaries</p>
-                </div>
-                
-                {/* View Toggle */}
-                <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
-                  <button
-                    onClick={() => setStaffSelectionView('cards')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      staffSelectionView === 'cards'
-                        ? 'bg-white text-blue-600 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-800'
-                    }`}
-                    title="Card view"
-                  >
-                    <span className="flex items-center gap-2">
-                      📇 Cards
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => setStaffSelectionView('list')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      staffSelectionView === 'list'
-                        ? 'bg-white text-blue-600 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-800'
-                    }`}
-                    title="List view"
-                  >
-                    <span className="flex items-center gap-2">
-                      List
-                    </span>
-                  </button>
+        <div className="p-5">
+          <div className="max-w-5xl mx-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Staff</h2>
+                <p className="text-xs text-gray-400">Individual schedules and work summaries</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => { setEditingStaff(null); setShowStaffModal(true); }}
+                  className="btn-primary text-xs py-1.5 px-3">+ Add Staff</button>
+                <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg">
+                  <button onClick={() => setStaffSelectionView('cards')}
+                    className={`p-1.5 rounded-md transition-all ${staffSelectionView === 'cards' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+                    title="Cards"><LayoutGrid size={15} /></button>
+                  <button onClick={() => setStaffSelectionView('list')}
+                    className={`p-1.5 rounded-md transition-all ${staffSelectionView === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+                    title="List"><LayoutList size={15} /></button>
                 </div>
               </div>
+            </div>
               
               {/* Card View */}
               {staffSelectionView === 'cards' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                   {orderedStaff.map(s => {
                     const weekStats = calculateStaffWeekStats(s.id);
                     return (
-                      <div
-                        key={s.id}
-                        className="bg-white border-2 border-gray-200 hover:border-blue-300 rounded-xl p-5 transition-all shadow-sm hover:shadow-md"
-                      >
-                        <div className="flex items-start justify-between mb-3">
-                          <div>
-                            <h3 className="font-bold text-lg">{s.name}</h3>
-                            <p className="text-sm text-gray-500">{s.employmentType}</p>
+                      <div key={s.id} className="bg-white border border-gray-200 hover:border-blue-300 rounded-xl p-4 transition-all hover:shadow-sm cursor-pointer group"
+                        onClick={() => setSelectedStaffView(s.id)}>
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="min-w-0">
+                            <h3 className="font-semibold text-gray-900 truncate">{s.name}</h3>
+                            <p className="text-xs text-gray-400">{s.employmentType}</p>
                           </div>
-                          <span className="px-2.5 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg">
-                            ${s.hourlyRate}/hr
-                          </span>
+                          <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md shrink-0 ml-1">${s.hourlyRate}/hr</span>
                         </div>
-                        <div className="space-y-1 text-sm mb-4">
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">This Week:</span>
-                            <span className="font-semibold">{weekStats.hours.toFixed(2)}h</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Est. Pay:</span>
-                            <span className="font-semibold text-green-600">${weekStats.cost.toFixed(0)}</span>
-                          </div>
+                        <div className="flex justify-between text-xs mt-3 pt-3 border-t border-gray-100">
+                          <span className="text-gray-500">{weekStats.hours.toFixed(1)}h</span>
+                          <span className="font-semibold text-green-600">${weekStats.cost.toFixed(0)}</span>
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setSelectedStaffView(s.id)}
-                            className="flex-1 btn-ghost text-xs py-1.5"
-                          >
-                            View
-                          </button>
-                          <button
-                            onClick={() => { setEditingStaff(s); setShowStaffModal(true); }}
-                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-100 border border-gray-200 transition-colors"
-                            title="Edit staff member"
-                          >
-                            <Edit2 size={13} />
-                          </button>
-                          <button
-                            onClick={() => deleteStaff(s.id)}
-                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-red-500 hover:bg-red-50 border border-gray-200 transition-colors"
-                            title="Archive staff member"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                        <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => { setEditingStaff(s); setShowStaffModal(true); }}
+                            className="flex-1 text-xs py-1 rounded-md text-gray-500 hover:bg-gray-100 border border-gray-200 transition-colors"><Edit2 size={11} className="inline mr-0.5" />Edit</button>
+                          <button onClick={() => deleteStaff(s.id)}
+                            className="px-2 py-1 rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 border border-gray-200 transition-colors" title="Archive"><Trash2 size={11} /></button>
                         </div>
                       </div>
                     );
@@ -3763,21 +3718,15 @@ const RosterApp = () => {
                   </table>
                 </div>
               )}
-            </div>
 
             {archivedStaff.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-400 mb-3">Archived ({archivedStaff.length})</h3>
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Archived ({archivedStaff.length})</h3>
                 <div className="flex flex-wrap gap-2">
                   {archivedStaff.map(s => (
-                    <div key={s.id} className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+                    <div key={s.id} className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg">
                       <span className="text-sm text-gray-500">{s.name}</span>
-                      <button
-                        onClick={() => restoreStaff(s.id)}
-                        className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                      >
-                        Restore
-                      </button>
+                      <button onClick={() => restoreStaff(s.id)} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Restore</button>
                     </div>
                   ))}
                 </div>
@@ -4466,191 +4415,132 @@ const RosterApp = () => {
     insights.avgShiftLength = allShifts.length > 0 ? allShifts.reduce((a, b) => a + b, 0) / allShifts.length : 0;
 
     const OverviewTab = () => (
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* Key Metrics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="metric-card">
-            <div className="text-sm text-gray-500 mb-1">Total Week Cost {businessSettings.superannuationRate > 0 ? '(incl. super)' : ''}</div>
-            <div className="text-3xl font-bold text-gray-900">${weekStats.totalCost.toFixed(0)}</div>
+            <div className="text-xs text-gray-500 mb-1">Week Cost {businessSettings.superannuationRate > 0 ? '(incl. super)' : ''}</div>
+            <div className="text-2xl font-bold text-gray-900">${weekStats.totalCost.toFixed(0)}</div>
             {businessSettings.superannuationRate > 0 && weekStats.totalBaseCost > 0 && (
-              <div className="text-xs text-blue-500 mt-1">${weekStats.totalBaseCost.toFixed(0)} wages + ${(weekStats.totalCost - weekStats.totalBaseCost).toFixed(0)} super</div>
+              <div className="text-xs text-blue-500 mt-0.5">${weekStats.totalBaseCost.toFixed(0)} wages + ${(weekStats.totalCost - weekStats.totalBaseCost).toFixed(0)} super</div>
             )}
             <div className="text-xs text-gray-400 mt-0.5">${insights.avgCostPerHour.toFixed(2)}/hr avg</div>
           </div>
 
           <div className="metric-card">
-            <div className="text-sm text-gray-500 mb-1">Average Daily</div>
-            <div className="text-3xl font-bold text-gray-900">${(weekStats.totalCost / dates.length).toFixed(0)}</div>
-            <div className="text-xs text-gray-400 mt-1">{(weekStats.totalHours / dates.length).toFixed(2)} hrs/day</div>
-            <div className="text-xs text-gray-400">{dates.length} days</div>
+            <div className="text-xs text-gray-500 mb-1">Avg Daily Cost</div>
+            <div className="text-2xl font-bold text-gray-900">${(weekStats.totalCost / dates.length).toFixed(0)}</div>
+            <div className="text-xs text-gray-400 mt-0.5">{(weekStats.totalHours / dates.length).toFixed(1)}h/day · {dates.length} days</div>
           </div>
 
           <div className="metric-card">
-            <div className="text-sm text-gray-500 mb-1">Active Staff</div>
-            <div className="text-3xl font-bold text-gray-900">{weekStats.staffBreakdown.length}</div>
-            <div className="text-xs text-gray-400 mt-1">of {staff.length} total</div>
-            <div className="text-xs text-gray-400">{insights.totalShifts} shifts</div>
+            <div className="text-xs text-gray-500 mb-1">Scheduled Staff</div>
+            <div className="text-2xl font-bold text-gray-900">{weekStats.staffBreakdown.length}<span className="text-sm font-normal text-gray-400"> / {staff.length}</span></div>
+            <div className="text-xs text-gray-400 mt-0.5">{allShifts.length} shifts this week</div>
           </div>
 
           <div className="metric-card">
-            <div className="text-sm text-gray-500 mb-1">Avg Shift Length</div>
-            <div className="text-3xl font-bold text-gray-900">{insights.avgShiftLength.toFixed(2)}h</div>
-            <div className="text-xs text-gray-400 mt-1">{allShifts.length} total shifts</div>
-            <div className="text-xs text-gray-400">{(insights.avgShiftLength * insights.avgCostPerHour).toFixed(0)} avg cost/shift</div>
+            <div className="text-xs text-gray-500 mb-1">Avg Shift</div>
+            <div className="text-2xl font-bold text-gray-900">{insights.avgShiftLength.toFixed(1)}h</div>
+            <div className="text-xs text-gray-400 mt-0.5">${(insights.avgShiftLength * insights.avgCostPerHour).toFixed(0)} avg cost/shift</div>
           </div>
         </div>
 
-        {/* Alerts and Warnings */}
-        {(insights.coverageGaps.length > 0 || insights.underStaffedSlots.length > 0 || insights.overStaffedSlots.length > 0) && (
-          <div className="card p-6">
-            <h3 className="text-lg font-bold mb-4 text-gray-800 flex items-center gap-2">
-              <AlertTriangle size={20} className="text-amber-500" />
-              Coverage Alerts
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {insights.coverageGaps.length > 0 && (
-                <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl">
-                  <div className="text-sm font-semibold text-red-800 mb-1">Critical Gaps</div>
-                  <div className="text-3xl font-bold text-red-600">{insights.coverageGaps.length}</div>
-                  <div className="text-xs text-red-700 mt-1">Time slots with NO staff</div>
-                  <div className="text-xs text-red-600 mt-1 font-semibold">During operational hours</div>
-                </div>
-              )}
-              {insights.underStaffedSlots.length > 0 && (
-                <div className="p-4 bg-orange-50 border-2 border-orange-200 rounded-xl">
-                  <div className="text-sm font-semibold text-orange-800 mb-1">Understaffed</div>
-                  <div className="text-3xl font-bold text-orange-600">{insights.underStaffedSlots.length}</div>
-                  <div className="text-xs text-orange-700 mt-1">Below minimum coverage</div>
-                  <div className="text-xs text-orange-600 mt-1 font-semibold">Min: {businessSettings.minStaffCoverage} ({businessSettings.minPeakStaffCoverage} peak)</div>
-                </div>
-              )}
-              {insights.overStaffedSlots.length > 0 && (
-                <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-xl">
-                  <div className="text-sm font-semibold text-blue-800 mb-1">High Coverage</div>
-                  <div className="text-3xl font-bold text-blue-600">{insights.overStaffedSlots.length}</div>
-                  <div className="text-xs text-blue-700 mt-1">Well above minimum</div>
-                  <div className="text-xs text-blue-600 mt-1 font-semibold">{businessSettings.minStaffCoverage + 4}+ staff scheduled</div>
-                </div>
-              )}
-            </div>
+        {/* Alerts */}
+        {(insights.coverageGaps.length > 0 || insights.underStaffedSlots.length > 0) && (
+          <div className="flex gap-3 flex-wrap">
+            {insights.coverageGaps.length > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">
+                <AlertTriangle size={14} className="text-red-500 shrink-0" />
+                <span className="text-sm font-semibold text-red-700">{insights.coverageGaps.length} uncovered slots</span>
+                <span className="text-xs text-red-500">during operational hours</span>
+              </div>
+            )}
+            {insights.underStaffedSlots.length > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+                <AlertTriangle size={14} className="text-amber-500 shrink-0" />
+                <span className="text-sm font-semibold text-amber-700">{insights.underStaffedSlots.length} understaffed slots</span>
+                <span className="text-xs text-amber-500">below min {businessSettings.minStaffCoverage}</span>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Cost Analysis */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Cost breakdown + Daily */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Weekend vs Weekday */}
-          <div className="card p-6">
-            <h3 className="text-lg font-bold mb-4 text-gray-800">Weekend vs Weekday</h3>
-            <div className="space-y-3">
-              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="text-sm font-semibold text-blue-800">Weekday</div>
-                  <div className="text-2xl font-bold text-blue-600">${weekStats.weekdayCost.toFixed(0)}</div>
+          <div className="card p-4">
+            <h3 className="text-sm font-semibold text-gray-600 mb-3">Weekday vs Weekend</h3>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <div className="text-sm text-gray-700">Weekday</div>
+                <div className="text-right">
+                  <div className="font-bold text-gray-900">${weekStats.weekdayCost.toFixed(0)}</div>
+                  <div className="text-xs text-gray-400">{weekStats.weekdayHours.toFixed(1)}h · ${weekStats.weekdayHours > 0 ? (weekStats.weekdayCost / weekStats.weekdayHours).toFixed(2) : 0}/hr</div>
                 </div>
-                <div className="text-xs text-blue-700">{weekStats.weekdayHours.toFixed(2)}h · ${weekStats.weekdayHours > 0 ? (weekStats.weekdayCost / weekStats.weekdayHours).toFixed(2) : 0}/hr</div>
               </div>
-              
-              <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="text-sm font-semibold text-orange-800">Weekend</div>
-                  <div className="text-2xl font-bold text-orange-600">${weekStats.weekendCost.toFixed(0)}</div>
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <div className="text-sm text-gray-700">Weekend</div>
+                <div className="text-right">
+                  <div className="font-bold text-orange-600">${weekStats.weekendCost.toFixed(0)}</div>
+                  <div className="text-xs text-gray-400">{weekStats.weekendHours.toFixed(1)}h · ${weekStats.weekendHours > 0 ? (weekStats.weekendCost / weekStats.weekendHours).toFixed(2) : 0}/hr</div>
                 </div>
-                <div className="text-xs text-orange-700">{weekStats.weekendHours.toFixed(2)}h · ${weekStats.weekendHours > 0 ? (weekStats.weekendCost / weekStats.weekendHours).toFixed(2) : 0}/hr</div>
               </div>
-
               {weekStats.weekendCost > 0 && weekStats.weekdayCost > 0 && (
-                <div className="p-3 bg-gray-50 rounded-lg text-center border border-gray-200">
-                  <div className="text-xs text-gray-600">Weekend premium</div>
-                  <div className="text-xl font-bold text-orange-600">
-                    +{((weekStats.weekendCost / (weekStats.weekendHours || 1) / (weekStats.weekdayCost / (weekStats.weekdayHours || 1)) - 1) * 100).toFixed(0)}%
-                  </div>
-                  <div className="text-xs text-gray-600">per hour</div>
+                <div className="text-xs text-orange-600 font-medium pt-1">
+                  +{((weekStats.weekendCost / (weekStats.weekendHours || 1) / (weekStats.weekdayCost / (weekStats.weekdayHours || 1)) - 1) * 100).toFixed(0)}% weekend premium/hr
                 </div>
               )}
             </div>
-          </div>
-
-          {/* Peak vs Off-Peak */}
-          <div className="card p-6">
-            <h3 className="text-lg font-bold mb-4 text-gray-800">Peak vs Off-Peak</h3>
-            <div className="space-y-3">
-              <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="text-sm font-semibold text-orange-800">Peak (12-2pm)</div>
-                  <div className="text-2xl font-bold text-orange-600">${weekStats.peakCost.toFixed(0)}</div>
+            <h3 className="text-sm font-semibold text-gray-600 mt-4 mb-3">Peak vs Off-Peak</h3>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <div className="text-sm text-gray-700">Peak</div>
+                <div className="text-right">
+                  <div className="font-bold text-gray-900">${weekStats.peakCost.toFixed(0)}</div>
+                  <div className="text-xs text-gray-400">{weekStats.peakHours.toFixed(1)}h · {weekStats.totalHours > 0 ? ((weekStats.peakHours / weekStats.totalHours) * 100).toFixed(0) : 0}%</div>
                 </div>
-                <div className="text-xs text-orange-700">{weekStats.peakHours.toFixed(2)}h · ${weekStats.peakCostPerHour.toFixed(2)}/hr</div>
               </div>
-              
-              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="text-sm font-semibold text-gray-800">Off-Peak</div>
-                  <div className="text-2xl font-bold text-gray-600">${weekStats.offPeakCost.toFixed(0)}</div>
+              <div className="flex items-center justify-between py-2">
+                <div className="text-sm text-gray-700">Off-Peak</div>
+                <div className="text-right">
+                  <div className="font-bold text-gray-900">${weekStats.offPeakCost.toFixed(0)}</div>
+                  <div className="text-xs text-gray-400">{weekStats.offPeakHours.toFixed(1)}h</div>
                 </div>
-                <div className="text-xs text-gray-700">{weekStats.offPeakHours.toFixed(2)}h · ${weekStats.offPeakCostPerHour.toFixed(2)}/hr</div>
-              </div>
-
-              <div className="p-3 bg-orange-50 rounded-lg text-center border border-orange-200">
-                <div className="text-xs text-gray-600">Peak hours are</div>
-                <div className="text-xl font-bold text-orange-600">
-                  {weekStats.totalHours > 0 ? ((weekStats.peakHours / weekStats.totalHours) * 100).toFixed(0) : 0}%
-                </div>
-                <div className="text-xs text-gray-600">of total hours</div>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Daily Breakdown with Chart */}
-        <div className="card p-6">
-          <h3 className="text-lg font-bold mb-4 text-gray-800">Daily Breakdown</h3>
-          <div className="space-y-2">
-            {weekStats.dailyBreakdown.map((day) => {
-              const isHighest = day.dateKey === insights.mostExpensiveDay?.dateKey;
-              const isLowest = day.dateKey === insights.leastExpensiveDay?.dateKey && day.cost > 0;
-              
-              return (
-                <div 
-                  key={day.dateKey} 
-                  className={`flex items-center gap-4 p-3 rounded-lg transition-all ${
-                    isHighest ? 'bg-red-50 border-2 border-red-200' : 
-                    isLowest ? 'bg-green-50 border-2 border-green-200' : 
-                    'bg-gray-50 hover:bg-gray-100'
-                  }`}
-                >
-                  <div className="w-24">
-                    <div className="font-semibold text-sm text-gray-800 flex items-center gap-1">
-                      {day.date.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase()}
-                      {isHighest && <TrendingUp size={14} className="text-red-500" />}
-                      {isLowest && <TrendingDown size={14} className="text-green-500" />}
+          {/* Daily Breakdown */}
+          <div className="card p-4 lg:col-span-2">
+            <h3 className="text-sm font-semibold text-gray-600 mb-3">Daily Breakdown</h3>
+            <div className="space-y-1.5">
+              {weekStats.dailyBreakdown.map((day) => {
+                const isHighest = day.dateKey === insights.mostExpensiveDay?.dateKey;
+                const isLowest = day.dateKey === insights.leastExpensiveDay?.dateKey && day.cost > 0;
+                const pct = weekStats.totalCost > 0 ? (day.cost / weekStats.totalCost) * 100 : 0;
+                return (
+                  <div key={day.dateKey} className="flex items-center gap-3">
+                    <div className="w-8 text-xs font-semibold text-gray-500 shrink-0">
+                      {day.date.toLocaleDateString('en-AU', { weekday: 'short' })}
                     </div>
-                    <div className="text-xs text-gray-500">
-                      {day.date.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}
-                    </div>
-                  </div>
-                  <div className="flex-1 flex items-center gap-3">
-                    <div className="flex-1 bg-gray-200 rounded-full h-6 overflow-hidden">
-                      <div 
-                        className={`h-6 rounded-full flex items-center justify-end pr-2 text-xs font-bold text-white transition-all ${
-                          isHighest ? 'bg-red-500' :
-                          isLowest ? 'bg-green-500' :
-                          'bg-blue-500'
-                        }`}
-                        style={{ width: `${Math.max(weekStats.totalCost > 0 ? (day.cost / weekStats.totalCost) * 100 : 0, 5)}%` }}
-                      >
-                        {day.hours.toFixed(2)}h
+                    <div className="flex-1 bg-gray-100 rounded h-5 overflow-hidden">
+                      <div className={`h-5 rounded flex items-center justify-end pr-1.5 text-xs font-semibold text-white transition-all ${isHighest ? 'bg-red-400' : isLowest ? 'bg-green-400' : 'bg-blue-400'}`}
+                        style={{ width: `${Math.max(pct, 4)}%` }}>
+                        {day.hours > 0 ? `${day.hours.toFixed(1)}h` : ''}
                       </div>
                     </div>
-                    <div className="text-right w-24">
-                      <div className="text-lg font-bold text-gray-800">${day.cost.toFixed(0)}</div>
-                      <div className="text-xs text-gray-500">
-                        {weekStats.totalCost > 0 ? ((day.cost / weekStats.totalCost) * 100).toFixed(0) : 0}%
-                      </div>
+                    <div className="w-16 text-right">
+                      <div className="text-sm font-bold text-gray-800">${day.cost.toFixed(0)}</div>
+                    </div>
+                    <div className="w-6 shrink-0">
+                      {isHighest && <TrendingUp size={12} className="text-red-400" />}
+                      {isLowest && <TrendingDown size={12} className="text-green-400" />}
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
@@ -4658,97 +4548,65 @@ const RosterApp = () => {
 
     const StaffTab = () => {
       const sortedStaff = [...weekStats.staffBreakdown].sort((a, b) => b.cost - a.cost);
+      const sortedByHours = [...sortedStaff].sort((a, b) => b.hours - a.hours);
       const avgStaffCost = sortedStaff.length > 0 ? weekStats.totalCost / sortedStaff.length : 0;
 
       return (
-        <div className="space-y-6">
-          {/* Staff Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="card p-5">
-              <div className="text-sm text-gray-600 mb-1">Most Expensive Staff</div>
-              <div className="text-2xl font-bold text-gray-800">{sortedStaff[0]?.name || 'N/A'}</div>
-              <div className="text-sm text-gray-500">${sortedStaff[0]?.cost.toFixed(0) || 0}</div>
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="metric-card">
+              <div className="text-xs text-gray-500 mb-1">Highest Cost</div>
+              <div className="text-base font-bold text-gray-800 truncate">{sortedStaff[0]?.name || '—'}</div>
+              <div className="text-xs text-gray-400">${sortedStaff[0]?.cost.toFixed(0) || 0}</div>
             </div>
-            
-            <div className="card p-5">
-              <div className="text-sm text-gray-600 mb-1">Most Hours</div>
-              <div className="text-2xl font-bold text-gray-800">
-                {[...sortedStaff].sort((a, b) => b.hours - a.hours)[0]?.name || 'N/A'}
-              </div>
-              <div className="text-sm text-gray-500">
-                {[...sortedStaff].sort((a, b) => b.hours - a.hours)[0]?.hours.toFixed(2) || 0}h
-              </div>
+            <div className="metric-card">
+              <div className="text-xs text-gray-500 mb-1">Most Hours</div>
+              <div className="text-base font-bold text-gray-800 truncate">{sortedByHours[0]?.name || '—'}</div>
+              <div className="text-xs text-gray-400">{sortedByHours[0]?.hours.toFixed(1) || 0}h</div>
             </div>
-
-            <div className="card p-5">
-              <div className="text-sm text-gray-600 mb-1">Average Cost/Staff</div>
-              <div className="text-2xl font-bold text-gray-800">${avgStaffCost.toFixed(0)}</div>
-              <div className="text-sm text-gray-500">{(weekStats.totalHours / sortedStaff.length).toFixed(2)}h avg</div>
+            <div className="metric-card">
+              <div className="text-xs text-gray-500 mb-1">Avg Cost / Staff</div>
+              <div className="text-base font-bold text-gray-800">${avgStaffCost.toFixed(0)}</div>
+              <div className="text-xs text-gray-400">{sortedStaff.length > 0 ? (weekStats.totalHours / sortedStaff.length).toFixed(1) : 0}h avg</div>
             </div>
           </div>
 
-          {/* Staff Utilization */}
-          <div className="card p-6">
-            <h3 className="text-lg font-bold mb-4 text-gray-800">Staff Utilization Rate</h3>
-            <div className="space-y-3">
-              {Object.values(insights.utilizationRate)
-                .sort((a, b) => b.rate - a.rate)
-                .map((util) => (
-                  <div key={util.name} className="p-4 bg-gray-50 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="font-semibold text-gray-800">{util.name}</div>
-                      <div className="text-lg font-bold text-blue-600">{util.rate.toFixed(2)}%</div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
-                        <div 
-                          className={`h-3 rounded-full transition-all ${
-                            util.rate > 75 ? 'bg-red-500' :
-                            util.rate > 50 ? 'bg-orange-500' :
-                            util.rate > 25 ? 'bg-blue-500' :
-                            'bg-green-500'
-                          }`}
-                          style={{ width: `${util.rate}%` }}
-                        />
-                      </div>
-                      <div className="text-xs text-gray-500 w-36 text-right">
-                        {util.scheduledHours}h of {util.totalPossibleHours}h available
-                      </div>
-                    </div>
-                    <div className="mt-2 text-xs text-gray-500">
-                      {util.rate > 75 && 'High utilization - consider adding breaks'}
-                      {util.rate > 50 && util.rate <= 75 && 'Good utilization'}
-                      {util.rate > 25 && util.rate <= 50 && 'Moderate utilization'}
-                      {util.rate <= 25 && 'Low utilization - could schedule more hours'}
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-
-          {/* Staff Cost Breakdown */}
-          <div className="card p-6">
-            <h3 className="text-lg font-bold mb-4 text-gray-800">Staff Cost Breakdown</h3>
+          <div className="card p-4">
+            <h3 className="text-sm font-semibold text-gray-600 mb-3">Hours & Cost by Staff</h3>
             <div className="space-y-2">
-              {sortedStaff.map((staffData, idx) => (
-                <div key={staffData.name} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <div className="w-8 text-center font-bold text-gray-400">#{idx + 1}</div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-gray-800">{staffData.name}</div>
-                    <div className="text-xs text-gray-500">{staffData.hours.toFixed(2)}h · ${staffData.hours > 0 ? (staffData.cost / staffData.hours).toFixed(2) : '0.00'}/hr avg</div>
-                  </div>
-                  <div className="flex-1 flex items-center gap-2">
-                    <div className="flex-1 bg-gray-200 rounded-full h-4 overflow-hidden">
-                      <div 
-                        className="h-4 bg-blue-500 rounded-full"
-                        style={{ width: `${weekStats.totalCost > 0 ? (staffData.cost / weekStats.totalCost) * 100 : 0}%` }}
-                      />
+              {sortedStaff.map((sd, idx) => {
+                const pct = weekStats.totalCost > 0 ? (sd.cost / weekStats.totalCost) * 100 : 0;
+                return (
+                  <div key={sd.name} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
+                    <div className="text-xs text-gray-400 w-5 text-right shrink-0">#{idx + 1}</div>
+                    <div className="w-28 shrink-0">
+                      <div className="text-sm font-semibold text-gray-800 truncate">{sd.name}</div>
+                      <div className="text-xs text-gray-400">{sd.hours.toFixed(1)}h · ${sd.hours > 0 ? (sd.cost / sd.hours).toFixed(2) : '0'}/hr</div>
+                    </div>
+                    <div className="flex-1 bg-gray-100 rounded h-4 overflow-hidden">
+                      <div className="h-4 bg-blue-400 rounded transition-all" style={{ width: `${Math.max(pct, 2)}%` }} />
+                    </div>
+                    <div className="text-right w-20 shrink-0">
+                      <div className="text-sm font-bold text-gray-800">${sd.cost.toFixed(0)}</div>
+                      <div className="text-xs text-gray-400">{pct.toFixed(0)}%</div>
                     </div>
                   </div>
-                  <div className="text-right w-24">
-                    <div className="text-lg font-bold text-gray-800">${staffData.cost.toFixed(0)}</div>
-                    <div className="text-xs text-gray-500">{weekStats.totalCost > 0 ? ((staffData.cost / weekStats.totalCost) * 100).toFixed(2) : 0}%</div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="card p-4">
+            <h3 className="text-sm font-semibold text-gray-600 mb-3">Utilization</h3>
+            <div className="space-y-2">
+              {Object.values(insights.utilizationRate).sort((a, b) => b.rate - a.rate).map((util) => (
+                <div key={util.name} className="flex items-center gap-3">
+                  <div className="w-24 text-sm text-gray-700 shrink-0 truncate">{util.name}</div>
+                  <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
+                    <div className={`h-3 rounded-full transition-all ${util.rate > 75 ? 'bg-red-400' : util.rate > 50 ? 'bg-orange-400' : util.rate > 25 ? 'bg-blue-400' : 'bg-green-400'}`}
+                      style={{ width: `${util.rate}%` }} />
                   </div>
+                  <div className="text-xs text-gray-500 w-28 text-right shrink-0">{util.scheduledHours}h / {util.totalPossibleHours}h ({util.rate.toFixed(0)}%)</div>
                 </div>
               ))}
             </div>
@@ -5347,59 +5205,23 @@ const RosterApp = () => {
     };
 
     return (
-      <div className="p-6">
+      <div className="p-4">
         {/* Tab Navigation */}
-        <div className="card p-2 mb-6 flex gap-2 overflow-x-auto">
-          <button
-            onClick={() => setAnalyticsTab('overview')}
-            className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
-              analyticsTab === 'overview'
-                ? 'tab-active'
-                : 'tab-inactive'
-            }`}
-          >
-            <BarChart3 size={14} className="inline mr-1" /> Overview
-          </button>
-          <button
-            onClick={() => setAnalyticsTab('staff')}
-            className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
-              analyticsTab === 'staff'
-                ? 'tab-active'
-                : 'tab-inactive'
-            }`}
-          >
-            <Users size={14} className="inline mr-1" /> Staff
-          </button>
-          <button
-            onClick={() => setAnalyticsTab('roles')}
-            className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
-              analyticsTab === 'roles'
-                ? 'tab-active'
-                : 'tab-inactive'
-            }`}
-          >
-            <Theater size={14} className="inline mr-1" /> Roles
-          </button>
-          <button
-            onClick={() => setAnalyticsTab('coverage')}
-            className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
-              analyticsTab === 'coverage'
-                ? 'tab-active'
-                : 'tab-inactive'
-            }`}
-          >
-            <MapPin size={14} className="inline mr-1" /> Coverage
-          </button>
-          <button
-            onClick={() => setAnalyticsTab('revenue')}
-            className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
-              analyticsTab === 'revenue'
-                ? 'tab-active'
-                : 'tab-inactive'
-            }`}
-          >
-            <DollarSign size={14} className="inline mr-1" /> Revenue
-          </button>
+        <div className="flex gap-1 mb-4 border-b border-gray-100 overflow-x-auto">
+          {[
+            { key: 'overview',  label: 'Overview',  icon: <BarChart3 size={13} /> },
+            { key: 'staff',     label: 'Staff',     icon: <Users size={13} /> },
+            { key: 'roles',     label: 'Roles',     icon: <Theater size={13} /> },
+            { key: 'coverage',  label: 'Coverage',  icon: <MapPin size={13} /> },
+            { key: 'revenue',   label: 'Revenue',   icon: <DollarSign size={13} /> },
+          ].map(({ key, label, icon }) => (
+            <button key={key} onClick={() => setAnalyticsTab(key)}
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap -mb-px ${
+                analyticsTab === key ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}>
+              {icon}{label}
+            </button>
+          ))}
         </div>
 
         {/* Tab Content */}
@@ -6218,7 +6040,7 @@ Key things to verify after rebuild:
               <div className="flex items-center gap-3">
                 <h1 className="text-base font-bold text-gray-900 tracking-tight">{businessSettings.businessName || org?.name}</h1>
                 <span className="text-gray-300">|</span>
-                <span className="text-sm text-gray-400">{activeView === 'roster' ? 'Grid View' : activeView === 'staff-view' ? 'Staff View' : activeView === 'timesheet' ? 'Timesheet' : activeView === 'analytics' ? 'Analytics' : activeView}</span>
+                <span className="text-sm text-gray-400">{activeView === 'roster' ? 'Grid View' : activeView === 'staff-view' ? 'Staff View' : activeView === 'timesheet' ? 'Timesheet' : activeView === 'analytics' ? 'Analytics' : activeView === 'availability' ? 'Availability' : activeView}</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg">
@@ -6496,10 +6318,14 @@ Key things to verify after rebuild:
                       <React.Fragment key={`tot-${dk}`}>
                         {orderedStaff.map((s, si) => {
                           const st = calculateStaffDayStats(s.id, dk);
+                          const superRate = businessSettings.superannuationRate || 0;
                           return (
                             <td key={`${dk}-${s.id}`} className={`border-r border-gray-100 p-1 text-center text-xs ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`} style={{ width: '120px', maxWidth: '120px', minWidth: '120px' }}>
                               <div className="font-semibold text-gray-700">{st.hours.toFixed(2)}h</div>
                               <div className="text-gray-400">${st.cost.toFixed(0)}</div>
+                              {superRate > 0 && st.baseCost > 0 && st.baseCost !== st.cost && (
+                                <div className="text-gray-300" style={{ fontSize: 9 }}>+${(st.cost - st.baseCost).toFixed(0)} super</div>
+                              )}
                             </td>
                           );
                         })}
