@@ -426,7 +426,7 @@ const RosterApp = () => {
       .catch(err => console.error('Availability view load error:', err))
       .finally(() => setAvWeekLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps, no-use-before-define
-  }, [org, activeStaff.length, avWeekStart.toISOString()]); // eslint-disable-line no-use-before-define
+  }, [org, staff.length, avWeekStart.toISOString()]); // use staff.length (state) not activeStaff.length (const after this effect)
 
   const activeStaff = useMemo(() => staff.filter(s => s.active !== false), [staff]);
   // eslint-disable-next-line no-unused-vars
