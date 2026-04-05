@@ -53,7 +53,8 @@ const RosterApp = () => {
   const [showQuickFillModal, setShowQuickFillModal] = useState(false);
   const [quickFillData, setQuickFillData] = useState(null);
   const [copiedDay, setCopiedDay] = useState(null);
-  const [publishedWeeks, setPublishedWeeks] = useState([]); // array of 'YYYY-MM-DD' week_start strings
+  const [publishedWeeks, setPublishedWeeks] = useState([]);
+  const [nowTime, setNowTime] = useState(new Date()); // ticks every minute for the "now" line
   const [showExportModal, setShowExportModal] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearTarget, setClearTarget] = useState(null);
@@ -67,13 +68,16 @@ const RosterApp = () => {
 
   // Detect mobile on mount and resize
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobileView(window.innerWidth < 768);
-    };
-    
+    const checkMobile = () => setIsMobileView(window.innerWidth < 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Tick "now" every minute so the current-time line stays accurate
+  useEffect(() => {
+    const id = setInterval(() => setNowTime(new Date()), 60000);
+    return () => clearInterval(id);
   }, []);
 
   // Load org for this user — gate all data loading on this
@@ -5477,19 +5481,51 @@ Key things to verify after rebuild:
   const renderDailyTimeline = () => {
     const dk = formatDateKey(dailyViewDate);
     const todayKey = formatDateKey(new Date());
+    const isToday = dk === todayKey;
     const hColW = Math.max(timeInterval * 1.5, 24);
     const STAFF_COL_W = 148;
-    const ROW_H = 48;
+    const ROW_H = 52;
+    const COVERAGE_H = 44;
     const dayStats = calculateDayStats(dk);
+
+    // Hour groups for header
+    const hourGroups = [];
+    timeSlots.forEach(slot => {
+      const [h, m] = slot.split(':').map(Number);
+      if (m === 0 || hourGroups.length === 0) hourGroups.push({ h, slots: [slot] });
+      else hourGroups[hourGroups.length - 1].slots.push(slot);
+    });
+
+    // "Now" line: position in px from left edge of the scrollable area
+    const nowMins = nowTime.getHours() * 60 + nowTime.getMinutes();
+    const startMins = startHour * 60;
+    const nowOffset = ((nowMins - startMins) / 15) * hColW;
+    const nowLeft = STAFF_COL_W + nowOffset;
+    const nowVisible = isToday && nowMins >= startMins && nowMins <= endHour * 60;
+
+    // Helper: add minutes to a HH:MM slot string
+    const slotAddMins = (slot, m) => {
+      const [h, min] = slot.split(':').map(Number);
+      const t = h * 60 + min + m;
+      return `${Math.floor(t / 60).toString().padStart(2, '0')}:${(t % 60).toString().padStart(2, '0')}`;
+    };
+
+    // Navigate day, syncing week if needed
+    const navigateDay = (delta) => {
+      const d = new Date(dailyViewDate);
+      d.setDate(d.getDate() + delta);
+      setDailyViewDate(d);
+      const newKey = formatDateKey(d);
+      if (!dates.some(wd => formatDateKey(wd) === newKey)) {
+        setCurrentDate(new Date(d));
+      }
+    };
 
     return (
       <div className="h-full flex flex-col">
         {/* Day picker */}
         <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-gray-100 bg-white">
-          <button
-            onClick={() => { const d = new Date(dailyViewDate); d.setDate(d.getDate() - 1); setDailyViewDate(d); }}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors text-sm"
-          >←</button>
+          <button onClick={() => navigateDay(-1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors text-sm">←</button>
           <div className="flex gap-1">
             {dates.map(d => {
               const dKey = formatDateKey(d);
@@ -5501,18 +5537,14 @@ Key things to verify after rebuild:
                     isSelected ? 'bg-blue-600 text-white shadow-sm'
                     : isDayToday ? 'bg-blue-50 text-blue-600 border border-blue-200'
                     : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
+                  }`}>
                   <div className="text-xs font-semibold">{d.toLocaleDateString('en-AU', { weekday: 'short' })}</div>
                   <div className="text-[10px] opacity-75">{d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
                 </button>
               );
             })}
           </div>
-          <button
-            onClick={() => { const d = new Date(dailyViewDate); d.setDate(d.getDate() + 1); setDailyViewDate(d); }}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors text-sm"
-          >→</button>
+          <button onClick={() => navigateDay(1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors text-sm">→</button>
           <div className="ml-auto flex items-center gap-3">
             <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>{dayStats.totalHours.toFixed(1)}h</span>
             <span style={{ fontSize: 12, fontWeight: 600, color: '#3B5BDB' }}>${dayStats.totalBaseCost?.toFixed(0) ?? dayStats.totalCost.toFixed(0)}</span>
@@ -5529,82 +5561,91 @@ Key things to verify after rebuild:
 
         {/* Timeline table */}
         <div ref={containerRef} className="flex-1 overflow-auto relative" style={{ userSelect: 'none' }}>
+
+          {/* Current time line */}
+          {nowVisible && (
+            <div style={{ position: 'absolute', top: 0, bottom: 0, left: nowLeft, width: 2, background: '#EF4444', zIndex: 25, pointerEvents: 'none' }}>
+              <div style={{ position: 'absolute', top: 28, left: -4, width: 10, height: 10, borderRadius: '50%', background: '#EF4444' }} />
+            </div>
+          )}
+
           <table className="border-collapse" style={{ minWidth: `${STAFF_COL_W + timeSlots.length * hColW}px` }}>
             <thead className="sticky top-0 z-30">
-              {/* Row 1: Hour labels (colspan groups) */}
-              {(() => {
-                const hourGroups = [];
-                timeSlots.forEach(slot => {
-                  const [h, m] = slot.split(':').map(Number);
-                  if (m === 0 || hourGroups.length === 0) hourGroups.push({ h, slots: [slot] });
-                  else hourGroups[hourGroups.length - 1].slots.push(slot);
-                });
-                return (
-                  <tr className="bg-white border-b border-gray-200" style={{ height: 24 }}>
-                    <th className="sticky left-0 z-40 bg-white border-r border-gray-200"
-                      style={{ width: STAFF_COL_W, minWidth: STAFF_COL_W }} />
-                    {hourGroups.map(({ h, slots: grpSlots }) => (
-                      <th key={h} colSpan={grpSlots.length}
-                        style={{ borderLeft: '1px solid #D1D5DB', padding: '0 0 0 4px', textAlign: 'left' }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: '#374151' }}>{h}:00</span>
-                      </th>
-                    ))}
-                  </tr>
-                );
-              })()}
-              {/* Row 2: Sub-slot tick marks */}
-              <tr className="bg-gray-50 border-b border-gray-200" style={{ height: 10 }}>
-                <th className="sticky left-0 z-40 bg-gray-50 border-r border-gray-200"
+              {/* Single clean header row */}
+              <tr className="bg-white border-b border-gray-200" style={{ height: 28 }}>
+                <th className="sticky left-0 z-40 bg-white border-r border-gray-200"
                   style={{ width: STAFF_COL_W, minWidth: STAFF_COL_W }} />
-                {timeSlots.map(slot => {
-                  const isHour = slot.endsWith(':00');
-                  const isHalf = slot.endsWith(':30');
-                  return (
-                    <th key={slot} style={{
-                      width: hColW, minWidth: hColW, padding: 0,
-                      borderLeft: isHour ? '1px solid #D1D5DB' : isHalf ? '1px solid #E5E7EB' : '1px solid #F3F4F6',
-                    }} />
-                  );
-                })}
+                {hourGroups.map(({ h, slots: grpSlots }) => (
+                  <th key={h} colSpan={grpSlots.length}
+                    style={{ borderLeft: '1px solid #D1D5DB', padding: '0 0 0 5px', textAlign: 'left', background: 'white' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', fontVariantNumeric: 'tabular-nums' }}>{h}:00</span>
+                  </th>
+                ))}
               </tr>
             </thead>
+
             <tbody>
               {orderedStaff.map((s, si) => {
                 const staffStats = calculateStaffDayStats(s.id, dk);
+                const isOff = staffStats.hours === 0;
                 const isWeekend = [0, 6].includes(dailyViewDate.getDay());
                 const rate = isWeekend && s.weekendRate ? s.weekendRate : s.hourlyRate;
+
                 return (
-                  <tr key={s.id} className={`border-b border-gray-100 ${si % 2 === 1 ? 'bg-gray-50/40' : 'bg-white'}`} style={{ height: ROW_H }}>
+                  <tr key={s.id}
+                    className={`border-b border-gray-100 ${si % 2 === 1 ? 'bg-gray-50/40' : 'bg-white'}`}
+                    style={{ height: ROW_H }}>
+                    {/* Staff label column */}
                     <td className="sticky left-0 z-20 border-r border-gray-200 bg-white px-3"
                       style={{ width: STAFF_COL_W, minWidth: STAFF_COL_W, height: ROW_H }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: '#111827' }} className="truncate">{s.name}</div>
-                      {staffStats.hours > 0 ? (
-                        <div style={{ fontSize: 10, color: '#6B7280', marginTop: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: isOff ? '#9CA3AF' : '#111827' }} className="truncate">{s.name}</div>
+                      {isOff ? (
+                        <div style={{ fontSize: 10, color: '#D1D5DB', marginTop: 2 }}>Off · ${rate}/hr</div>
+                      ) : (
+                        <div style={{ fontSize: 10, color: '#6B7280', marginTop: 2 }}>
                           {staffStats.hours.toFixed(1)}h · <span style={{ color: '#374151' }}>${staffStats.baseCost.toFixed(0)}</span>
                           {businessSettings.superannuationRate > 0 && (
-                            <span style={{ color: '#9CA3AF' }}> +${(staffStats.cost - staffStats.baseCost).toFixed(0)} super</span>
+                            <span style={{ color: '#9CA3AF' }}> +${(staffStats.cost - staffStats.baseCost).toFixed(0)}</span>
                           )}
                         </div>
-                      ) : (
-                        <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 1 }}>${rate}/hr</div>
                       )}
                     </td>
+
+                    {/* Time cells */}
                     {timeSlots.map((slot, ci) => {
                       const k = getScheduleKey(dk, s.id, slot);
                       const sh = schedule[k];
                       const prevSh = ci > 0 ? schedule[getScheduleKey(dk, s.id, timeSlots[ci - 1])] : null;
                       const nextSh = ci < timeSlots.length - 1 ? schedule[getScheduleKey(dk, s.id, timeSlots[ci + 1])] : null;
                       const isShiftStart = sh && (!prevSh || prevSh.roleId !== sh.roleId);
+                      const isShiftEnd = sh && (!nextSh || nextSh.roleId !== sh.roleId);
                       const isHour = slot.endsWith(':00');
+                      const isHalf = slot.endsWith(':30');
+
+                      // Compute shift span for label
+                      let shiftEndSlot = slot;
+                      let shiftLen = 1;
+                      if (isShiftStart) {
+                        for (let j = ci + 1; j < timeSlots.length; j++) {
+                          if (schedule[getScheduleKey(dk, s.id, timeSlots[j])]?.roleId === sh.roleId) {
+                            shiftEndSlot = timeSlots[j]; shiftLen++;
+                          } else break;
+                        }
+                      }
+                      const blockPx = shiftLen * hColW;
+                      const shiftEndTime = slotAddMins(shiftEndSlot, 15);
+                      const shiftHrsVal = (shiftLen * 15) / 60;
+
                       return (
                         <td key={slot}
                           style={{
                             height: ROW_H, width: hColW, minWidth: hColW, position: 'relative',
                             backgroundColor: sh ? sh.roleColor : undefined,
+                            opacity: sh ? 1 : (isOff ? 0.4 : 1),
                             borderRight: sh
-                              ? ((!nextSh || nextSh.roleId !== sh.roleId) ? '2px solid rgba(255,255,255,0.4)' : 'none')
-                              : (isHour ? '1px solid #E5E7EB' : '1px solid #F3F4F6'),
-                            borderLeft: sh && isShiftStart ? '2px solid rgba(255,255,255,0.4)' : isHour ? '1px solid #E5E7EB' : undefined,
+                              ? (isShiftEnd ? '2px solid rgba(255,255,255,0.5)' : 'none')
+                              : (isHour ? '1px solid #E5E7EB' : isHalf ? '1px solid #F0F0F0' : '1px solid #F9FAFB'),
+                            borderLeft: sh && isShiftStart ? '2px solid rgba(255,255,255,0.5)' : undefined,
                             cursor: selectedRole ? (selectedRole.id === 'eraser' ? 'cell' : 'crosshair') : 'pointer',
                           }}
                           onMouseDown={(e) => handleHMouseDown(e, dk, s.id, slot, ci)}
@@ -5612,8 +5653,20 @@ Key things to verify after rebuild:
                           onContextMenu={(e) => handleRightClick(e, dk, s.id, slot)}
                         >
                           {sh && isShiftStart && (
-                            <div className="absolute inset-y-0 left-1 flex items-center pointer-events-none z-10" style={{ maxWidth: hColW * 4 }}>
-                              <span className="text-white font-semibold truncate whitespace-nowrap" style={{ fontSize: 10 }}>{sh.roleCode}</span>
+                            <div className="absolute inset-y-0 left-0 flex flex-col justify-center pl-1.5 pointer-events-none z-10 overflow-hidden"
+                              style={{ maxWidth: blockPx - 4 }}>
+                              {blockPx >= 80 ? (
+                                <>
+                                  <span className="text-white font-mono whitespace-nowrap truncate leading-tight" style={{ fontSize: 10, fontWeight: 600, opacity: 0.9 }}>
+                                    {slot} – {shiftEndTime}
+                                  </span>
+                                  <span className="text-white whitespace-nowrap leading-tight" style={{ fontSize: 9, opacity: 0.75 }}>
+                                    {sh.roleCode} · {shiftHrsVal % 1 === 0 ? shiftHrsVal : shiftHrsVal.toFixed(1)}h
+                                  </span>
+                                </>
+                              ) : blockPx >= 36 ? (
+                                <span className="text-white font-semibold whitespace-nowrap" style={{ fontSize: 10 }}>{sh.roleCode}</span>
+                              ) : null}
                             </div>
                           )}
                         </td>
@@ -5623,12 +5676,14 @@ Key things to verify after rebuild:
                 );
               })}
             </tbody>
+
+            {/* Coverage bar */}
             <tfoot className="sticky bottom-0 z-20">
-              <tr style={{ height: 32 }} className="bg-white border-t border-gray-200">
+              <tr style={{ height: COVERAGE_H }} className="bg-white border-t-2 border-gray-200">
                 <td className="sticky left-0 z-30 bg-white border-r border-gray-200 px-3"
                   style={{ width: STAFF_COL_W, minWidth: STAFF_COL_W }}>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: '#6B7280' }}>Coverage</div>
-                  <div style={{ fontSize: 9, color: '#9CA3AF' }}>{orderedStaff.length} staff total</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Coverage</div>
+                  <div style={{ fontSize: 9, color: '#D1D5DB' }}>{orderedStaff.length} staff</div>
                 </td>
                 {timeSlots.map((slot) => {
                   const count = orderedStaff.filter(s => !!schedule[getScheduleKey(dk, s.id, slot)]).length;
@@ -5636,27 +5691,27 @@ Key things to verify after rebuild:
                   const maxPossible = Math.max(orderedStaff.length, 1);
                   const barPct = Math.min((count / maxPossible) * 100, 100);
                   const underMin = count > 0 && count < minStaff;
-                  // Scheme-aligned: blue for adequate, orange (brand) for under-minimum
-                  const barColor = underMin ? 'rgba(232,80,24,0.35)' : 'rgba(59,91,219,0.25)';
+                  const barColor = underMin ? 'rgba(232,80,24,0.4)' : 'rgba(59,91,219,0.3)';
+                  const textColor = underMin ? '#C2410C' : '#3B5BDB';
                   const isHour = slot.endsWith(':00');
                   return (
-                    <td key={slot}
-                      style={{
-                        width: hColW, minWidth: hColW, padding: 0, position: 'relative',
-                        verticalAlign: 'bottom',
-                        borderLeft: isHour ? '1px solid #E5E7EB' : '1px solid #F9FAFB',
-                      }}>
+                    <td key={slot} style={{
+                      width: hColW, minWidth: hColW, padding: 0, position: 'relative',
+                      verticalAlign: 'bottom',
+                      borderLeft: isHour ? '1px solid #E5E7EB' : '1px solid #F9FAFB',
+                    }}>
                       {count > 0 && (
                         <div style={{
                           position: 'absolute', bottom: 0, left: 1, right: 1,
-                          height: `${Math.max(barPct, 20)}%`,
+                          height: `${Math.max(barPct, 15)}%`,
                           backgroundColor: barColor,
                           borderRadius: '2px 2px 0 0',
-                        }} />
-                      )}
-                      {count > 0 && (
-                        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', fontSize: 9, fontWeight: 700, lineHeight: '32px', color: underMin ? '#C2410C' : '#3B5BDB' }}>
-                          {count}
+                          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+                        }}>
+                          {/* Only show count at hour marks to avoid clutter */}
+                          {isHour && (
+                            <span style={{ fontSize: 9, fontWeight: 700, color: textColor, lineHeight: 1, paddingTop: 2 }}>{count}</span>
+                          )}
                         </div>
                       )}
                     </td>
