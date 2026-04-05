@@ -2351,33 +2351,29 @@ const RosterApp = () => {
   // ── Availability View ────────────────────────────────────────────────────────
   const AvailabilityView = () => {
     const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const CYCLE = [null, 'available', 'preferred', 'unavailable'];
 
-    const handleToggle = async (staffId, dowIdx) => {
+    const OPTIONS = [
+      { value: 'available',   icon: '✓', activeStyle: { background: '#f0fdf4', border: '1.5px solid #86efac', color: '#16a34a' } },
+      { value: 'preferred',   icon: '★', activeStyle: { background: '#eff6ff', border: '1.5px solid #93c5fd', color: '#2563eb' } },
+      { value: 'unavailable', icon: '✕', activeStyle: { background: '#fef2f2', border: '1.5px solid #fca5a5', color: '#dc2626' } },
+    ];
+
+    const handleSet = async (staffId, dowIdx, value) => {
       const dk = formatDateKey(dates[dowIdx]);
       const key = `${staffId}|${dk}`;
       const current = availability[key]?.status || null;
-      const next = CYCLE[(CYCLE.indexOf(current) + 1) % CYCLE.length];
-      // Optimistic update
+      const next = current === value ? null : value; // clicking active status clears it
       setAvailability(prev => {
         const updated = { ...prev };
-        if (next === null) {
-          delete updated[key];
-        } else {
-          updated[key] = { status: next, startTime: prev[key]?.startTime || null, endTime: prev[key]?.endTime || null };
-        }
+        if (next === null) { delete updated[key]; }
+        else { updated[key] = { status: next, startTime: null, endTime: null }; }
         return updated;
       });
       try {
-        if (next === null) {
-          await db.setAvailability(org.id, staffId, dk, null, null, null);
-        } else {
-          await db.setAvailability(org.id, staffId, dk, next, availability[key]?.startTime || null, availability[key]?.endTime || null);
-        }
+        await db.setAvailability(org.id, staffId, dk, next, null, null);
       } catch (e) {
         console.error('Availability save error:', e);
-        toast.error('Failed to save availability');
-        // Revert
+        toast.error('Failed to save');
         setAvailability(prev => ({ ...prev }));
       }
     };
@@ -2390,77 +2386,62 @@ const RosterApp = () => {
             <h2 className="text-base font-semibold text-gray-900">Staff Availability</h2>
             <p className="text-xs text-gray-400 mt-0.5">Week of {dates[0]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
           </div>
-          <div className="flex items-center gap-3">
-            {/* Legend */}
-            <div className="flex items-center gap-3 text-xs text-gray-500">
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-green-100 border border-green-300 inline-block" />Available</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-blue-100 border border-blue-300 inline-block" />Preferred</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm inline-block" style={{ background: 'repeating-linear-gradient(135deg,rgba(239,68,68,0.35) 0px,rgba(239,68,68,0.35) 2px,#fee2e2 2px,#fee2e2 7px)', border: '1px solid #fca5a5' }} />Unavailable</span>
-            </div>
-            <span className="text-xs text-gray-400">Click a cell to cycle</span>
+          <div className="flex items-center gap-4 text-xs text-gray-500">
+            <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded flex items-center justify-center text-green-700 font-bold" style={{ background: '#f0fdf4', border: '1.5px solid #86efac' }}>✓</span>Available</span>
+            <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded flex items-center justify-center text-blue-700 font-bold" style={{ background: '#eff6ff', border: '1.5px solid #93c5fd' }}>★</span>Preferred</span>
+            <span className="flex items-center gap-1.5"><span className="w-5 h-5 rounded flex items-center justify-center text-red-600 font-bold" style={{ background: '#fef2f2', border: '1.5px solid #fca5a5' }}>✕</span>Unavailable</span>
           </div>
         </div>
 
         {/* Grid */}
-        <div className="flex-1 overflow-auto p-4">
-          <table className="w-full border-collapse">
+        <div className="flex-1 overflow-auto p-5">
+          <table className="border-collapse" style={{ width: '100%' }}>
             <thead>
               <tr>
-                <th className="text-left pb-2 pr-4 text-xs font-semibold text-gray-500 w-36 sticky left-0 bg-white z-10">Staff</th>
-                {dates.map((d, i) => {
-                  const isWeekend = i >= 5;
-                  return (
-                    <th key={i} className={`pb-2 text-center text-xs font-semibold ${isWeekend ? 'text-blue-500' : 'text-gray-500'}`} style={{ minWidth: 90 }}>
-                      <div>{DAYS[i]}</div>
-                      <div className="font-normal text-gray-400">{d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
-                    </th>
-                  );
-                })}
+                <th className="text-left pb-3 pr-6 text-xs font-semibold text-gray-500 sticky left-0 bg-white z-10" style={{ minWidth: 140 }}>Staff</th>
+                {dates.map((d, i) => (
+                  <th key={i} className={`pb-3 text-center text-xs font-semibold ${i >= 5 ? 'text-blue-500' : 'text-gray-500'}`} style={{ minWidth: 110 }}>
+                    <div>{DAYS[i]}</div>
+                    <div className="font-normal text-gray-400">{d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {activeStaff.map((s) => (
-                <tr key={s.id} className="group">
-                  <td className="pr-4 py-1.5 sticky left-0 bg-white z-10">
-                    <div className="text-sm font-medium text-gray-800 truncate max-w-[130px]">{s.name}</div>
-                    {s.role && <div className="text-xs text-gray-400 truncate max-w-[130px]">{s.role}</div>}
+              {activeStaff.map((s, si) => (
+                <tr key={s.id} className={si % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}>
+                  <td className="py-2 pr-6 sticky left-0 z-10" style={{ background: 'inherit' }}>
+                    <div className="text-sm font-medium text-gray-800">{s.name}</div>
+                    {s.role && <div className="text-xs text-gray-400">{s.role}</div>}
                   </td>
                   {dates.map((d, dowIdx) => {
                     const dk = formatDateKey(d);
-                    const avail = availability[`${s.id}|${dk}`];
-                    const status = avail?.status || null;
-                    const isWeekend = dowIdx >= 5;
-
-                    let cellBg, cellBorder, cellLabel, labelColor;
-                    if (status === 'available') {
-                      cellBg = '#f0fdf4'; cellBorder = '#86efac'; cellLabel = '✓'; labelColor = '#16a34a';
-                    } else if (status === 'preferred') {
-                      cellBg = '#eff6ff'; cellBorder = '#93c5fd'; cellLabel = '★'; labelColor = '#2563eb';
-                    } else if (status === 'unavailable') {
-                      cellBg = null; cellBorder = '#fca5a5'; cellLabel = '✕'; labelColor = '#dc2626';
-                    } else {
-                      cellBg = isWeekend ? '#f8faff' : '#fafafa'; cellBorder = '#e5e7eb'; cellLabel = null; labelColor = null;
-                    }
-
+                    const status = availability[`${s.id}|${dk}`]?.status || null;
                     return (
-                      <td key={dowIdx} className="py-1.5 px-1 text-center">
-                        <button
-                          onClick={() => handleToggle(s.id, dowIdx)}
-                          title={status ? `${status} — click to change` : 'No preference — click to set'}
-                          style={{
-                            width: '100%', minWidth: 76, height: 36, borderRadius: 8,
-                            border: `1px solid ${cellBorder}`,
-                            background: status === 'unavailable'
-                              ? `repeating-linear-gradient(135deg, rgba(239,68,68,0.18) 0px, rgba(239,68,68,0.18) 2px, #fee2e2 2px, #fee2e2 7px)`
-                              : cellBg,
-                            cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: 16, color: labelColor,
-                            transition: 'all 0.1s',
-                          }}
-                        >
-                          {cellLabel}
-                        </button>
+                      <td key={dowIdx} className="py-2 px-1.5 text-center">
+                        <div className="flex gap-1 justify-center">
+                          {OPTIONS.map(opt => {
+                            const isActive = status === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                onClick={() => handleSet(s.id, dowIdx, opt.value)}
+                                title={opt.value.charAt(0).toUpperCase() + opt.value.slice(1)}
+                                style={{
+                                  width: 28, height: 28, borderRadius: 6,
+                                  fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                                  transition: 'all 0.1s',
+                                  ...(isActive
+                                    ? opt.activeStyle
+                                    : { background: 'transparent', border: '1px solid #e5e7eb', color: '#d1d5db' }
+                                  ),
+                                }}
+                              >
+                                {opt.icon}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </td>
                     );
                   })}
@@ -2468,7 +2449,6 @@ const RosterApp = () => {
               ))}
             </tbody>
           </table>
-
           {activeStaff.length === 0 && (
             <div className="flex items-center justify-center h-48 text-sm text-gray-400">No staff added yet.</div>
           )}
