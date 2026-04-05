@@ -686,6 +686,49 @@ export const db = {
     if (error) throw error;
   },
 
+  // ── Shift swap requests ───────────────────────────────────────────────────────
+
+  async getSwapRequests(orgId, startDate, endDate) {
+    const { data, error } = await supabase
+      .from('shift_swap_requests')
+      .select('date_key, staff_id, time_slot, status')
+      .eq('org_id', orgId)
+      .eq('status', 'open')
+      .gte('date_key', startDate)
+      .lte('date_key', endDate);
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createSwapRequest(orgId, dateKey, staffId, timeSlot) {
+    const { error } = await supabase
+      .from('shift_swap_requests')
+      .upsert({ org_id: orgId, date_key: dateKey, staff_id: staffId, time_slot: timeSlot, status: 'open' },
+        { onConflict: 'org_id,date_key,staff_id,time_slot', ignoreDuplicates: false });
+    if (error) throw error;
+  },
+
+  async resolveSwapRequest(orgId, dateKey, staffId) {
+    const { error } = await supabase
+      .from('shift_swap_requests')
+      .update({ status: 'filled' })
+      .eq('org_id', orgId)
+      .eq('date_key', dateKey)
+      .eq('staff_id', staffId)
+      .eq('status', 'open');
+    if (error) throw error;
+  },
+
+  async cancelSwapRequest(orgId, dateKey, staffId) {
+    const { error } = await supabase
+      .from('shift_swap_requests')
+      .delete()
+      .eq('org_id', orgId)
+      .eq('date_key', dateKey)
+      .eq('staff_id', staffId);
+    if (error) throw error;
+  },
+
   async unpublishWeek(orgId, weekStart) {
     const { error } = await supabase
       .from('published_weeks')
