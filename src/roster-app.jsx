@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db, supabase } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
@@ -4843,68 +4843,136 @@ const RosterApp = () => {
     );
 
     const StaffTab = () => {
+      const superRate = businessSettings.superannuationRate || 0;
+      const currency = businessSettings.currency || '$';
       const sortedStaff = [...weekStats.staffBreakdown].sort((a, b) => b.cost - a.cost);
-      const sortedByHours = [...sortedStaff].sort((a, b) => b.hours - a.hours);
-      const avgStaffCost = sortedStaff.length > 0 ? weekStats.totalCost / sortedStaff.length : 0;
+      if (sortedStaff.length === 0) return (
+        <div className="text-center py-16 text-gray-400 text-sm">No staff scheduled this week.</div>
+      );
+      const avgHours = sortedStaff.length > 0 ? weekStats.totalHours / sortedStaff.length : 0;
+      const avgCost = sortedStaff.length > 0 ? weekStats.totalCost / sortedStaff.length : 0;
+      const ftExpected = 38;
+      const ptExpected = 20;
 
       return (
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="metric-card">
               <div className="text-xs text-gray-500 mb-1">Highest Cost</div>
               <div className="text-base font-bold text-gray-800 truncate">{sortedStaff[0]?.name || '—'}</div>
-              <div className="text-xs text-gray-400">${sortedStaff[0]?.cost.toFixed(0) || 0}</div>
+              <div className="text-xs text-gray-400">{currency}{sortedStaff[0]?.cost.toFixed(0) || 0} this week</div>
             </div>
             <div className="metric-card">
               <div className="text-xs text-gray-500 mb-1">Most Hours</div>
-              <div className="text-base font-bold text-gray-800 truncate">{sortedByHours[0]?.name || '—'}</div>
-              <div className="text-xs text-gray-400">{sortedByHours[0]?.hours.toFixed(1) || 0}h</div>
+              {(() => { const top = [...sortedStaff].sort((a,b) => b.hours - a.hours)[0]; return (
+                <div>
+                  <div className="text-base font-bold text-gray-800 truncate">{top?.name || '—'}</div>
+                  <div className="text-xs text-gray-400">{top?.hours.toFixed(1) || 0}h scheduled</div>
+                </div>
+              ); })()}
+            </div>
+            <div className="metric-card">
+              <div className="text-xs text-gray-500 mb-1">Avg Hours / Staff</div>
+              <div className="text-2xl font-bold text-gray-900">{avgHours.toFixed(1)}h</div>
+              <div className="text-xs text-gray-400">{sortedStaff.length} staff rostered</div>
             </div>
             <div className="metric-card">
               <div className="text-xs text-gray-500 mb-1">Avg Cost / Staff</div>
-              <div className="text-base font-bold text-gray-800">${avgStaffCost.toFixed(0)}</div>
-              <div className="text-xs text-gray-400">{sortedStaff.length > 0 ? (weekStats.totalHours / sortedStaff.length).toFixed(1) : 0}h avg</div>
+              <div className="text-2xl font-bold text-gray-900">{currency}{avgCost.toFixed(0)}</div>
+              <div className="text-xs text-gray-400">incl. super</div>
             </div>
           </div>
 
+          <div className="card overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <h3 className="text-sm font-semibold text-gray-700">Staff Summary</h3>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">Name</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase">Hours</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase">Wages</th>
+                  {superRate > 0 && <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase">Super</th>}
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase">Total</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase">% of spend</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {sortedStaff.map((sd, idx) => {
+                  const pctCost = weekStats.totalCost > 0 ? (sd.cost / weekStats.totalCost) * 100 : 0;
+                  const baseCost = superRate > 0 ? sd.cost / (1 + superRate/100) : sd.cost;
+                  const superAmt = sd.cost - baseCost;
+                  const staffMember = staff.find(s => s.name === sd.name);
+                  const isSalaried = staffMember && extraConfig.staffSalaries?.[staffMember.id];
+                  return (
+                    <tr key={sd.name} className="hover:bg-blue-50/30 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-400 w-5 shrink-0">#{idx+1}</span>
+                          <div>
+                            <div className="font-semibold text-gray-800">{sd.name}</div>
+                            {isSalaried && <span className="text-xs text-blue-500">Salaried</span>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-gray-800">{sd.hours.toFixed(1)}h</td>
+                      <td className="px-4 py-3 text-right text-gray-600">{currency}{baseCost.toFixed(0)}</td>
+                      {superRate > 0 && <td className="px-4 py-3 text-right text-gray-400">+{currency}{superAmt.toFixed(0)}</td>}
+                      <td className="px-4 py-3 text-right font-bold text-gray-900">{currency}{sd.cost.toFixed(0)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="w-16 bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                            <div className="h-1.5 bg-blue-400 rounded-full" style={{ width: `${pctCost}%` }} />
+                          </div>
+                          <span className="text-xs text-gray-500 w-8 text-right">{pctCost.toFixed(0)}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-50 border-t-2 border-gray-200">
+                  <td className="px-4 py-2.5 text-xs font-semibold text-gray-600 uppercase">Total</td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-gray-800">{weekStats.totalHours.toFixed(1)}h</td>
+                  <td className="px-4 py-2.5 text-right text-gray-700">{currency}{weekStats.totalBaseCost.toFixed(0)}</td>
+                  {superRate > 0 && <td className="px-4 py-2.5 text-right text-gray-400">+{currency}{(weekStats.totalCost - weekStats.totalBaseCost).toFixed(0)}</td>}
+                  <td className="px-4 py-2.5 text-right font-bold text-gray-900">{currency}{weekStats.totalCost.toFixed(0)}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-500">100%</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Utilisation — scheduled vs expected hours by employment type */}
           <div className="card p-4">
-            <h3 className="text-sm font-semibold text-gray-600 mb-3">Hours & Cost by Staff</h3>
-            <div className="space-y-2">
-              {sortedStaff.map((sd, idx) => {
-                const pct = weekStats.totalCost > 0 ? (sd.cost / weekStats.totalCost) * 100 : 0;
+            <h3 className="text-sm font-semibold text-gray-700 mb-1">Schedule Utilisation</h3>
+            <p className="text-xs text-gray-400 mb-3">Scheduled hours vs expected weekly hours. FT = 38h, PT = 20h, Casual = hours scheduled.</p>
+            <div className="space-y-2.5">
+              {[...staff.filter(s => s.active !== false)].map(s => {
+                const scheduled = (weekStats.staffBreakdown.find(sd => sd.name === s.name)?.hours) || 0;
+                const expected = s.employmentType === 'FT' ? ftExpected : s.employmentType === 'PT' ? ptExpected : scheduled || 0;
+                const pct = expected > 0 ? Math.min((scheduled / expected) * 100, 100) : 0;
+                const over = expected > 0 && scheduled > expected;
+                const barColor = over ? 'bg-orange-400' : pct >= 90 ? 'bg-green-400' : pct >= 60 ? 'bg-blue-400' : pct > 0 ? 'bg-gray-300' : 'bg-gray-100';
+                if (s.employmentType === 'Casual' && scheduled === 0) return null;
                 return (
-                  <div key={sd.name} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
-                    <div className="text-xs text-gray-400 w-5 text-right shrink-0">#{idx + 1}</div>
+                  <div key={s.id} className="flex items-center gap-3">
                     <div className="w-28 shrink-0">
-                      <div className="text-sm font-semibold text-gray-800 truncate">{sd.name}</div>
-                      <div className="text-xs text-gray-400">{sd.hours.toFixed(1)}h · ${sd.hours > 0 ? (sd.cost / sd.hours).toFixed(2) : '0'}/hr</div>
+                      <div className="text-sm font-medium text-gray-700 truncate">{s.name}</div>
+                      <div className="text-xs text-gray-400">{s.employmentType}</div>
                     </div>
-                    <div className="flex-1 bg-gray-100 rounded h-4 overflow-hidden">
-                      <div className="h-4 bg-blue-400 rounded transition-all" style={{ width: `${Math.max(pct, 2)}%` }} />
+                    <div className="flex-1 bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                      <div className={`h-2.5 rounded-full transition-all ${barColor}`} style={{ width: `${Math.max(pct, scheduled > 0 ? 2 : 0)}%` }} />
                     </div>
-                    <div className="text-right w-20 shrink-0">
-                      <div className="text-sm font-bold text-gray-800">${sd.cost.toFixed(0)}</div>
-                      <div className="text-xs text-gray-400">{pct.toFixed(0)}%</div>
+                    <div className="text-xs text-gray-600 w-28 text-right shrink-0">
+                      {scheduled.toFixed(1)}h {s.employmentType !== 'Casual' ? `/ ${expected}h` : ''}
+                      {over && <span className="text-orange-500 ml-1">(+{(scheduled-expected).toFixed(1)}h OT)</span>}
                     </div>
                   </div>
                 );
-              })}
-            </div>
-          </div>
-
-          <div className="card p-4">
-            <h3 className="text-sm font-semibold text-gray-600 mb-3">Utilization</h3>
-            <div className="space-y-2">
-              {Object.values(insights.utilizationRate).sort((a, b) => b.rate - a.rate).map((util) => (
-                <div key={util.name} className="flex items-center gap-3">
-                  <div className="w-24 text-sm text-gray-700 shrink-0 truncate">{util.name}</div>
-                  <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
-                    <div className={`h-3 rounded-full transition-all ${util.rate > 75 ? 'bg-red-400' : util.rate > 50 ? 'bg-orange-400' : util.rate > 25 ? 'bg-blue-400' : 'bg-green-400'}`}
-                      style={{ width: `${util.rate}%` }} />
-                  </div>
-                  <div className="text-xs text-gray-500 w-28 text-right shrink-0">{util.scheduledHours}h / {util.totalPossibleHours}h ({util.rate.toFixed(0)}%)</div>
-                </div>
-              ))}
+              }).filter(Boolean)}
             </div>
           </div>
         </div>
@@ -4913,116 +4981,93 @@ const RosterApp = () => {
 
     const RolesTab = () => {
       const sortedRoles = [...weekStats.roleBreakdown].sort((a, b) => b.hours - a.hours);
-
+      const superRate = businessSettings.superannuationRate || 0;
+      const currency = businessSettings.currency || '$';
+      if (sortedRoles.length === 0) return (
+        <div className="text-center py-16 text-gray-400 text-sm">No roles scheduled this week.</div>
+      );
       return (
-        <div className="space-y-6">
-          {/* Role Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="card p-5">
-              <div className="text-sm text-gray-600 mb-1">Most Used Role</div>
-              <div className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                {sortedRoles[0] && (
-                  <>
-                    <span 
-                      className="px-2 py-1 rounded text-sm text-white font-bold"
-                      style={{ backgroundColor: sortedRoles[0].color }}
-                    >
-                      {sortedRoles[0].code}
-                    </span>
-                    {sortedRoles[0].name}
-                  </>
-                )}
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="metric-card">
+              <div className="text-xs text-gray-500 mb-1">Most Used</div>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="px-2 py-0.5 rounded text-xs text-white font-bold" style={{ backgroundColor: sortedRoles[0]?.color }}>{sortedRoles[0]?.code}</span>
+                <span className="text-sm font-bold text-gray-800 truncate">{sortedRoles[0]?.name}</span>
               </div>
-              <div className="text-sm text-gray-500">{sortedRoles[0]?.hours.toFixed(2) || 0}h</div>
+              <div className="text-xs text-gray-400 mt-0.5">{sortedRoles[0]?.hours.toFixed(1)}h this week</div>
             </div>
-            
-            <div className="card p-5">
-              <div className="text-sm text-gray-600 mb-1">Most Expensive Role</div>
-              <div className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                {[...sortedRoles].sort((a, b) => b.cost - a.cost)[0] && (
-                  <>
-                    <span 
-                      className="px-2 py-1 rounded text-sm text-white font-bold"
-                      style={{ backgroundColor: [...sortedRoles].sort((a, b) => b.cost - a.cost)[0].color }}
-                    >
-                      {[...sortedRoles].sort((a, b) => b.cost - a.cost)[0].code}
-                    </span>
-                    {[...sortedRoles].sort((a, b) => b.cost - a.cost)[0].name}
-                  </>
-                )}
-              </div>
-              <div className="text-sm text-gray-500">${[...sortedRoles].sort((a, b) => b.cost - a.cost)[0]?.cost.toFixed(0) || 0}</div>
+            <div className="metric-card">
+              <div className="text-xs text-gray-500 mb-1">Highest Cost</div>
+              {(() => { const top = [...sortedRoles].sort((a,b) => b.cost - a.cost)[0]; return top ? (
+                <div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="px-2 py-0.5 rounded text-xs text-white font-bold" style={{ backgroundColor: top.color }}>{top.code}</span>
+                    <span className="text-sm font-bold text-gray-800 truncate">{top.name}</span>
+                  </div>
+                  <div className="text-xs text-gray-400 mt-0.5">{currency}{top.cost.toFixed(0)} total</div>
+                </div>
+              ) : null; })()}
             </div>
-
-            <div className="card p-5">
-              <div className="text-sm text-gray-600 mb-1">Active Roles</div>
-              <div className="text-2xl font-bold text-gray-800">{sortedRoles.length}</div>
-              <div className="text-sm text-gray-500">of {roles.length} total</div>
+            <div className="metric-card">
+              <div className="text-xs text-gray-500 mb-1">Active Roles</div>
+              <div className="text-2xl font-bold text-gray-900">{sortedRoles.length}<span className="text-sm font-normal text-gray-400"> / {roles.length}</span></div>
+              <div className="text-xs text-gray-400 mt-0.5">{sortedRoles.length < roles.length ? `${roles.length - sortedRoles.length} unused this week` : 'all roles used'}</div>
             </div>
           </div>
 
-          {/* Role Details Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {sortedRoles.map((roleData) => {
-              const avgCostPerHour = roleData.hours > 0 ? roleData.cost / roleData.hours : 0;
-              
-              return (
-                <div 
-                  key={roleData.code} 
-                  className="p-5 rounded-xl border-2 transition-all hover:shadow-lg"
-                  style={{ 
-                    borderColor: roleData.color, 
-                    backgroundColor: `${roleData.color}08` 
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div 
-                        className="px-3 py-2 rounded-lg font-bold text-white text-lg"
-                        style={{ backgroundColor: roleData.color }}
-                      >
-                        {roleData.code}
-                      </div>
-                      <div>
-                        <div className="font-bold text-gray-800">{roleData.name}</div>
-                        <div className="text-xs text-gray-500">{weekStats.totalHours > 0 ? ((roleData.hours / weekStats.totalHours) * 100).toFixed(2) : 0}% of total</div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 bg-white rounded-lg">
-                      <div className="text-xs text-gray-500 mb-1">Total Cost</div>
-                      <div className="text-xl font-bold text-gray-800">${roleData.cost.toFixed(0)}</div>
-                    </div>
-                    <div className="p-3 bg-white rounded-lg">
-                      <div className="text-xs text-gray-500 mb-1">Total Hours</div>
-                      <div className="text-xl font-bold text-gray-800">{roleData.hours.toFixed(2)}h</div>
-                    </div>
-                    <div className="p-3 bg-white rounded-lg col-span-2">
-                      <div className="text-xs text-gray-500 mb-1">Average Cost per Hour</div>
-                      <div className="text-xl font-bold text-gray-800">${avgCostPerHour.toFixed(2)}/hr</div>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 pt-3 border-t border-gray-200">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-gray-600">Share of total costs</span>
-                      <span className="font-bold text-gray-800">{weekStats.totalCost > 0 ? ((roleData.cost / weekStats.totalCost) * 100).toFixed(2) : 0}%</span>
-                    </div>
-                    <div className="mt-2 bg-gray-200 rounded-full h-2 overflow-hidden">
-                      <div 
-                        className="h-2 rounded-full transition-all"
-                        style={{ 
-                          width: `${weekStats.totalCost > 0 ? (roleData.cost / weekStats.totalCost) * 100 : 0}%`,
-                          backgroundColor: roleData.color
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600 uppercase">Role</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 uppercase">Hours</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 uppercase">Share</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 uppercase">Wages</th>
+                  {superRate > 0 && <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 uppercase">Super</th>}
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 uppercase">Total Cost</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-600 uppercase">Avg Rate</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {sortedRoles.map(r => {
+                  const hrShare = weekStats.totalHours > 0 ? (r.hours / weekStats.totalHours) * 100 : 0;
+                  const baseCost = superRate > 0 ? r.cost / (1 + superRate/100) : r.cost;
+                  const superAmt = r.cost - baseCost;
+                  const avgRate = r.hours > 0 ? baseCost / r.hours : 0;
+                  return (
+                    <tr key={r.code} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded text-xs text-white font-bold shrink-0" style={{ backgroundColor: r.color }}>{r.code}</span>
+                          <span className="font-medium text-gray-800">{r.name}</span>
+                        </div>
+                        <div className="mt-1 h-1.5 bg-gray-100 rounded-full overflow-hidden w-full max-w-32">
+                          <div className="h-1.5 rounded-full" style={{ width: `${hrShare}%`, backgroundColor: r.color }} />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-gray-800">{r.hours.toFixed(1)}h</td>
+                      <td className="px-4 py-3 text-right text-gray-500">{hrShare.toFixed(0)}%</td>
+                      <td className="px-4 py-3 text-right text-gray-700">{currency}{baseCost.toFixed(0)}</td>
+                      {superRate > 0 && <td className="px-4 py-3 text-right text-gray-400">+{currency}{superAmt.toFixed(0)}</td>}
+                      <td className="px-4 py-3 text-right font-bold text-gray-900">{currency}{r.cost.toFixed(0)}</td>
+                      <td className="px-4 py-3 text-right text-gray-500">{currency}{avgRate.toFixed(2)}/h</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold">
+                  <td className="px-4 py-2.5 text-xs text-gray-600 uppercase">Total</td>
+                  <td className="px-4 py-2.5 text-right text-gray-800">{weekStats.totalHours.toFixed(1)}h</td>
+                  <td className="px-4 py-2.5 text-right text-gray-500">100%</td>
+                  <td className="px-4 py-2.5 text-right text-gray-700">{currency}{weekStats.totalBaseCost.toFixed(0)}</td>
+                  {superRate > 0 && <td className="px-4 py-2.5 text-right text-gray-400">+{currency}{(weekStats.totalCost - weekStats.totalBaseCost).toFixed(0)}</td>}
+                  <td className="px-4 py-2.5 text-right text-gray-900">{currency}{weekStats.totalCost.toFixed(0)}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-500">{weekStats.totalHours > 0 ? `${currency}${(weekStats.totalBaseCost/weekStats.totalHours).toFixed(2)}/h` : '—'}</td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </div>
       );
@@ -5366,134 +5411,130 @@ const RosterApp = () => {
     };
 
     const CoverageTab = () => {
+      const minStaff = businessSettings.minStaffCoverage || 2;
+      const peakMin = businessSettings.minPeakStaffCoverage || 3;
+      const operationalSlots = timeSlots.filter(t => {
+        return dates.some(d => isWithinOperationalHours(d, t));
+      });
+      // Build coverage matrix: slot -> dateKey -> count
+      const coverageMatrix = {};
+      operationalSlots.forEach(t => {
+        coverageMatrix[t] = {};
+        dates.forEach(d => {
+          const dk = formatDateKey(d);
+          coverageMatrix[t][dk] = activeStaff.filter(s => !!schedule[getScheduleKey(dk, s.id, t)]).length;
+        });
+      });
+      // Key hourly slots only for the heatmap
+      const heatSlots = operationalSlots.filter(t => t.endsWith(':00'));
+      const maxCount = Math.max(1, ...heatSlots.flatMap(t => dates.map(d => coverageMatrix[t]?.[formatDateKey(d)] || 0)));
+
       return (
-        <div className="space-y-6">
-          {/* Coverage Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="metric-card border-red-200">
-              <div className="text-sm text-gray-500 mb-1">Critical Gaps</div>
-              <div className="text-3xl font-bold text-red-600">{insights.coverageGaps.length}</div>
-              <div className="text-xs text-gray-400">No staff scheduled</div>
-              <div className="text-xs text-gray-400 mt-1">During operational hours</div>
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="metric-card">
+              <div className="text-xs text-gray-500 mb-1">Coverage Gaps</div>
+              <div className={`text-3xl font-bold ${insights.coverageGaps.length > 0 ? 'text-red-600' : 'text-green-600'}`}>{insights.coverageGaps.length}</div>
+              <div className="text-xs text-gray-400">0 staff during op. hours</div>
             </div>
-
-            <div className="metric-card border-orange-200">
-              <div className="text-sm text-gray-500 mb-1">Understaffed</div>
-              <div className="text-3xl font-bold text-orange-600">{insights.underStaffedSlots.length}</div>
-              <div className="text-xs text-gray-400">Below minimum ({businessSettings.minStaffCoverage})</div>
-              <div className="text-xs text-gray-400 mt-1">Peak min: {businessSettings.minPeakStaffCoverage}</div>
+            <div className="metric-card">
+              <div className="text-xs text-gray-500 mb-1">Understaffed Slots</div>
+              <div className={`text-3xl font-bold ${insights.underStaffedSlots.length > 0 ? 'text-orange-500' : 'text-green-600'}`}>{insights.underStaffedSlots.length}</div>
+              <div className="text-xs text-gray-400">Below min {minStaff} staff</div>
             </div>
-
-            <div className="metric-card border-blue-200">
-              <div className="text-sm text-gray-500 mb-1">Well Covered</div>
-              <div className="text-3xl font-bold text-blue-600">
-                {dates.length * timeSlots.length - insights.coverageGaps.length - insights.underStaffedSlots.length}
-              </div>
-              <div className="text-xs text-gray-400">Meets minimum coverage</div>
-              <div className="text-xs text-gray-400 mt-1">All operational slots</div>
-            </div>
-          </div>
-
-          {/* Peak Hour Coverage */}
-          <div className="card p-6">
-            <h3 className="text-lg font-bold mb-4 text-gray-800 flex items-center gap-2">
-              <span className="bg-orange-100 text-orange-600 px-3 py-1 rounded-lg text-sm font-bold">PEAK</span>
-              Peak Hour Coverage (12pm - 2pm)
-            </h3>
-            <div className="space-y-4">
-              {weekStats.dailyBreakdown.map((day) => {
-                const peakSlots = weekStats.peakHourCoverage[day.dateKey] || {};
-                const peakStaffCounts = Object.values(peakSlots);
-                const avgPeakStaff = peakStaffCounts.length > 0 
-                  ? (peakStaffCounts.reduce((a, b) => a + b, 0) / peakStaffCounts.length)
-                  : 0;
-                const maxPeakStaff = peakStaffCounts.length > 0 ? Math.max(...peakStaffCounts) : 0;
-                const minPeakStaff = peakStaffCounts.length > 0 ? Math.min(...peakStaffCounts) : 0;
-                
+            <div className="metric-card">
+              <div className="text-xs text-gray-500 mb-1">Peak Avg</div>
+              {(() => {
+                const allPeakCounts = dates.flatMap(d => {
+                  const dk = formatDateKey(d);
+                  return timeSlots.filter(t => t >= '12:00' && t < '14:00').map(t => coverageMatrix[t]?.[dk] || 0);
+                }).filter(n => n > 0);
+                const avg = allPeakCounts.length > 0 ? allPeakCounts.reduce((a,b) => a+b, 0) / allPeakCounts.length : 0;
                 return (
-                  <div key={day.dateKey} className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <div className="font-bold text-gray-800">
-                          {day.date.toLocaleDateString('en-AU', { weekday: 'long' })}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {day.date.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-bold text-orange-600">
-                          {avgPeakStaff.toFixed(2)}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {minPeakStaff}-{maxPeakStaff} range
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex gap-1 h-16">
-                      {timeSlots.filter(t => t >= '12:00' && t < '14:00').map(slot => {
-                        const count = peakSlots[slot] || 0;
-                        const maxCount = Math.max(6, Math.max(...Object.values(weekStats.peakHourCoverage).flatMap(d => Object.values(d))));
-                        const height = (count / maxCount) * 100;
-                        
-                        return (
-                          <div key={slot} className="flex-1 flex flex-col items-center justify-end">
-                            <div className={`text-xs font-bold mb-1 ${count === 0 ? 'text-red-600' : count === 1 ? 'text-orange-600' : 'text-gray-600'}`}>
-                              {count}
-                            </div>
-                            <div 
-                              className={`w-full rounded-t transition-all ${
-                                count === 0 ? 'bg-red-400' :
-                                count === 1 ? 'bg-orange-400' :
-                                count <= 3 ? 'bg-blue-400' :
-                                'bg-green-400'
-                              }`}
-                              style={{ height: `${Math.max(height, 8)}%` }}
-                            />
-                            <div className="text-xs text-gray-400 mt-1">{slot.slice(0, 5)}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                  <div>
+                    <div className={`text-3xl font-bold ${avg >= peakMin ? 'text-green-600' : 'text-orange-500'}`}>{avg.toFixed(1)}</div>
+                    <div className="text-xs text-gray-400">Target: {peakMin}+ staff 12–2pm</div>
                   </div>
                 );
-              })}
+              })()}
             </div>
           </div>
 
-          {/* Critical Gaps Details */}
+          {/* Coverage heatmap */}
+          <div className="card p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Staff Coverage by Hour</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr>
+                    <th className="text-left text-gray-400 font-medium pr-3 pb-2 w-16">Time</th>
+                    {dates.map(d => (
+                      <th key={formatDateKey(d)} className="text-center text-gray-500 font-medium pb-2 px-1">
+                        <div>{d.toLocaleDateString('en-AU', { weekday: 'short' })}</div>
+                        <div className="text-gray-400 font-normal">{d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
+                        {publicHolidaySet.has(formatDateKey(d)) && <div className="text-orange-500 font-bold">PH</div>}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {heatSlots.map(t => {
+                    const isPeak = t >= '12:00' && t < '14:00';
+                    return (
+                      <tr key={t} className={isPeak ? 'bg-orange-50/40' : ''}>
+                        <td className={`pr-3 py-0.5 font-medium ${isPeak ? 'text-orange-600' : 'text-gray-400'}`}>{t}</td>
+                        {dates.map(d => {
+                          const dk = formatDateKey(d);
+                          const count = coverageMatrix[t]?.[dk] || 0;
+                          const isOp = isWithinOperationalHours(d, t);
+                          const isGap = isOp && count === 0;
+                          const isUnder = isOp && count > 0 && count < (isPeak ? peakMin : minStaff);
+                          const intensity = maxCount > 0 ? count / maxCount : 0;
+                          return (
+                            <td key={dk} className="px-1 py-0.5 text-center">
+                              {!isOp ? (
+                                <span className="block w-8 h-5 rounded bg-gray-50 mx-auto"></span>
+                              ) : isGap ? (
+                                <span className="block w-8 h-5 rounded bg-red-100 border border-red-300 mx-auto flex items-center justify-center text-red-500 font-bold">!</span>
+                              ) : (
+                                <span
+                                  className={`block w-8 h-5 rounded mx-auto flex items-center justify-center font-semibold ${isUnder ? 'text-orange-700' : 'text-blue-800'}`}
+                                  style={{ backgroundColor: isUnder ? `rgba(251,146,60,${0.2 + intensity * 0.6})` : `rgba(59,130,246,${0.15 + intensity * 0.65})` }}
+                                >
+                                  {count}
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+              <div className="flex items-center gap-1.5"><span className="w-4 h-3 rounded bg-blue-200 inline-block"></span> Adequate</div>
+              <div className="flex items-center gap-1.5"><span className="w-4 h-3 rounded bg-orange-200 inline-block"></span> Understaffed</div>
+              <div className="flex items-center gap-1.5"><span className="w-4 h-3 rounded bg-red-100 border border-red-300 inline-block"></span> Gap</div>
+              <div className="flex items-center gap-1.5"><span className="w-4 h-3 rounded bg-gray-50 inline-block"></span> Outside hours</div>
+            </div>
+          </div>
+
+          {/* Gaps list */}
           {insights.coverageGaps.length > 0 && (
-            <div className="card p-6 border-red-200">
-              <h3 className="text-lg font-bold mb-4 text-red-800 flex items-center gap-2">
-                <CircleAlert size={20} className="text-red-600" />
-                Critical Coverage Gaps
-              </h3>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {insights.coverageGaps.slice(0, 50).map((gap, idx) => (
-                  <div key={`${gap.dateKey}-${gap.slot}`} className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-200">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-red-600 text-white rounded-full flex items-center justify-center font-bold text-sm">
-                        {idx + 1}
-                      </div>
-                      <div>
-                        <div className="font-semibold text-gray-800">
-                          {gap.date.toLocaleDateString('en-AU', { weekday: 'short' })} {gap.date.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}
-                        </div>
-                        <div className="text-sm text-gray-600">Time: {gap.slot}</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-red-600 font-bold">0 / {gap.required}</div>
-                      <div className="text-xs text-gray-500">staff</div>
-                    </div>
+            <div className="card p-4">
+              <h3 className="text-sm font-semibold text-red-700 mb-2 flex items-center gap-2"><AlertTriangle size={14} /> Coverage Gaps</h3>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {insights.coverageGaps.slice(0, 30).map((gap, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-gray-50">
+                    <span className="text-gray-700">{new Date(gap.dateKey).toLocaleDateString('en-AU', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                    <span className="text-gray-500 font-mono">{gap.timeSlot}</span>
+                    <span className="text-red-600 font-medium">No staff</span>
                   </div>
                 ))}
+                {insights.coverageGaps.length > 30 && <div className="text-xs text-gray-400 pt-1">+{insights.coverageGaps.length - 30} more gaps</div>}
               </div>
-              {insights.coverageGaps.length > 50 && (
-                <div className="mt-3 text-center text-sm text-gray-500">
-                  Showing 50 of {insights.coverageGaps.length} gaps
-                </div>
-              )}
             </div>
           )}
         </div>
