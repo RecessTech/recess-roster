@@ -1409,7 +1409,7 @@ const RosterApp = () => {
                 <option value="Casual">Casual</option>
               </select>
             </div>
-            {formData.employmentType === 'FT' && (
+            {(formData.employmentType === 'FT' || /full/i.test(formData.employmentType)) && (
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
                 <p className="text-xs text-blue-700 font-medium">Full Time — Salaried</p>
                 <div>

@@ -53,16 +53,25 @@ export const db = {
 
     if (error) throw error;
 
-    return (data || []).map(staff => ({
-      id: staff.id,
-      name: staff.name,
-      email: staff.email || '',
-      publicToken: staff.public_token || null,
-      hourlyRate: staff.hourly_rate,
-      weekendRate: staff.weekend_rate,
-      employmentType: staff.employment_type,
-      active: staff.active !== false
-    }));
+    return (data || []).map(staff => {
+      // Normalize employment type to canonical values ('FT', 'PT', 'Casual')
+      const rawType = (staff.employment_type || '').toLowerCase().replace(/[-_\s]/g, '');
+      const employmentType = rawType.startsWith('full') ? 'FT'
+        : rawType.startsWith('part') ? 'PT'
+        : rawType === 'ft' ? 'FT'
+        : rawType === 'pt' ? 'PT'
+        : staff.employment_type || 'Casual';
+      return {
+        id: staff.id,
+        name: staff.name,
+        email: staff.email || '',
+        publicToken: staff.public_token || null,
+        hourlyRate: staff.hourly_rate,
+        weekendRate: staff.weekend_rate,
+        employmentType,
+        active: staff.active !== false
+      };
+    });
   },
 
   async createStaff(orgId, userId, staffData) {
