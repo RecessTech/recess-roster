@@ -228,7 +228,7 @@ const RosterApp = () => {
   const [templateMode, setTemplateMode] = useState(false); // When true, clicking applies template
   // eslint-disable-next-line no-unused-vars
   const [showRolesModal, setShowRolesModal] = useState(false);
-  const [staffSelectionView, setStaffSelectionView] = useState('cards'); // 'cards' or 'list'
+  const [staffSelectionView, setStaffSelectionView] = useState('list'); // 'cards' or 'list'
   const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
   const [showHelpModal, setShowHelpModal] = useState(false);
@@ -3868,24 +3868,62 @@ const RosterApp = () => {
               
               {/* Card View */}
               {staffSelectionView === 'cards' && (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {orderedStaff.map(s => {
                     const weekStats = calculateStaffWeekStats(s.id);
+                    const superRate = businessSettings.superannuationRate || 0;
+                    const annualSalary = extraConfig.staffSalaries?.[s.id];
+                    const daysScheduled = dates.filter(d => {
+                      const dk = formatDateKey(d);
+                      return Object.keys(schedule).some(k => k.startsWith(`${dk}|${s.id}|`));
+                    }).length;
+                    const empColor = s.employmentType === 'FT' ? 'bg-blue-100 text-blue-700' : s.employmentType === 'PT' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700';
                     return (
-                      <div key={s.id} className="bg-white border border-gray-200 hover:border-blue-300 rounded-xl p-4 transition-all hover:shadow-sm cursor-pointer group"
+                      <div key={s.id} className="bg-white border border-gray-200 hover:border-blue-300 rounded-xl p-4 transition-all hover:shadow-sm cursor-pointer group relative"
                         onClick={() => setSelectedStaffView(s.id)}>
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="min-w-0">
-                            <h3 className="font-semibold text-gray-900 truncate">{s.name}</h3>
-                            <p className="text-xs text-gray-400">{s.employmentType}</p>
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-semibold text-gray-900">{s.name}</h3>
+                            {s.email && <p className="text-xs text-gray-400 truncate">{s.email}</p>}
                           </div>
-                          <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md shrink-0 ml-1">${s.hourlyRate}/hr</span>
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-md shrink-0 ml-2 ${empColor}`}>{s.employmentType}</span>
                         </div>
-                        <div className="flex justify-between text-xs mt-3 pt-3 border-t border-gray-100">
-                          <span className="text-gray-500">{weekStats.hours.toFixed(1)}h</span>
-                          <span className="font-semibold text-green-600">${weekStats.cost.toFixed(0)}</span>
+                        <div className="grid grid-cols-3 gap-2 mb-3">
+                          <div className="bg-gray-50 rounded-lg p-2 text-center">
+                            <div className="text-xs text-gray-400 mb-0.5">Rate</div>
+                            <div className="text-sm font-bold text-gray-800">${(s.hourlyRate ?? 0).toFixed(2)}</div>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-2 text-center">
+                            <div className="text-xs text-gray-400 mb-0.5">Hours</div>
+                            <div className="text-sm font-bold text-gray-800">{weekStats.hours.toFixed(1)}h</div>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-2 text-center">
+                            <div className="text-xs text-gray-400 mb-0.5">Days</div>
+                            <div className="text-sm font-bold text-gray-800">{daysScheduled}/{dates.length}</div>
+                          </div>
                         </div>
-                        <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                        <div className="border-t border-gray-100 pt-3">
+                          <div className="flex justify-between items-baseline mb-1">
+                            <span className="text-xs text-gray-500">Est. wages</span>
+                            <span className="text-sm font-bold text-green-600">${(weekStats.baseCost ?? weekStats.cost).toFixed(0)}</span>
+                          </div>
+                          {superRate > 0 && weekStats.baseCost > 0 && weekStats.baseCost !== weekStats.cost && (
+                            <div className="flex justify-between items-baseline mb-1">
+                              <span className="text-xs text-gray-400">Super ({superRate}%)</span>
+                              <span className="text-xs text-gray-500">+${(weekStats.cost - weekStats.baseCost).toFixed(0)}</span>
+                            </div>
+                          )}
+                          {superRate > 0 && weekStats.cost > 0 && (
+                            <div className="flex justify-between items-baseline border-t border-gray-100 pt-1 mt-1">
+                              <span className="text-xs font-semibold text-gray-600">Total cost</span>
+                              <span className="text-sm font-bold text-gray-800">${weekStats.cost.toFixed(0)}</span>
+                            </div>
+                          )}
+                          {annualSalary && weekStats.isSalaried && (
+                            <div className="text-xs text-blue-500 mt-1">Salaried · ${(annualSalary/1000).toFixed(0)}k/yr</div>
+                          )}
+                        </div>
+                        <div className="flex gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                           <button onClick={() => { setEditingStaff(s); setShowStaffModal(true); }}
                             className="flex-1 text-xs py-1 rounded-md text-gray-500 hover:bg-gray-100 border border-gray-200 transition-colors"><Edit2 size={11} className="inline mr-0.5" />Edit</button>
                           <button onClick={() => deleteStaff(s.id)}
@@ -6575,28 +6613,72 @@ Key things to verify after rebuild:
                 })}
               </tbody>
               <tfoot>
+                {/* Hours row */}
                 <tr className="bg-gray-50 border-t-2 border-gray-200">
-                  <td className="border-r border-gray-200 p-2 text-xs font-semibold text-gray-500 sticky left-0 bg-gray-50 z-20 w-20">Total</td>
-                  {dates.map((d, di) => {
-                    const dk = formatDateKey(d);
-                    return (
-                      <React.Fragment key={`tot-${dk}`}>
+                  <td className="border-r border-gray-200 px-2 py-1 text-xs font-semibold text-gray-500 sticky left-0 bg-gray-50 z-20 w-20">Hours</td>
+                  {dates.map((d, di) => (
+                    <React.Fragment key={`h-${formatDateKey(d)}`}>
+                      {orderedStaff.map((s, si) => {
+                        const st = calculateStaffDayStats(s.id, formatDateKey(d));
+                        return (
+                          <td key={`h-${formatDateKey(d)}-${s.id}`} className={`border-r border-gray-100 px-1 py-1 text-center text-xs font-semibold text-gray-700 ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`} style={{ width: '120px', maxWidth: '120px', minWidth: '120px' }}>
+                            {st.hours > 0 ? `${st.hours.toFixed(1)}h` : <span className="text-gray-300">—</span>}
+                          </td>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
+                </tr>
+                {/* Wages row */}
+                <tr className="bg-gray-50 border-t border-gray-100">
+                  <td className="border-r border-gray-200 px-2 py-1 text-xs font-medium text-gray-400 sticky left-0 bg-gray-50 z-20 w-20">Wages</td>
+                  {dates.map((d, di) => (
+                    <React.Fragment key={`w-${formatDateKey(d)}`}>
+                      {orderedStaff.map((s, si) => {
+                        const st = calculateStaffDayStats(s.id, formatDateKey(d));
+                        return (
+                          <td key={`w-${formatDateKey(d)}-${s.id}`} className={`border-r border-gray-100 px-1 py-1 text-center text-xs text-gray-600 ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`} style={{ width: '120px', maxWidth: '120px', minWidth: '120px' }}>
+                            {st.baseCost > 0 ? `$${st.baseCost.toFixed(0)}` : <span className="text-gray-300">—</span>}
+                          </td>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
+                </tr>
+                {/* Super row — only render when superannuation rate > 0 */}
+                {(businessSettings.superannuationRate || 0) > 0 && (
+                  <tr className="bg-gray-50 border-t border-gray-100">
+                    <td className="border-r border-gray-200 px-2 py-1 text-xs font-medium text-gray-400 sticky left-0 bg-gray-50 z-20 w-20">Super</td>
+                    {dates.map((d, di) => (
+                      <React.Fragment key={`su-${formatDateKey(d)}`}>
                         {orderedStaff.map((s, si) => {
-                          const st = calculateStaffDayStats(s.id, dk);
-                          const superRate = businessSettings.superannuationRate || 0;
+                          const st = calculateStaffDayStats(s.id, formatDateKey(d));
+                          const superAmt = st.cost - st.baseCost;
                           return (
-                            <td key={`${dk}-${s.id}`} className={`border-r border-gray-100 p-1 text-center text-xs ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`} style={{ width: '120px', maxWidth: '120px', minWidth: '120px' }}>
-                              <div className="font-semibold text-gray-700">{st.hours.toFixed(2)}h</div>
-                              <div className="text-gray-400">${st.cost.toFixed(0)}</div>
-                              {superRate > 0 && st.baseCost > 0 && st.baseCost !== st.cost && (
-                                <div className="text-gray-500" style={{ fontSize: 9 }}>+${(st.cost - st.baseCost).toFixed(0)} super</div>
-                              )}
+                            <td key={`su-${formatDateKey(d)}-${s.id}`} className={`border-r border-gray-100 px-1 py-1 text-center text-xs text-gray-400 ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`} style={{ width: '120px', maxWidth: '120px', minWidth: '120px' }}>
+                              {superAmt > 0 ? `+$${superAmt.toFixed(0)}` : <span className="text-gray-300">—</span>}
                             </td>
                           );
                         })}
                       </React.Fragment>
-                    );
-                  })}
+                    ))}
+                  </tr>
+                )}
+                {/* Total cost row */}
+                <tr className="bg-white border-t border-gray-200">
+                  <td className="border-r border-gray-200 px-2 py-1.5 text-xs font-bold text-gray-700 sticky left-0 bg-white z-20 w-20">Total</td>
+                  {dates.map((d, di) => (
+                    <React.Fragment key={`tc-${formatDateKey(d)}`}>
+                      {orderedStaff.map((s, si) => {
+                        const st = calculateStaffDayStats(s.id, formatDateKey(d));
+                        return (
+                          <td key={`tc-${formatDateKey(d)}-${s.id}`} className={`border-r border-gray-100 px-1 py-1.5 text-center text-xs font-bold ${st.cost > 0 ? 'text-green-700' : 'text-gray-300'} ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`} style={{ width: '120px', maxWidth: '120px', minWidth: '120px' }}>
+                            {st.cost > 0 ? `$${st.cost.toFixed(0)}` : '—'}
+                          </td>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
                 </tr>
               </tfoot>
             </table>
