@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, CircleAlert, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db, supabase } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
@@ -6298,6 +6298,14 @@ Key things to verify after rebuild:
                 <h1 className="text-base font-bold text-gray-900 tracking-tight">{businessSettings.businessName || org?.name}</h1>
                 <span className="text-gray-300">|</span>
                 <span className="text-sm text-gray-400">{activeView === 'roster' ? 'Grid View' : activeView === 'staff-view' ? 'Staff View' : activeView === 'timesheet' ? 'Timesheet' : activeView === 'analytics' ? 'Analytics' : activeView === 'availability' ? 'Availability' : activeView}</span>
+                <div className="h-4 w-px bg-gray-200"></div>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setCurrentDate(d => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; })} className="p-1 rounded hover:bg-gray-100 text-gray-500 transition-colors" title="Previous week"><ChevronLeft size={16} /></button>
+                  <button onClick={() => setCurrentDate(new Date())} className="text-xs px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded font-medium text-gray-700 transition-colors whitespace-nowrap">
+                    {dates[0]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })} – {dates[dates.length - 1]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </button>
+                  <button onClick={() => setCurrentDate(d => { const n = new Date(d); n.setDate(n.getDate() + 7); return n; })} className="p-1 rounded hover:bg-gray-100 text-gray-500 transition-colors" title="Next week"><ChevronRight size={16} /></button>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg">
@@ -6407,10 +6415,6 @@ Key things to verify after rebuild:
             </div>
 
             <div className="flex items-center gap-1.5 ml-auto">
-              <button onClick={() => setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() - 7)))} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors text-xs">←</button>
-              <span className="text-xs px-2.5 py-1.5 bg-gray-100 rounded-lg text-gray-600 font-medium">{dates[0]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })} – {dates[dates.length - 1]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</span>
-              <button onClick={() => setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() + 7)))} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors text-xs">→</button>
-              <button onClick={() => setCurrentDate(new Date())} className="btn-primary text-xs py-1.5 px-2.5">Today</button>
               <button onClick={copyPreviousWeek} className="text-xs py-1.5 px-2.5 rounded-lg text-gray-600 hover:bg-gray-100 font-medium transition-colors flex items-center gap-1" title="Copy last week's roster to this week">
                 <Copy size={12} /> Last week
               </button>
