@@ -4,6 +4,83 @@ import { useAuth, signOut } from './Auth';
 import { db, supabase } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
 
+// Returns a Set<'YYYY-MM-DD'> of public holidays for a given year and AU state
+function getAUPublicHolidays(year, region) {
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const sub = d => { // substitute: Sat→Mon, Sun→Mon
+    const r = new Date(d); const dow = r.getDay();
+    if (dow === 6) r.setDate(r.getDate() + 2);
+    else if (dow === 0) r.setDate(r.getDate() + 1);
+    return r;
+  };
+  const nthMon = (month, n) => { // nth Monday of given month (0-indexed)
+    const d = new Date(year, month, 1);
+    d.setDate(1 + (1 - d.getDay() + 7) % 7 + (n - 1) * 7);
+    return d;
+  };
+  const lastMon = month => { // last Monday of given month
+    const d = new Date(year, month + 1, 0); // last day of month
+    d.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1));
+    return d;
+  };
+  // Easter (Anonymous Gregorian algorithm)
+  const a = year%19, b = Math.floor(year/100), c = year%100,
+    d2 = Math.floor(b/4), e = b%4, f = Math.floor((b+8)/25),
+    g = Math.floor((b-f+1)/3), h = (19*a+b-d2-g+15)%30,
+    i = Math.floor(c/4), k = c%4, l = (32+2*e+2*i-h-k)%7,
+    m = Math.floor((a+11*h+22*l)/451);
+  const easter = new Date(year, Math.floor((h+l-7*m+114)/31)-1, ((h+l-7*m+114)%31)+1);
+  const goodFriday = new Date(easter); goodFriday.setDate(easter.getDate()-2);
+  const easterSat = new Date(easter); easterSat.setDate(easter.getDate()-1);
+  const easterMon = new Date(easter); easterMon.setDate(easter.getDate()+1);
+  // Christmas/Boxing substitution
+  const xdow = new Date(year, 11, 25).getDay();
+  const xmasObs = xdow===6 ? new Date(year,11,27) : xdow===0 ? new Date(year,11,26) : new Date(year,11,25);
+  const boxObs  = xdow===5 ? new Date(year,11,28) : xdow===6 ? new Date(year,11,28) : xdow===0 ? new Date(year,11,27) : new Date(year,11,26);
+
+  const set = new Set();
+  const add = (...dates) => dates.forEach(d => set.add(fmt(d)));
+  // National
+  add(sub(new Date(year,0,1)), sub(new Date(year,0,26)));
+  add(goodFriday, easterSat, easter, easterMon);
+  add(sub(new Date(year,3,25))); // Anzac Day
+  add(xmasObs, boxObs);
+  // State-specific
+  if (region === 'NSW') {
+    add(nthMon(5,2));   // King's Birthday (2nd Mon June)
+    add(nthMon(7,1));   // Bank Holiday (1st Mon Aug)
+    add(nthMon(9,1));   // Labour Day (1st Mon Oct)
+  } else if (region === 'VIC') {
+    add(nthMon(2,2));   // Labour Day (2nd Mon March)
+    add(nthMon(5,2));   // King's Birthday (2nd Mon June)
+  } else if (region === 'QLD') {
+    add(nthMon(4,1));   // Labour Day (1st Mon May)
+    add(lastMon(9));    // King's Birthday (last Mon Oct)
+  } else if (region === 'SA') {
+    add(nthMon(5,2));   // King's Birthday (2nd Mon June)
+    add(nthMon(9,4));   // Proclamation Day / Labour Day (4th Mon Oct)
+  } else if (region === 'WA') {
+    add(nthMon(2,1));   // Labour Day (1st Mon March)
+    add(nthMon(5,1));   // Western Australia Day (1st Mon June)
+    add(nthMon(8,4));   // Queen's Birthday (4th Mon Sep)
+  } else if (region === 'TAS') {
+    add(nthMon(2,2));   // Labour Day (2nd Mon March)
+    add(easterMon);     // Easter Tuesday (TAS)
+    add(nthMon(5,2));   // King's Birthday (2nd Mon June)
+  } else if (region === 'ACT') {
+    add(nthMon(2,2));   // Canberra Day (2nd Mon March)
+    add(easterSat);     // Family & Community Day / Easter Saturday
+    add(nthMon(5,2));   // King's Birthday (2nd Mon June)
+    add(nthMon(9,1));   // Family & Community Day (1st Mon Oct)
+  } else if (region === 'NT') {
+    add(nthMon(4,1));   // May Day (1st Mon May)
+    add(nthMon(5,2));   // King's Birthday (2nd Mon June)
+    add(sub(new Date(year,6,1))); // Territory Day (Jul 1)
+    add(nthMon(7,1));   // Picnic Day (1st Mon Aug)
+  }
+  return set;
+}
+
 
 const RosterApp = () => {
   const { user } = useAuth();
@@ -182,6 +259,15 @@ const RosterApp = () => {
     superannuationRate: 12 // % on top of wages (editable in Financial settings)
   });
 
+  // Extra config stored in org.config JSONB — no DB schema change required
+  const [extraConfig, setExtraConfig] = useState({
+    publicHolidayRegion: 'NSW',
+    casualPublicHolidayRate: 66.38,
+    ptPhMultiplier: 2.5,
+    customPublicHolidays: [], // ['YYYY-MM-DD', ...]
+    staffSalaries: {}         // { [staffId]: annualSalary }
+  });
+
     const [saving, setSaving] = useState(false);
 
   // Save queue system to prevent race conditions and data loss
@@ -356,6 +442,10 @@ const RosterApp = () => {
             superannuationRate: settingsData.superannuation_rate ?? 12,
           });
         }
+        // Load extra config from org.config JSONB
+        if (org?.config && typeof org.config === 'object') {
+          setExtraConfig(prev => ({ ...prev, ...org.config }));
+        }
       } catch (error) {
         console.error('Error loading data:', error);
       }
@@ -517,6 +607,16 @@ const RosterApp = () => {
     const timeoutId = setTimeout(saveSettings, 1000);
     return () => clearTimeout(timeoutId);
   }, [businessSettings, isLoaded, user, org]);
+
+  // Persist extra config (public holidays, staff salaries) to org.config JSONB
+  useEffect(() => {
+    if (!isLoaded || !org) return;
+    const t = setTimeout(() => {
+      db.updateOrg(org.id, { config: extraConfig }).catch(err => console.error('Error saving extra config:', err));
+    }, 1000);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extraConfig, isLoaded, org?.id]);
 
   // Helper to check if a time slot is within operational hours
   const isWithinOperationalHours = (date, timeSlot) => {
@@ -940,46 +1040,84 @@ const RosterApp = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commitPendingPaint, historyIndex, scheduleHistory]);
 
+  // Public holidays set — covers current year ±1 to handle cross-year views
+  const publicHolidaySet = useMemo(() => {
+    const region = extraConfig.publicHolidayRegion || 'NSW';
+    const year = currentDate.getFullYear();
+    const set = new Set();
+    [year - 1, year, year + 1].forEach(y => getAUPublicHolidays(y, region).forEach(d => set.add(d)));
+    (extraConfig.customPublicHolidays || []).forEach(d => set.add(d));
+    return set;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extraConfig.publicHolidayRegion, extraConfig.customPublicHolidays, currentDate.getFullYear()]);
+
   const calculateStaffDayStats = (staffId, dateKey) => {
     const staffMember = staff.find(s => s.id === staffId);
-    if (!staffMember) return { hours: 0, cost: 0 };
+    if (!staffMember) return { hours: 0, cost: 0, baseCost: 0, isPublicHoliday: false };
 
-    // Check if this is a weekend day
     const date = new Date(dateKey);
-    const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
+    const dayOfWeek = date.getDay();
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-    
-    // Use weekend rate if it's a weekend and weekend rate exists, otherwise use regular rate
-    const rate = isWeekend && staffMember.weekendRate ? staffMember.weekendRate : staffMember.hourlyRate;
+    const isPublicHoliday = publicHolidaySet.has(dateKey);
 
-    // Count actual 15-min slots in schedule (not timeSlots array which changes with view)
+    // Determine applicable rate
+    let rate;
+    if (isPublicHoliday) {
+      if (staffMember.employmentType === 'Casual') {
+        rate = extraConfig.casualPublicHolidayRate || 66.38;
+      } else {
+        // FT/PT: apply public holiday loading (default 2.5× under Hospitality Award)
+        const baseRate = isWeekend && staffMember.weekendRate ? staffMember.weekendRate : (staffMember.hourlyRate || 0);
+        rate = baseRate * (extraConfig.ptPhMultiplier || 2.5);
+      }
+    } else {
+      rate = isWeekend && staffMember.weekendRate ? staffMember.weekendRate : (staffMember.hourlyRate || 0);
+    }
+
+    // Count actual 15-min slots
     let slots = 0;
     Object.keys(schedule).forEach(key => {
-      if (key.startsWith(`${dateKey}|${staffId}|`)) {
-        slots++;
-      }
+      if (key.startsWith(`${dateKey}|${staffId}|`)) slots++;
     });
-
-    // ALWAYS calculate hours based on 15-minute slots (the underlying data structure)
-    // regardless of the current view interval (15m/30m/1h)
     const hours = slots * (15 / 60);
+
+    // FT salaried: pro-rate daily cost from annual salary
+    const annualSalary = extraConfig.staffSalaries?.[staffId];
+    if (staffMember.employmentType === 'FT' && annualSalary) {
+      const superMultiplier = 1 + (businessSettings.superannuationRate || 0) / 100;
+      const derivedRate = annualSalary / 52 / 38;
+      const baseCost = hours * derivedRate;
+      return { hours, baseCost, cost: baseCost * superMultiplier, isPublicHoliday };
+    }
+
     const baseCost = hours * rate;
     const superMultiplier = 1 + (businessSettings.superannuationRate || 0) / 100;
-    return { hours, baseCost, cost: baseCost * superMultiplier };
+    return { hours, baseCost, cost: baseCost * superMultiplier, isPublicHoliday };
   };
 
   const calculateStaffWeekStats = (staffId) => {
     let totalHours = 0;
     let totalCost = 0;
-    
+    let totalBaseCost = 0;
+
     dates.forEach(date => {
       const dateKey = formatDateKey(date);
       const dayStats = calculateStaffDayStats(staffId, dateKey);
       totalHours += dayStats.hours;
       totalCost += dayStats.cost;
+      totalBaseCost += (dayStats.baseCost || 0);
     });
-    
-    return { hours: totalHours, cost: totalCost };
+
+    // FT salaried: weekly cost is fixed regardless of hours worked
+    const staffMember = staff.find(s => s.id === staffId);
+    const annualSalary = extraConfig.staffSalaries?.[staffId];
+    if (staffMember?.employmentType === 'FT' && annualSalary && totalHours > 0) {
+      const weeklyBase = annualSalary / 52;
+      const superMultiplier = 1 + (businessSettings.superannuationRate || 0) / 100;
+      return { hours: totalHours, cost: weeklyBase * superMultiplier, baseCost: weeklyBase, isSalaried: true, annualSalary };
+    }
+
+    return { hours: totalHours, cost: totalCost, baseCost: totalBaseCost };
   };
 
   const calculateDayStats = (dateKey) => {
@@ -1115,6 +1253,7 @@ const RosterApp = () => {
   };
 
   const StaffModal = () => {
+    const existingSalary = editingStaff ? (extraConfig.staffSalaries?.[editingStaff.id] || '') : '';
     const [formData, setFormData] = useState(() => {
       if (editingStaff) {
         return {
@@ -1122,20 +1261,31 @@ const RosterApp = () => {
           email: editingStaff.email || '',
           hourlyRate: editingStaff.hourlyRate || '',
           weekendRate: editingStaff.weekendRate || '',
-          employmentType: editingStaff.employmentType || 'FT'
+          employmentType: editingStaff.employmentType || 'FT',
+          annualSalary: existingSalary
         };
       }
-      return { name: '', email: '', hourlyRate: '', weekendRate: '', employmentType: 'FT' };
+      return { name: '', email: '', hourlyRate: '', weekendRate: '', employmentType: 'FT', annualSalary: '' };
     });
+
+    // When annual salary changes for FT, derive hourly rate
+    const handleSalaryChange = (val) => {
+      const salary = parseFloat(val);
+      if (!isNaN(salary) && salary > 0) {
+        setFormData(prev => ({ ...prev, annualSalary: val, hourlyRate: (salary / 52 / 38).toFixed(2) }));
+      } else {
+        setFormData(prev => ({ ...prev, annualSalary: val }));
+      }
+    };
 
     const handleSave = async () => {
       if (!formData.name || formData.hourlyRate === '' || formData.hourlyRate === null) return;
-      
+
       const hourlyRate = parseFloat(formData.hourlyRate);
-      const weekendRate = formData.weekendRate && formData.weekendRate !== '' 
-        ? parseFloat(formData.weekendRate) 
+      const weekendRate = formData.weekendRate && formData.weekendRate !== ''
+        ? parseFloat(formData.weekendRate)
         : hourlyRate;
-      
+
       const finalData = {
         name: formData.name,
         email: formData.email || null,
@@ -1143,7 +1293,7 @@ const RosterApp = () => {
         weekend_rate: weekendRate,
         employment_type: formData.employmentType
       };
-      
+
       try {
         if (editingStaff) {
           const updated = await db.updateStaff(editingStaff.id, finalData);
@@ -1155,6 +1305,17 @@ const RosterApp = () => {
             weekendRate: updated.weekend_rate,
             employmentType: updated.employment_type
           } : s));
+          // Save annual salary to extraConfig if FT
+          if (formData.employmentType === 'FT') {
+            const sal = parseFloat(formData.annualSalary);
+            setExtraConfig(prev => ({
+              ...prev,
+              staffSalaries: {
+                ...prev.staffSalaries,
+                [editingStaff.id]: isNaN(sal) ? undefined : sal
+              }
+            }));
+          }
         } else {
           const created = await db.createStaff(org.id, user.id, finalData);
           setStaff([...staff, {
@@ -1165,6 +1326,16 @@ const RosterApp = () => {
             weekendRate: created.weekend_rate,
             employmentType: created.employment_type
           }]);
+          // Save annual salary to extraConfig if FT
+          if (formData.employmentType === 'FT') {
+            const sal = parseFloat(formData.annualSalary);
+            if (!isNaN(sal)) {
+              setExtraConfig(prev => ({
+                ...prev,
+                staffSalaries: { ...prev.staffSalaries, [created.id]: sal }
+              }));
+            }
+          }
         }
         setShowStaffModal(false);
         setEditingStaff(null);
@@ -1238,6 +1409,29 @@ const RosterApp = () => {
                 <option value="Casual">Casual</option>
               </select>
             </div>
+            {formData.employmentType === 'FT' && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
+                <p className="text-xs text-blue-700 font-medium">Full Time — Salaried</p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Annual Salary ($) <span className="text-gray-400 font-normal">optional</span></label>
+                  <input
+                    type="number"
+                    step="1000"
+                    min="0"
+                    value={formData.annualSalary}
+                    onChange={(e) => handleSalaryChange(e.target.value)}
+                    placeholder="e.g. 55000"
+                    className="input-base"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Weekly cost is fixed at salary ÷ 52, regardless of hours. Hourly rate is derived for display only.</p>
+                </div>
+                {formData.annualSalary && !isNaN(parseFloat(formData.annualSalary)) && (
+                  <div className="text-xs text-blue-600 bg-white rounded p-2 border border-blue-100">
+                    Weekly cost: <strong>${(parseFloat(formData.annualSalary)/52).toFixed(0)}</strong> · Derived rate: <strong>${(parseFloat(formData.annualSalary)/52/38).toFixed(2)}/hr</strong>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="modal-footer">
             <button onClick={() => { setShowStaffModal(false); setEditingStaff(null); }} className="btn-secondary">Cancel</button>
@@ -1284,6 +1478,7 @@ const RosterApp = () => {
 
   const BusinessSettingsModal = () => {
     const [tempSettings, setTempSettings] = useState(JSON.parse(JSON.stringify(businessSettings)));
+    const [tempExtraConfig, setTempExtraConfig] = useState(JSON.parse(JSON.stringify(extraConfig)));
     const [activeSettingsTab, setActiveSettingsTab] = useState('hours');
     const [editingRole, setEditingRole] = useState(null);
     const [roleForm, setRoleForm] = useState({ name: '', code: '', color: '#3B82F6' });
@@ -1301,6 +1496,7 @@ const RosterApp = () => {
 
     const handleSave = () => {
       setBusinessSettings(tempSettings);
+      setExtraConfig(tempExtraConfig);
       setShowSettingsModal(false);
     };
 
@@ -1623,7 +1819,54 @@ const RosterApp = () => {
             />
             <span className="text-sm font-semibold text-gray-600">%</span>
           </div>
-          <p className="text-xs text-gray-500 mt-1">Added on top of wages in all cost calculations. Current ATO rate: 12%</p>
+          <p className="text-xs text-gray-500 mt-1">Shown separately in all cost displays — never absorbed into totals. Current ATO rate: 12%</p>
+        </div>
+
+        <div className="p-3 bg-orange-50 rounded-lg border border-orange-200 space-y-3">
+          <div className="text-xs font-semibold text-orange-800">Public Holidays</div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">State / Region</label>
+            <select
+              value={tempExtraConfig.publicHolidayRegion || 'NSW'}
+              onChange={(e) => setTempExtraConfig(prev => ({ ...prev, publicHolidayRegion: e.target.value }))}
+              className="input-base"
+            >
+              <option value="NSW">NSW</option>
+              <option value="VIC">VIC</option>
+              <option value="QLD">QLD</option>
+              <option value="SA">SA</option>
+              <option value="WA">WA</option>
+              <option value="TAS">TAS</option>
+              <option value="ACT">ACT</option>
+              <option value="NT">NT</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">Public holiday dates are auto-calculated for this state.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Casual Public Holiday Rate ($/hr)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={tempExtraConfig.casualPublicHolidayRate ?? 66.38}
+              onChange={(e) => setTempExtraConfig(prev => ({ ...prev, casualPublicHolidayRate: parseFloat(e.target.value) || 0 }))}
+              className="input-base w-32"
+            />
+            <p className="text-xs text-gray-500 mt-1">Applied to casual staff on public holiday shifts.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">FT/PT Public Holiday Loading (×)</label>
+            <input
+              type="number"
+              step="0.25"
+              min="1"
+              max="5"
+              value={tempExtraConfig.ptPhMultiplier ?? 2.5}
+              onChange={(e) => setTempExtraConfig(prev => ({ ...prev, ptPhMultiplier: parseFloat(e.target.value) || 2.5 }))}
+              className="input-base w-24"
+            />
+            <p className="text-xs text-gray-500 mt-1">Multiplier on ordinary rate for FT/PT staff. Hospitality Award: 2.5×</p>
+          </div>
         </div>
 
         <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
@@ -3685,8 +3928,14 @@ const RosterApp = () => {
                             <td className="px-4 py-4 text-right font-bold text-gray-800">
                               {weekStats.hours.toFixed(2)}h
                             </td>
-                            <td className="px-4 py-4 text-right font-bold text-green-600">
-                              ${weekStats.cost.toFixed(0)}
+                            <td className="px-4 py-4 text-right">
+                              <div className="font-bold text-green-600">${weekStats.cost.toFixed(0)}</div>
+                              {businessSettings.superannuationRate > 0 && weekStats.baseCost > 0 && weekStats.baseCost !== weekStats.cost && (
+                                <div className="text-xs text-gray-500 mt-0.5">${weekStats.baseCost.toFixed(0)} + ${(weekStats.cost - weekStats.baseCost).toFixed(0)} super</div>
+                              )}
+                              {weekStats.isSalaried && (
+                                <div className="text-xs text-blue-500 mt-0.5">Salaried</div>
+                              )}
                             </td>
                             <td className="px-4 py-4 text-center">
                               <div className="flex items-center justify-center gap-2">
@@ -4210,8 +4459,8 @@ const RosterApp = () => {
                         <div>
                           <div>{currency}{row.totalCost.toFixed(0)}</div>
                           {superRate > 0 && row.totalBaseCost > 0 && (
-                            <div className="text-[10px] font-normal text-gray-400 leading-tight">
-                              {currency}{row.totalBaseCost.toFixed(0)} + {currency}{(row.totalCost - row.totalBaseCost).toFixed(0)} super
+                            <div className="text-[10px] font-normal text-gray-500 leading-tight">
+                              {currency}{row.totalBaseCost.toFixed(0)} wages + {currency}{(row.totalCost - row.totalBaseCost).toFixed(0)} super
                             </div>
                           )}
                         </div>
@@ -4272,7 +4521,7 @@ const RosterApp = () => {
               <div className="text-xs font-medium text-gray-500 mb-1">Total Cost {superRate > 0 ? '(incl. super)' : ''}</div>
               <div className="text-2xl font-bold text-gray-900">{currency}{grandTotalCost.toFixed(0)}</div>
               {superRate > 0 && grandTotalBaseCost > 0 && (
-                <div className="text-xs text-gray-400 mt-1">{currency}{grandTotalBaseCost.toFixed(0)} wages + {currency}{(grandTotalCost - grandTotalBaseCost).toFixed(0)} super</div>
+                <div className="text-xs text-gray-600 mt-1">{currency}{grandTotalBaseCost.toFixed(0)} wages + {currency}{(grandTotalCost - grandTotalBaseCost).toFixed(0)} super</div>
               )}
             </div>
             <div className="bg-white rounded-lg p-4 border">
@@ -6211,10 +6460,14 @@ Key things to verify after rebuild:
                   {dates.map((d, i) => {
                     const dk = formatDateKey(d);
                     const isToday = dk === todayKey;
+                    const isPH = publicHolidaySet.has(dk);
                     return (
-                    <th key={dk} colSpan={orderedStaff.length} className={`p-3 text-center ${i < dates.length - 1 ? 'border-r-2 border-gray-200' : ''} ${isToday ? 'bg-brand-50' : ''}`}>
-                      <div className={`text-xs font-bold tracking-wide ${isToday ? 'text-brand-600' : 'text-gray-600'}`}>{d.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase()}</div>
-                      <div className={`text-xs mt-0.5 ${isToday ? 'text-brand-500 font-semibold' : 'text-gray-400'}`}>{d.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</div>
+                    <th key={dk} colSpan={orderedStaff.length} className={`p-3 text-center ${i < dates.length - 1 ? 'border-r-2 border-gray-200' : ''} ${isToday ? 'bg-brand-50' : isPH ? 'bg-orange-50' : ''}`}>
+                      <div className="flex items-center justify-center gap-1">
+                        <div className={`text-xs font-bold tracking-wide ${isToday ? 'text-brand-600' : isPH ? 'text-orange-600' : 'text-gray-600'}`}>{d.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase()}</div>
+                        {isPH && <span className="text-[9px] font-bold bg-orange-100 text-orange-600 px-1 rounded">PH</span>}
+                      </div>
+                      <div className={`text-xs mt-0.5 ${isToday ? 'text-brand-500 font-semibold' : isPH ? 'text-orange-500' : 'text-gray-500'}`}>{d.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</div>
                       <div className="text-xs text-blue-500 mt-0.5">{calculateDayStats(dk).totalHours.toFixed(2)}h · ${calculateDayStats(dk).totalCost.toFixed(0)}</div>
                       <div className="flex gap-0.5 justify-center mt-1.5">
                         <button onClick={() => copyDay(dk)} className={`p-1 rounded hover:bg-blue-50 transition-colors ${copiedDay === dk ? 'bg-blue-100' : ''}`} title="Copy day"><Copy size={12} className="text-gray-400" /></button>
@@ -6323,7 +6576,7 @@ Key things to verify after rebuild:
                               <div className="font-semibold text-gray-700">{st.hours.toFixed(2)}h</div>
                               <div className="text-gray-400">${st.cost.toFixed(0)}</div>
                               {superRate > 0 && st.baseCost > 0 && st.baseCost !== st.cost && (
-                                <div className="text-gray-300" style={{ fontSize: 9 }}>+${(st.cost - st.baseCost).toFixed(0)} super</div>
+                                <div className="text-gray-500" style={{ fontSize: 9 }}>+${(st.cost - st.baseCost).toFixed(0)} super</div>
                               )}
                             </td>
                           );
