@@ -1423,7 +1423,16 @@ const RosterApp = () => {
                     placeholder="e.g. 55000"
                     className="input-base"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Weekly cost is fixed at salary ÷ 52, regardless of hours. Hourly rate is derived for display only.</p>
+                  {!formData.annualSalary && formData.hourlyRate && (
+                    <button
+                      type="button"
+                      className="text-xs text-blue-500 mt-1 hover:underline"
+                      onClick={() => handleSalaryChange(String(Math.round(parseFloat(formData.hourlyRate) * 38 * 52)))}
+                    >
+                      Use implied salary from hourly rate: ${Math.round(parseFloat(formData.hourlyRate) * 38 * 52).toLocaleString()}/yr
+                    </button>
+                  )}
+                  {!formData.annualSalary && <p className="text-xs text-gray-500 mt-1">Weekly cost is fixed at salary ÷ 52, regardless of hours.</p>}
                 </div>
                 {formData.annualSalary && !isNaN(parseFloat(formData.annualSalary)) && (
                   <div className="text-xs text-blue-600 bg-white rounded p-2 border border-blue-100">
