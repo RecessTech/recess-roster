@@ -6560,7 +6560,12 @@ Key things to verify after rebuild:
                         {isPH && <span className="text-[9px] font-bold bg-orange-100 text-orange-600 px-1 rounded">PH</span>}
                       </div>
                       <div className={`text-xs mt-0.5 ${isToday ? 'text-brand-500 font-semibold' : isPH ? 'text-orange-500' : 'text-gray-500'}`}>{d.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })}</div>
-                      <div className="text-xs text-blue-500 mt-0.5">{calculateDayStats(dk).totalHours.toFixed(2)}h · ${calculateDayStats(dk).totalCost.toFixed(0)}</div>
+                      {(() => { const ds = calculateDayStats(dk); return ds.totalHours > 0 ? (
+                        <div className="text-xs mt-0.5">
+                          <span className="text-blue-500">{ds.totalHours.toFixed(1)}h · ${ds.totalBaseCost.toFixed(0)}</span>
+                          {ds.totalBaseCost !== ds.totalCost && <span className="text-gray-400"> +${(ds.totalCost - ds.totalBaseCost).toFixed(0)} super</span>}
+                        </div>
+                      ) : null; })()}
                       <div className="flex gap-0.5 justify-center mt-1.5">
                         <button onClick={() => copyDay(dk)} className={`p-1 rounded hover:bg-blue-50 transition-colors ${copiedDay === dk ? 'bg-blue-100' : ''}`} title="Copy day"><Copy size={12} className="text-gray-400" /></button>
                         <button onClick={() => pasteDay(dk)} className="p-1 rounded hover:bg-green-50 transition-colors" title="Paste day" disabled={!copiedDay}><Clipboard size={12} className="text-gray-400" /></button>
