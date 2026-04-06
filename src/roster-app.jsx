@@ -6712,15 +6712,9 @@ Key things to verify after rebuild:
                     <React.Fragment key={`tc-${formatDateKey(d)}`}>
                       {orderedStaff.map((s, si) => {
                         const st = calculateStaffDayStats(s.id, formatDateKey(d));
-                        const superAmt = st.cost - st.baseCost;
                         return (
-                          <td key={`tc-${formatDateKey(d)}-${s.id}`} className={`border-r border-gray-100 px-1 py-1.5 text-center text-xs ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`} style={{ width: '120px', maxWidth: '120px', minWidth: '120px' }}>
-                            <div className={`font-bold ${st.baseCost > 0 ? 'text-green-700' : 'text-gray-300'}`}>
-                              {st.baseCost > 0 ? `$${st.baseCost.toFixed(0)}` : '—'}
-                            </div>
-                            {superAmt > 0 && (
-                              <div className="text-gray-400 leading-tight" style={{ fontSize: 9 }}>+${superAmt.toFixed(0)} super</div>
-                            )}
+                          <td key={`tc-${formatDateKey(d)}-${s.id}`} className={`border-r border-gray-100 px-1 py-1.5 text-center text-xs font-bold ${st.cost > 0 ? 'text-green-700' : 'text-gray-300'} ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`} style={{ width: '120px', maxWidth: '120px', minWidth: '120px' }}>
+                            {st.cost > 0 ? `$${st.cost.toFixed(0)}` : '—'}
                           </td>
                         );
                       })}
