@@ -137,6 +137,13 @@ const RosterApp = () => {
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [swapTarget, setSwapTarget] = useState(null); // { dateKey, staffId }
   const [showExportModal, setShowExportModal] = useState(false);
+  // Export modal state lifted here so the modal doesn't remount when the parent re-renders
+  const [exportSelectedStaffId, setExportSelectedStaffId] = useState(null);
+  const [exportCopiedStaffId, setExportCopiedStaffId] = useState(null);
+  const [exportSendingId, setExportSendingId] = useState(null);
+  const [exportSentId, setExportSentId] = useState(null);
+  const [exportSendError, setExportSendError] = useState(null);
+  const [exportSendingAll, setExportSendingAll] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearTarget, setClearTarget] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
@@ -1093,6 +1100,33 @@ const RosterApp = () => {
     const baseCost = hours * rate;
     const superMultiplier = 1 + (businessSettings.superannuationRate || 0) / 100;
     return { hours, baseCost, cost: baseCost * superMultiplier, isPublicHoliday };
+  };
+
+  // Count distinct shift blocks (sessions) for a staff member across the week.
+  // A new block starts whenever there is a gap of >15m or a different role.
+  const countWeekShifts = (staffId) => {
+    let count = 0;
+    dates.forEach(date => {
+      const dateKey = formatDateKey(date);
+      let inShift = false;
+      let prevMins = -999;
+      for (let h = startHour; h <= endHour; h++) {
+        for (let m = 0; m < 60; m += 15) {
+          if (h === endHour && m > 0) break;
+          const slot = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+          const curMins = h * 60 + m;
+          const hasShift = !!schedule[getScheduleKey(dateKey, staffId, slot)];
+          if (hasShift && (!inShift || curMins - prevMins > 15)) {
+            count++;
+            inShift = true;
+          } else if (!hasShift) {
+            inShift = false;
+          }
+          if (hasShift) prevMins = curMins;
+        }
+      }
+    });
+    return count;
   };
 
   const calculateStaffWeekStats = (staffId) => {
@@ -2475,59 +2509,61 @@ const RosterApp = () => {
 
   const deleteShift = () => {
     if (!contextMenu) return;
-    
+
     setSchedule(prevSchedule => {
       // Save current state to history before deleting
       saveToHistory(prevSchedule);
-      
+
       const clickedKey = getScheduleKey(contextMenu.dateKey, contextMenu.staffId, contextMenu.timeSlot);
       const clickedShift = prevSchedule[clickedKey];
-      
+
       if (!clickedShift) {
         return prevSchedule;
       }
-      
+
       const newSchedule = { ...prevSchedule };
-      const clickedTimeIdx = timeSlots.indexOf(contextMenu.timeSlot);
-      
+
+      // Always traverse at 15-minute granularity regardless of the current display
+      // interval — coarser views (30m/1hr) only store the hour-mark slots in
+      // timeSlots, but the underlying schedule always keeps all 15m sub-slots.
+      const allSlots = [];
+      for (let h = startHour; h <= endHour; h++) {
+        for (let m = 0; m < 60; m += 15) {
+          if (h === endHour && m > 0) break;
+          allSlots.push(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`);
+        }
+      }
+
+      const clickedTimeIdx = allSlots.indexOf(contextMenu.timeSlot);
+
       // Find the start of this continuous shift block by going backwards
       let shiftStartIdx = clickedTimeIdx;
       while (shiftStartIdx > 0) {
-        const prevTimeSlot = timeSlots[shiftStartIdx - 1];
+        const prevTimeSlot = allSlots[shiftStartIdx - 1];
         const prevKey = getScheduleKey(contextMenu.dateKey, contextMenu.staffId, prevTimeSlot);
         const prevShift = prevSchedule[prevKey];
-        
-        // Stop if no shift or different role
-        if (!prevShift || prevShift.roleId !== clickedShift.roleId) {
-          break;
-        }
+        if (!prevShift || prevShift.roleId !== clickedShift.roleId) break;
         shiftStartIdx--;
       }
-      
+
       // Find the end of this continuous shift block by going forwards
       let shiftEndIdx = clickedTimeIdx;
-      while (shiftEndIdx < timeSlots.length - 1) {
-        const nextTimeSlot = timeSlots[shiftEndIdx + 1];
+      while (shiftEndIdx < allSlots.length - 1) {
+        const nextTimeSlot = allSlots[shiftEndIdx + 1];
         const nextKey = getScheduleKey(contextMenu.dateKey, contextMenu.staffId, nextTimeSlot);
         const nextShift = prevSchedule[nextKey];
-        
-        // Stop if no shift or different role
-        if (!nextShift || nextShift.roleId !== clickedShift.roleId) {
-          break;
-        }
+        if (!nextShift || nextShift.roleId !== clickedShift.roleId) break;
         shiftEndIdx++;
       }
-      
-      // Delete all time slots from start to end of this shift
+
+      // Delete all 15-minute slots from start to end of this shift
       for (let i = shiftStartIdx; i <= shiftEndIdx; i++) {
-        const timeSlot = timeSlots[i];
-        const keyToDelete = getScheduleKey(contextMenu.dateKey, contextMenu.staffId, timeSlot);
-        delete newSchedule[keyToDelete];
+        delete newSchedule[getScheduleKey(contextMenu.dateKey, contextMenu.staffId, allSlots[i])];
       }
-      
+
       return newSchedule;
     });
-    
+
     setContextMenu(null);
   };
 
@@ -4891,6 +4927,7 @@ const RosterApp = () => {
               <thead>
                 <tr className="border-b border-gray-100">
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">Name</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase">Shifts</th>
                   <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase">Hours</th>
                   <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase">Wages</th>
                   {superRate > 0 && <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase">Super</th>}
@@ -4916,6 +4953,7 @@ const RosterApp = () => {
                           </div>
                         </div>
                       </td>
+                      <td className="px-4 py-3 text-right text-gray-500 tabular-nums">{countWeekShifts(staffMember?.id) || 0}</td>
                       <td className="px-4 py-3 text-right font-semibold text-gray-800">{sd.hours.toFixed(1)}h</td>
                       <td className="px-4 py-3 text-right text-gray-600">{currency}{baseCost.toFixed(0)}</td>
                       {superRate > 0 && <td className="px-4 py-3 text-right text-gray-400">+{currency}{superAmt.toFixed(0)}</td>}
@@ -4935,6 +4973,7 @@ const RosterApp = () => {
               <tfoot>
                 <tr className="bg-gray-50 border-t-2 border-gray-200">
                   <td className="px-4 py-2.5 text-xs font-semibold text-gray-600 uppercase">Total</td>
+                  <td className="px-4 py-2.5 text-right text-gray-500">—</td>
                   <td className="px-4 py-2.5 text-right font-semibold text-gray-800">{weekStats.totalHours.toFixed(1)}h</td>
                   <td className="px-4 py-2.5 text-right text-gray-700">{currency}{weekStats.totalBaseCost.toFixed(0)}</td>
                   {superRate > 0 && <td className="px-4 py-2.5 text-right text-gray-400">+{currency}{(weekStats.totalCost - weekStats.totalBaseCost).toFixed(0)}</td>}
@@ -5221,19 +5260,19 @@ const RosterApp = () => {
       };
 
       return (
-        <div className="space-y-6">
-          {/* Week Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="space-y-4">
+          {/* Week Summary — compact 4-up strip */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="metric-card">
-              <div className="text-sm text-gray-500 mb-1">Total Labor Cost</div>
-              <div className="text-3xl font-bold text-gray-900">${weekTotals.laborCost.toFixed(0)}</div>
-              <div className="text-xs text-gray-400 mt-1">This week</div>
+              <div className="text-xs text-gray-500 mb-1">Total Labor Cost</div>
+              <div className="text-xl font-bold text-gray-900">${weekTotals.laborCost.toFixed(0)}</div>
+              <div className="text-xs text-gray-400 mt-0.5">This week</div>
             </div>
 
             <div className="metric-card">
-              <div className="text-sm text-gray-500 mb-1">Total Revenue</div>
-              <div className="text-3xl font-bold text-green-600">${weekTotals.totalRevenue.toFixed(0)}</div>
-              <div className="text-xs text-gray-400 mt-1">{weekTotals.daysWithRevenue} days tracked</div>
+              <div className="text-xs text-gray-500 mb-1">Total Revenue</div>
+              <div className="text-xl font-bold text-green-600">${weekTotals.totalRevenue.toFixed(0)}</div>
+              <div className="text-xs text-gray-400 mt-0.5">{weekTotals.daysWithRevenue} days tracked</div>
             </div>
 
             <div className={`metric-card ${
@@ -5242,58 +5281,52 @@ const RosterApp = () => {
               weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30) + 10 ? 'border-orange-200' :
               'border-red-200'
             }`}>
-              <div className="text-sm text-gray-500 mb-1">Labor %</div>
-              <div className={`text-3xl font-bold ${
+              <div className="text-xs text-gray-500 mb-1">Labor %</div>
+              <div className={`text-xl font-bold ${
                 weekLaborPercentage === 0 ? 'text-gray-400' :
                 weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30) ? 'text-green-600' :
                 weekLaborPercentage <= (businessSettings.targetLaborPercentage || 30) + 10 ? 'text-orange-600' :
                 'text-red-600'
               }`}>
-                {weekLaborPercentage > 0 ? `${weekLaborPercentage.toFixed(2)}%` : 'N/A'}
+                {weekLaborPercentage > 0 ? `${weekLaborPercentage.toFixed(1)}%` : 'N/A'}
               </div>
-              <div className="text-xs text-gray-400 mt-1">
+              <div className="text-xs text-gray-400 mt-0.5">
                 {weekLaborPercentage > 0 ? 'of revenue' : 'Add revenue data'}
               </div>
             </div>
 
             <div className="metric-card">
-              <div className="text-sm text-gray-500 mb-1">Target Labor %</div>
-              <div className="text-3xl font-bold text-purple-600">{businessSettings.targetLaborPercentage || 30}%</div>
-              <div className="text-xs text-gray-400 mt-1">Ideal target</div>
+              <div className="text-xs text-gray-500 mb-1">Target Labor %</div>
+              <div className="text-xl font-bold text-purple-600">{businessSettings.targetLaborPercentage || 30}%</div>
+              <div className="text-xs text-gray-400 mt-0.5">Ideal target</div>
             </div>
           </div>
 
-          {/* Info Card */}
-          <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
-            <div className="flex items-start gap-3">
-              <Lightbulb size={20} className="text-blue-600 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <h4 className="font-semibold text-blue-900 mb-1">Managing Labor Costs</h4>
-                <p className="text-sm text-blue-700">
-                  Industry standard for hospitality labor costs is typically 25-35% of revenue. <strong>Click any cell in the table below</strong> to enter revenue data and track your labor cost percentage. Changes save automatically.
-                </p>
-              </div>
-            </div>
+          {/* Info tip — compact */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 flex items-center gap-2.5">
+            <Lightbulb size={15} className="text-blue-500 shrink-0" />
+            <p className="text-xs text-blue-700">
+              Industry standard: <strong>25–35%</strong> of revenue. <strong>Click any cell below</strong> to enter revenue data — changes save automatically.
+            </p>
           </div>
 
           {/* Daily Breakdown */}
           <div className="card overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-bold text-gray-900">Daily Revenue & Labor Tracking</h3>
-              <p className="text-sm text-gray-500 mt-1">Track labor costs as a percentage of revenue</p>
+            <div className="px-4 py-3 border-b border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900">Daily Revenue & Labor Tracking</h3>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b-2 border-gray-200">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Projected</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Other</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Total Revenue</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Labor Cost</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Labor %</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Notes</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Projected</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Other</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Revenue</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Labor</th>
+                    <th className="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Labor %</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -5303,65 +5336,60 @@ const RosterApp = () => {
                     
                     return (
                       <tr key={day.dateKey} className={`hover:bg-gray-50 ${isWeekend ? 'bg-orange-50/30' : ''}`}>
-                        <td className="px-4 py-3">
-                          <div className="font-semibold text-gray-800">
-                            {day.date.toLocaleDateString('en-AU', { weekday: 'short', month: 'short', day: 'numeric' })}
-                          </div>
-                          {day.notes && !editingCell?.dateKey === day.dateKey && (
-                            <div className="text-xs text-gray-500 mt-0.5">{day.notes}</div>
-                          )}
+                        <td className="px-4 py-2 font-medium text-gray-800 whitespace-nowrap">
+                          {day.date.toLocaleDateString('en-AU', { weekday: 'short', month: 'short', day: 'numeric' })}
                         </td>
-                        <td className="px-2 py-3 text-right">
+                        <td className="px-2 py-2 text-right">
                           {renderEditableCell(day, 'projected', day.projectedRevenue)}
                         </td>
-                        <td className="px-2 py-3 text-right">
+                        <td className="px-2 py-2 text-right">
                           {renderEditableCell(day, 'other', day.otherRevenue)}
                         </td>
-                        <td className="px-4 py-3 text-right font-bold text-gray-800">
-                          {day.totalRevenue > 0 ? `$${day.totalRevenue.toFixed(0)}` : '-'}
+                        <td className="px-3 py-2 text-right font-semibold text-gray-800">
+                          {day.totalRevenue > 0 ? `$${day.totalRevenue.toFixed(0)}` : '–'}
                         </td>
-                        <td className="px-4 py-3 text-right font-bold text-blue-600">
+                        <td className="px-3 py-2 text-right font-semibold text-blue-600">
                           ${day.laborCost.toFixed(0)}
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-3 py-2 text-center">
                           {day.laborPercentage > 0 ? (
-                            <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold border-2 ${getColorClasses(color)}`}>
-                              {day.laborPercentage.toFixed(2)}%
+                            <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold border ${getColorClasses(color)}`}>
+                              {day.laborPercentage.toFixed(1)}%
                             </span>
                           ) : (
-                            <span className="text-gray-400 text-sm">-</span>
+                            <span className="text-gray-300 text-xs">–</span>
                           )}
                         </td>
-                        <td className="px-2 py-3">
+                        <td className="px-2 py-2">
                           {renderEditableCell(day, 'notes', day.notes)}
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
-                <tfoot className="bg-gray-50 border-t-2 border-gray-300">
+                <tfoot className="bg-gray-50 border-t-2 border-gray-200">
                   <tr className="font-bold">
-                    <td className="px-4 py-4 text-gray-800">Week Total</td>
-                    <td className="px-4 py-4 text-right text-gray-600">-</td>
-                    <td className="px-4 py-4 text-right text-gray-600">-</td>
-                    <td className="px-4 py-4 text-right text-lg text-gray-800">
+                    <td className="px-4 py-2.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Week Total</td>
+                    <td className="px-3 py-2.5 text-right text-gray-400 text-xs">—</td>
+                    <td className="px-3 py-2.5 text-right text-gray-400 text-xs">—</td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-gray-800">
                       ${weekTotals.totalRevenue.toFixed(0)}
                     </td>
-                    <td className="px-4 py-4 text-right text-lg text-blue-600">
+                    <td className="px-3 py-2.5 text-right font-semibold text-blue-600">
                       ${weekTotals.laborCost.toFixed(0)}
                     </td>
-                    <td className="px-4 py-4 text-center">
+                    <td className="px-3 py-2.5 text-center">
                       {weekLaborPercentage > 0 ? (
-                        <span className={`inline-block px-4 py-1.5 rounded-full text-base font-bold border-2 ${
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold border ${
                           getColorClasses(getLaborPercentageColor(weekLaborPercentage))
                         }`}>
-                          {weekLaborPercentage.toFixed(2)}%
+                          {weekLaborPercentage.toFixed(1)}%
                         </span>
                       ) : (
-                        <span className="text-gray-400">-</span>
+                        <span className="text-gray-400 text-xs">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-4"></td>
+                    <td className="px-3 py-2.5"></td>
                   </tr>
                 </tfoot>
               </table>
@@ -5369,39 +5397,35 @@ const RosterApp = () => {
           </div>
 
           {/* Labor Percentage Guide */}
-          <div className="card p-6">
-            <h3 className="text-lg font-bold mb-4 text-gray-800">Understanding Labor Percentage</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-green-800">Excellent (≤{businessSettings.targetLaborPercentage || 30}%)</div>
-                    <div className="text-xs text-green-700">On target or better</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                  <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-yellow-800">Acceptable ({(businessSettings.targetLaborPercentage || 30)}-{(businessSettings.targetLaborPercentage || 30) + 5}%)</div>
-                    <div className="text-xs text-yellow-700">Slightly over target</div>
-                  </div>
+          <div className="card p-4">
+            <h3 className="text-sm font-semibold mb-3 text-gray-700">Labor % Reference</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="flex items-center gap-2 p-2 bg-green-50 rounded-lg border border-green-200">
+                <div className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0"></div>
+                <div>
+                  <div className="text-xs font-semibold text-green-800">Excellent ≤{businessSettings.targetLaborPercentage || 30}%</div>
+                  <div className="text-[11px] text-green-700">On target</div>
                 </div>
               </div>
-              <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
-                  <div className="w-3 h-3 rounded-full bg-orange-500"></div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-orange-800">Warning ({(businessSettings.targetLaborPercentage || 30) + 5}-{(businessSettings.targetLaborPercentage || 30) + 10}%)</div>
-                    <div className="text-xs text-orange-700">Review scheduling</div>
-                  </div>
+              <div className="flex items-center gap-2 p-2 bg-yellow-50 rounded-lg border border-yellow-200">
+                <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 shrink-0"></div>
+                <div>
+                  <div className="text-xs font-semibold text-yellow-800">OK {(businessSettings.targetLaborPercentage || 30)}–{(businessSettings.targetLaborPercentage || 30) + 5}%</div>
+                  <div className="text-[11px] text-yellow-700">Slightly over</div>
                 </div>
-                <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
-                  <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-red-800">Critical (>{(businessSettings.targetLaborPercentage || 30) + 10}%)</div>
-                    <div className="text-xs text-red-700">Immediate action needed</div>
-                  </div>
+              </div>
+              <div className="flex items-center gap-2 p-2 bg-orange-50 rounded-lg border border-orange-200">
+                <div className="w-2.5 h-2.5 rounded-full bg-orange-500 shrink-0"></div>
+                <div>
+                  <div className="text-xs font-semibold text-orange-800">Warning {(businessSettings.targetLaborPercentage || 30) + 5}–{(businessSettings.targetLaborPercentage || 30) + 10}%</div>
+                  <div className="text-[11px] text-orange-700">Review scheduling</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 p-2 bg-red-50 rounded-lg border border-red-200">
+                <div className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0"></div>
+                <div>
+                  <div className="text-xs font-semibold text-red-800">Critical &gt;{(businessSettings.targetLaborPercentage || 30) + 10}%</div>
+                  <div className="text-[11px] text-red-700">Immediate action</div>
                 </div>
               </div>
             </div>
@@ -5464,15 +5488,15 @@ const RosterApp = () => {
           <div className="card p-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Staff Coverage by Hour</h3>
             <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
+              <table className="border-collapse" style={{ fontSize: 13 }}>
                 <thead>
                   <tr>
-                    <th className="text-left text-gray-400 font-medium pr-3 pb-2 w-16">Time</th>
+                    <th className="text-left text-gray-400 font-medium pr-4 pb-3 w-16" style={{ fontSize: 12 }}>Time</th>
                     {dates.map(d => (
-                      <th key={formatDateKey(d)} className="text-center text-gray-500 font-medium pb-2 px-1">
+                      <th key={formatDateKey(d)} className="text-center text-gray-600 font-semibold pb-3 px-1.5 min-w-[52px]" style={{ fontSize: 12 }}>
                         <div>{d.toLocaleDateString('en-AU', { weekday: 'short' })}</div>
-                        <div className="text-gray-400 font-normal">{d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
-                        {publicHolidaySet.has(formatDateKey(d)) && <div className="text-orange-500 font-bold">PH</div>}
+                        <div className="text-gray-400 font-normal" style={{ fontSize: 11 }}>{d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
+                        {publicHolidaySet.has(formatDateKey(d)) && <div className="text-orange-500 font-bold" style={{ fontSize: 10 }}>PH</div>}
                       </th>
                     ))}
                   </tr>
@@ -5481,8 +5505,8 @@ const RosterApp = () => {
                   {heatSlots.map(t => {
                     const isPeak = t >= '12:00' && t < '14:00';
                     return (
-                      <tr key={t} className={isPeak ? 'bg-orange-50/40' : ''}>
-                        <td className={`pr-3 py-0.5 font-medium ${isPeak ? 'text-orange-600' : 'text-gray-400'}`}>{t}</td>
+                      <tr key={t} className={isPeak ? 'bg-orange-50/50' : ''}>
+                        <td className={`pr-4 py-1 font-semibold w-16 ${isPeak ? 'text-orange-500' : 'text-gray-400'}`} style={{ fontSize: 12 }}>{t}</td>
                         {dates.map(d => {
                           const dk = formatDateKey(d);
                           const count = coverageMatrix[t]?.[dk] || 0;
@@ -5491,15 +5515,20 @@ const RosterApp = () => {
                           const isUnder = isOp && count > 0 && count < (isPeak ? peakMin : minStaff);
                           const intensity = maxCount > 0 ? count / maxCount : 0;
                           return (
-                            <td key={dk} className="px-1 py-0.5 text-center">
+                            <td key={dk} className="px-1.5 py-1 text-center">
                               {!isOp ? (
-                                <span className="block w-8 h-5 rounded bg-gray-50 mx-auto"></span>
+                                <span className="flex items-center justify-center w-11 h-8 rounded mx-auto bg-gray-100/60 text-gray-300" style={{ fontSize: 11 }}>–</span>
                               ) : isGap ? (
-                                <span className="block w-8 h-5 rounded bg-red-100 border border-red-300 mx-auto flex items-center justify-center text-red-500 font-bold">!</span>
+                                <span className="flex items-center justify-center w-11 h-8 rounded mx-auto bg-red-100 border border-red-300 text-red-600 font-bold" style={{ fontSize: 13 }}>!</span>
                               ) : (
                                 <span
-                                  className={`block w-8 h-5 rounded mx-auto flex items-center justify-center font-semibold ${isUnder ? 'text-orange-700' : 'text-blue-800'}`}
-                                  style={{ backgroundColor: isUnder ? `rgba(251,146,60,${0.2 + intensity * 0.6})` : `rgba(59,130,246,${0.15 + intensity * 0.65})` }}
+                                  className={`flex items-center justify-center w-11 h-8 rounded mx-auto font-bold ${isUnder ? 'text-orange-800' : 'text-blue-900'}`}
+                                  style={{
+                                    fontSize: 14,
+                                    backgroundColor: isUnder
+                                      ? `rgba(251,146,60,${0.3 + intensity * 0.55})`
+                                      : `rgba(59,130,246,${0.25 + intensity * 0.6})`,
+                                  }}
                                 >
                                   {count}
                                 </span>
@@ -5513,11 +5542,11 @@ const RosterApp = () => {
                 </tbody>
               </table>
             </div>
-            <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
-              <div className="flex items-center gap-1.5"><span className="w-4 h-3 rounded bg-blue-200 inline-block"></span> Adequate</div>
-              <div className="flex items-center gap-1.5"><span className="w-4 h-3 rounded bg-orange-200 inline-block"></span> Understaffed</div>
-              <div className="flex items-center gap-1.5"><span className="w-4 h-3 rounded bg-red-100 border border-red-300 inline-block"></span> Gap</div>
-              <div className="flex items-center gap-1.5"><span className="w-4 h-3 rounded bg-gray-50 inline-block"></span> Outside hours</div>
+            <div className="flex items-center gap-5 mt-4 text-xs text-gray-500">
+              <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-blue-300 inline-block"></span> Adequate</div>
+              <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-orange-300 inline-block"></span> Understaffed</div>
+              <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-red-100 border border-red-300 inline-block"></span> Gap (no staff)</div>
+              <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-gray-100 inline-block"></span> Outside hours</div>
             </div>
           </div>
 
@@ -5771,15 +5800,24 @@ Key things to verify after rebuild:
     return dates.map(date => scheduleByDay[formatDateKey(date)]);
   };
 
-  const ExportModal = () => {
-    const [selectedStaffId, setSelectedStaffId] = useState(staff[0]?.id);
-    const [copiedStaffId, setCopiedStaffId] = useState(null);
-    const [sendingId, setSendingId] = useState(null);   // staffId currently being sent
-    const [sentId, setSentId] = useState(null);         // staffId just successfully sent
-    const [sendError, setSendError] = useState(null);
-    const [sendingAll, setSendingAll] = useState(false);
+  // renderExportModal is a plain function (not a React component) so it is called
+  // inline — this avoids React treating a redefined inner component as a new type
+  // and unmounting/remounting the modal on every parent re-render.
+  const renderExportModal = () => {
+    const selectedStaffId = exportSelectedStaffId;
+    const setSelectedStaffId = setExportSelectedStaffId;
+    const copiedStaffId = exportCopiedStaffId;
+    const setCopiedStaffId = setExportCopiedStaffId;
+    const sendingId = exportSendingId;
+    const setSendingId = setExportSendingId;
+    const sentId = exportSentId;
+    const setSentId = setExportSentId;
+    const sendError = exportSendError;
+    const setSendError = setExportSendError;
+    const sendingAll = exportSendingAll;
+    const setSendingAll = setExportSendingAll;
 
-    const selectedStaff = staff.find(s => s.id === selectedStaffId);
+    const selectedStaff = staff.find(s => s.id === selectedStaffId) || activeStaff[0] || null;
     const scheduleByDay = selectedStaff ? generateStaffSchedule(selectedStaff) : [];
     const weekRange = `${dates[0]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} – ${dates[dates.length - 1]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`;
 
@@ -6194,8 +6232,9 @@ Key things to verify after rebuild:
                         }
                       }
                       const blockPx = shiftLen * hColW;
-                      const shiftEndTime = slotAddMins(shiftEndSlot, 15);
-                      const shiftHrsVal = (shiftLen * 15) / 60;
+                      // Use timeInterval (not hardcoded 15) so labels are correct at 30m/1hr views
+                      const shiftEndTime = slotAddMins(shiftEndSlot, timeInterval);
+                      const shiftHrsVal = (shiftLen * timeInterval) / 60;
 
                       const availStatus = availability[`${s.id}|${dk}`]?.status;
                       const unavailOverlay = availStatus === 'unavailable'
@@ -6399,7 +6438,7 @@ Key things to verify after rebuild:
                   <Clock size={14} />
                   <span>{startHour.toString().padStart(2, '0')}:00-{endHour.toString().padStart(2, '0')}:00</span>
                 </button>
-                <button onClick={() => setShowExportModal(true)} className="btn-ghost flex items-center gap-1.5 text-xs py-1.5 px-2.5">
+                <button onClick={() => { setShowExportModal(true); setExportSelectedStaffId(s => s || staff[0]?.id); setExportSendError(null); }} className="btn-ghost flex items-center gap-1.5 text-xs py-1.5 px-2.5">
                   <Clipboard size={14} />
                   <span>Export</span>
                 </button>
@@ -6752,7 +6791,7 @@ Key things to verify after rebuild:
       {showTimeSettings && <TimeSettingsModal />}
       {showSettingsModal && <BusinessSettingsModal />}
       {showQuickFillModal && <QuickFillModal />}
-      {showExportModal && <ExportModal />}
+      {showExportModal && renderExportModal()}
       {showClearModal && <ClearConfirmModal />}
       {showTemplateModal && <TemplateModal />}
       {showTemplateMenu && <TemplateMenu />}
