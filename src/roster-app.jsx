@@ -3981,6 +3981,7 @@ const RosterApp = () => {
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Type</th>
                         <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Hourly Rate</th>
                         <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Weekend Rate</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Shifts</th>
                         <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Hours This Week</th>
                         <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Est. Pay</th>
                         <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Actions</th>
@@ -4007,6 +4008,9 @@ const RosterApp = () => {
                                 ? `$${(s.weekendRate ?? 0).toFixed(2)}/hr`
                                 : '-'
                               }
+                            </td>
+                            <td className="px-4 py-4 text-right font-semibold text-gray-700 tabular-nums">
+                              {countWeekShifts(s.id)}
                             </td>
                             <td className="px-4 py-4 text-right font-bold text-gray-800">
                               {weekStats.hours.toFixed(2)}h
