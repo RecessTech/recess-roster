@@ -116,7 +116,10 @@ const RosterApp = () => {
   const [endHour, setEndHour] = useState(17);
   const [showTimeSettings, setShowTimeSettings] = useState(false);
   const dragRef = useRef({ active: false, startRowIdx: 0, currentRowIdx: 0, cellCount: 0, staffId: null, dateKey: null, startCell: null, anchorTop: 0, anchorLeft: 0, isEraser: false, role: null });
+  // Tracks an in-progress drag on a shift's start/end edge (resize), as opposed to painting a new shift.
+  const resizeRef = useRef({ active: false, dateKey: null, staffId: null, role: null, anchorIdx: 0, currentIdx: 0, origStartIdx: 0, origEndIdx: 0, axis: 'v', anchorTop: 0, anchorLeft: 0, step: 0 });
   const overlayRef = useRef(null);
+  const tooltipRef = useRef(null);
   const containerRef = useRef(null);
   const timeSlotsRef = useRef([]);
   const [showStaffModal, setShowStaffModal] = useState(false);
@@ -810,6 +813,30 @@ const RosterApp = () => {
   };
   const getScheduleKey = (dateKey, staffId, timeSlot) => `${dateKey}|${staffId}|${timeSlot}`;
 
+  // Label shown in the floating tooltip while painting or resizing a shift, e.g. "09:00 – 11:45 · 2.75h"
+  const formatSlotRangeLabel = (startIdx, endIdx) => {
+    const slots = timeSlotsRef.current;
+    const startSlot = slots[startIdx];
+    const [eh, em] = slots[endIdx].split(':').map(Number);
+    const endMins = eh * 60 + em + timeInterval;
+    const endSlot = `${Math.floor(endMins / 60).toString().padStart(2, '0')}:${(endMins % 60).toString().padStart(2, '0')}`;
+    const hrs = ((endIdx - startIdx + 1) * timeInterval) / 60;
+    return `${startSlot} – ${endSlot} · ${hrs % 1 === 0 ? hrs : hrs.toFixed(2)}h`;
+  };
+
+  const showRangeTooltip = (e, startIdx, endIdx) => {
+    const tooltip = tooltipRef.current;
+    if (!tooltip || !e) return;
+    tooltip.style.display = 'block';
+    tooltip.textContent = formatSlotRangeLabel(Math.min(startIdx, endIdx), Math.max(startIdx, endIdx));
+    tooltip.style.left = `${e.clientX + 14}px`;
+    tooltip.style.top = `${e.clientY - 10}px`;
+  };
+
+  const hideRangeTooltip = () => {
+    if (tooltipRef.current) tooltipRef.current.style.display = 'none';
+  };
+
   const handleMouseDown = (e, dateKey, staffId, timeSlot, rowIdx) => {
     // Template mode: apply template instead of painting
     if (templateMode && selectedTemplate) {
@@ -856,6 +883,7 @@ const RosterApp = () => {
       overlay.style.backgroundColor = isEraser ? 'rgba(239, 68, 68, 0.3)' : (selectedRole.color + '80');
       overlay.style.borderColor = isEraser ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255,255,255,0.6)';
     }
+    showRangeTooltip(e, rowIdx, rowIdx);
   };
 
   const handleRightClick = (e, dateKey, staffId, timeSlot) => {
@@ -864,6 +892,7 @@ const RosterApp = () => {
     // Cancel any pending paint on right-click
     dragRef.current = { active: false, startRowIdx: 0, currentRowIdx: 0, cellCount: 0, staffId: null, dateKey: null, startCell: null, anchorTop: 0, anchorLeft: 0, isEraser: false, role: null };
     if (overlayRef.current) overlayRef.current.style.display = 'none';
+    hideRangeTooltip();
 
     const key = getScheduleKey(dateKey, staffId, timeSlot);
     const hasShift = !!schedule[key];
@@ -882,7 +911,11 @@ const RosterApp = () => {
     });
   };
 
-  const handleMouseEnter = (dateKey, staffId, timeSlot, rowIdx) => {
+  const handleMouseEnter = (e, dateKey, staffId, timeSlot, rowIdx) => {
+    if (resizeRef.current.active) {
+      if (staffId === resizeRef.current.staffId && dateKey === resizeRef.current.dateKey) handleResizeHover(e, rowIdx);
+      return;
+    }
     if (!dragRef.current.active) return;
     // Only allow dragging within the same staff column and date
     if (staffId !== dragRef.current.staffId || dateKey !== dragRef.current.dateKey) return;
@@ -900,6 +933,7 @@ const RosterApp = () => {
       overlay.style.top = `${dragRef.current.anchorTop + topOffset}px`;
       overlay.style.height = `${rowSpan * rowHeight}px`;
     }
+    showRangeTooltip(e, dragRef.current.startRowIdx, rowIdx);
   };
 
   const handleHMouseDown = (e, dateKey, staffId, timeSlot, colIdx) => {
@@ -936,9 +970,14 @@ const RosterApp = () => {
       overlay.style.backgroundColor = isEraser ? 'rgba(239, 68, 68, 0.3)' : (selectedRole.color + '80');
       overlay.style.borderColor     = isEraser ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255,255,255,0.6)';
     }
+    showRangeTooltip(e, colIdx, colIdx);
   };
 
-  const handleHMouseEnter = (dateKey, staffId, timeSlot, colIdx) => {
+  const handleHMouseEnter = (e, dateKey, staffId, timeSlot, colIdx) => {
+    if (resizeRef.current.active) {
+      if (staffId === resizeRef.current.staffId && dateKey === resizeRef.current.dateKey) handleResizeHover(e, colIdx);
+      return;
+    }
     if (!dragRef.current.active) return;
     if (staffId !== dragRef.current.staffId || dateKey !== dragRef.current.dateKey) return;
     dragRef.current.currentRowIdx = colIdx;
@@ -952,6 +991,28 @@ const RosterApp = () => {
       overlay.style.left  = `${dragRef.current.anchorLeft + leftOffset}px`;
       overlay.style.width = `${colSpan * hColW}px`;
     }
+    showRangeTooltip(e, dragRef.current.startRowIdx, colIdx);
+  };
+
+  // Expand a [startIdx, endIdx] range of timeSlots indices into schedule keys.
+  // When interval > 15m, also fills all 15-min sub-slots so the data is
+  // always stored at 15m granularity — switching intervals shows consistent shifts.
+  const expandSlotRangeToKeys = (dateKey, staffId, startIdx, endIdx) => {
+    const slots = timeSlotsRef.current;
+    const keys = new Set();
+    for (let i = startIdx; i <= endIdx; i++) {
+      const slot = slots[i];
+      keys.add(getScheduleKey(dateKey, staffId, slot));
+      if (timeInterval > 15) {
+        const [h, m] = slot.split(':').map(Number);
+        for (let sub = 15; sub < timeInterval; sub += 15) {
+          const totalMins = h * 60 + m + sub;
+          const subSlot = `${Math.floor(totalMins / 60).toString().padStart(2, '0')}:${(totalMins % 60).toString().padStart(2, '0')}`;
+          keys.add(getScheduleKey(dateKey, staffId, subSlot));
+        }
+      }
+    }
+    return keys;
   };
 
   // Commit pending paint to schedule (called on mouseUp)
@@ -964,6 +1025,7 @@ const RosterApp = () => {
     if (overlayRef.current) {
       overlayRef.current.style.display = 'none';
     }
+    hideRangeTooltip();
 
     // Single click (no drag) → open QuickFill instead of painting one cell
     if (drag.cellCount === 1 && !drag.isEraser && selectedRole && selectedRole.id !== 'eraser') {
@@ -976,25 +1038,9 @@ const RosterApp = () => {
       return;
     }
 
-    // Calculate keys from the drag range.
-    // When interval > 15m, also fill all 15-min sub-slots so the data is
-    // always stored at 15m granularity — switching intervals shows consistent shifts.
-    const slots = timeSlotsRef.current;
     const minIdx = Math.min(drag.startRowIdx, drag.currentRowIdx);
     const maxIdx = Math.max(drag.startRowIdx, drag.currentRowIdx);
-    const keys = new Set();
-    for (let i = minIdx; i <= maxIdx; i++) {
-      const slot = slots[i];
-      keys.add(getScheduleKey(drag.dateKey, drag.staffId, slot));
-      if (timeInterval > 15) {
-        const [h, m] = slot.split(':').map(Number);
-        for (let sub = 15; sub < timeInterval; sub += 15) {
-          const totalMins = h * 60 + m + sub;
-          const subSlot = `${Math.floor(totalMins / 60).toString().padStart(2, '0')}:${(totalMins % 60).toString().padStart(2, '0')}`;
-          keys.add(getScheduleKey(drag.dateKey, drag.staffId, subSlot));
-        }
-      }
-    }
+    const keys = expandSlotRangeToKeys(drag.dateKey, drag.staffId, minIdx, maxIdx);
 
     if (keys.size === 0) return;
 
@@ -1013,16 +1059,122 @@ const RosterApp = () => {
 
       return newSchedule;
     });
+  // expandSlotRangeToKeys is redefined each render but only depends on timeInterval, already tracked below
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRole, saveToHistory, timeInterval]);
 
+  // Find the contiguous run of same-role slots (a rendered shift block) containing slotIdx.
+  const getShiftRun = (dateKey, staffId, slotIdx) => {
+    const slots = timeSlotsRef.current;
+    const shift = schedule[getScheduleKey(dateKey, staffId, slots[slotIdx])];
+    if (!shift) return null;
+    let startIdx = slotIdx;
+    let endIdx = slotIdx;
+    while (startIdx > 0 && schedule[getScheduleKey(dateKey, staffId, slots[startIdx - 1])]?.roleId === shift.roleId) startIdx--;
+    while (endIdx < slots.length - 1 && schedule[getScheduleKey(dateKey, staffId, slots[endIdx + 1])]?.roleId === shift.roleId) endIdx++;
+    return { startIdx, endIdx, role: { roleId: shift.roleId, roleCode: shift.roleCode, roleColor: shift.roleColor } };
+  };
+
+  // Grab the start or end edge of an existing shift to resize it by dragging.
+  // axis 'v' = vertical weekly grid (drag changes row/time), 'h' = horizontal daily timeline (drag changes column/time).
+  const handleResizeMouseDown = (e, edge, dateKey, staffId, slotIdx, axis, stepSize, crossSize) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const run = getShiftRun(dateKey, staffId, slotIdx);
+    if (!run) return;
+
+    const anchorIdx = edge === 'end' ? run.startIdx : run.endIdx;
+    const cellEl = e.currentTarget.closest('td');
+    const container = containerRef.current;
+    if (!cellEl || !container) return;
+    const containerRect = container.getBoundingClientRect();
+    const cellRect = cellEl.getBoundingClientRect();
+    const cellTop = cellRect.top - containerRect.top + container.scrollTop;
+    const cellLeft = cellRect.left - containerRect.left + container.scrollLeft;
+    const offsetSlots = anchorIdx - slotIdx;
+    const anchorTop = axis === 'v' ? cellTop + offsetSlots * stepSize : cellTop;
+    const anchorLeft = axis === 'h' ? cellLeft + offsetSlots * stepSize : cellLeft;
+
+    resizeRef.current = {
+      active: true, dateKey, staffId, role: run.role,
+      anchorIdx, currentIdx: slotIdx,
+      origStartIdx: run.startIdx, origEndIdx: run.endIdx,
+      axis, anchorTop, anchorLeft, step: stepSize,
+    };
+
+    const overlay = overlayRef.current;
+    if (overlay) {
+      overlay.style.display = 'block';
+      overlay.style.backgroundColor = run.role.roleColor + 'B0';
+      overlay.style.borderColor = 'rgba(255,255,255,0.9)';
+      // Fixed cross-axis position/size; the along-axis span is set by handleResizeHover below.
+      if (axis === 'v') {
+        overlay.style.left = `${cellLeft}px`;
+        overlay.style.width = `${crossSize}px`;
+      } else {
+        overlay.style.top = `${cellTop}px`;
+        overlay.style.height = `${crossSize}px`;
+      }
+    }
+    // Render the initial span (the shift's current full range) immediately.
+    handleResizeHover(e, slotIdx);
+  };
+
+  // Live preview while dragging a resize handle (called from the existing paint mouse-enter handlers).
+  const handleResizeHover = (e, slotIdx) => {
+    const r = resizeRef.current;
+    if (!r.active) return;
+    r.currentIdx = slotIdx;
+    const minIdx = Math.min(r.anchorIdx, slotIdx);
+    const span = Math.abs(slotIdx - r.anchorIdx) + 1;
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+    if (r.axis === 'v') {
+      overlay.style.top = `${r.anchorTop + (minIdx - r.anchorIdx) * r.step}px`;
+      overlay.style.height = `${span * r.step}px`;
+    } else {
+      overlay.style.left = `${r.anchorLeft + (minIdx - r.anchorIdx) * r.step}px`;
+      overlay.style.width = `${span * r.step}px`;
+    }
+    showRangeTooltip(e, r.anchorIdx, slotIdx);
+  };
+
+  // Commit a pending shift resize to the schedule (called on mouseUp).
+  const commitPendingResize = useCallback(() => {
+    const r = { ...resizeRef.current };
+    if (!r.active) return;
+    resizeRef.current = { active: false, dateKey: null, staffId: null, role: null, anchorIdx: 0, currentIdx: 0, origStartIdx: 0, origEndIdx: 0, axis: 'v', anchorTop: 0, anchorLeft: 0, step: 0 };
+    if (overlayRef.current) overlayRef.current.style.display = 'none';
+    hideRangeTooltip();
+
+    const newStartIdx = Math.min(r.anchorIdx, r.currentIdx);
+    const newEndIdx = Math.max(r.anchorIdx, r.currentIdx);
+    if (newStartIdx === r.origStartIdx && newEndIdx === r.origEndIdx) return;
+
+    const oldKeys = expandSlotRangeToKeys(r.dateKey, r.staffId, r.origStartIdx, r.origEndIdx);
+    const newKeys = expandSlotRangeToKeys(r.dateKey, r.staffId, newStartIdx, newEndIdx);
+
+    setSchedule(prevSchedule => {
+      saveToHistory(prevSchedule);
+      const newSchedule = { ...prevSchedule };
+      oldKeys.forEach(key => { delete newSchedule[key]; });
+      newKeys.forEach(key => { newSchedule[key] = { ...r.role }; });
+      return newSchedule;
+    });
+  // expandSlotRangeToKeys is redefined each render but only depends on timeInterval, already tracked below
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveToHistory, timeInterval]);
+
   useEffect(() => {
-    const handleMouseUp = () => commitPendingPaint();
+    const handleMouseUp = () => { commitPendingPaint(); commitPendingResize(); };
     const handleClick = () => setContextMenu(null);
     const handleKeyDown = (e) => {
-      // Escape cancels pending paint
+      // Escape cancels pending paint or resize
       if (e.key === 'Escape') {
         dragRef.current = { active: false, startRowIdx: 0, currentRowIdx: 0, cellCount: 0, staffId: null, dateKey: null, startCell: null, anchorTop: 0, anchorLeft: 0, isEraser: false, role: null };
+        resizeRef.current = { active: false, dateKey: null, staffId: null, role: null, anchorIdx: 0, currentIdx: 0, origStartIdx: 0, origEndIdx: 0, axis: 'v', anchorTop: 0, anchorLeft: 0, step: 0 };
         if (overlayRef.current) overlayRef.current.style.display = 'none';
+        hideRangeTooltip();
       }
       // Ctrl+Z or Cmd+Z for undo
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
@@ -1045,7 +1197,7 @@ const RosterApp = () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commitPendingPaint, historyIndex, scheduleHistory]);
+  }, [commitPendingPaint, commitPendingResize, historyIndex, scheduleHistory]);
 
   // Public holidays set — covers current year ±1 to handle cross-year views
   const publicHolidaySet = useMemo(() => {
@@ -6261,9 +6413,29 @@ Key things to verify after rebuild:
                             cursor: selectedRole ? (selectedRole.id === 'eraser' ? 'cell' : 'crosshair') : 'pointer',
                           }}
                           onMouseDown={(e) => handleHMouseDown(e, dk, s.id, slot, ci)}
-                          onMouseEnter={() => handleHMouseEnter(dk, s.id, slot, ci)}
+                          onMouseEnter={(e) => handleHMouseEnter(e, dk, s.id, slot, ci)}
                           onContextMenu={(e) => handleRightClick(e, dk, s.id, slot)}
                         >
+                          {sh && isShiftStart && (
+                            <div
+                              onMouseDown={(e) => handleResizeMouseDown(e, 'start', dk, s.id, ci, 'h', hColW, ROW_H)}
+                              className="absolute top-0 bottom-0 left-0 z-30 flex items-center group"
+                              style={{ width: 7, cursor: 'col-resize' }}
+                              title="Drag to change start time"
+                            >
+                              <div className="rounded-full bg-white/0 group-hover:bg-white/80 transition-colors" style={{ width: 3, height: '55%', marginLeft: 1 }} />
+                            </div>
+                          )}
+                          {sh && isShiftEnd && (
+                            <div
+                              onMouseDown={(e) => handleResizeMouseDown(e, 'end', dk, s.id, ci, 'h', hColW, ROW_H)}
+                              className="absolute top-0 bottom-0 right-0 z-30 flex items-center justify-end group"
+                              style={{ width: 7, cursor: 'col-resize' }}
+                              title="Drag to change end time"
+                            >
+                              <div className="rounded-full bg-white/0 group-hover:bg-white/80 transition-colors" style={{ width: 3, height: '55%', marginRight: 1 }} />
+                            </div>
+                          )}
                           {sh && isShiftStart && (
                             <div className="absolute inset-y-0 left-0 flex flex-col justify-center pl-1.5 pointer-events-none z-10 overflow-hidden"
                               style={{ maxWidth: blockPx - 4 }}>
@@ -6351,6 +6523,17 @@ Key things to verify after rebuild:
           style: { background: '#1e293b', color: '#fff', fontSize: '14px', borderRadius: '8px', padding: '12px 16px' },
           success: { iconTheme: { primary: '#22c55e', secondary: '#fff' } },
           error: { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
+        }}
+      />
+
+      {/* Floating time-range readout shown while painting or resizing a shift */}
+      <div
+        ref={tooltipRef}
+        style={{
+          display: 'none', position: 'fixed', pointerEvents: 'none', zIndex: 70,
+          background: '#111827', color: '#fff', fontSize: 12, fontWeight: 600,
+          padding: '4px 9px', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+          fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
         }}
       />
 
@@ -6669,6 +6852,10 @@ Key things to verify after rebuild:
                           {orderedStaff.map((s, si) => {
                             const k = getScheduleKey(dk, s.id, t);
                             const sh = schedule[k];
+                            const prevSh = rowIdx > 0 ? schedule[getScheduleKey(dk, s.id, timeSlots[rowIdx - 1])] : null;
+                            const nextSh = rowIdx < timeSlots.length - 1 ? schedule[getScheduleKey(dk, s.id, timeSlots[rowIdx + 1])] : null;
+                            const isShiftStart = sh && (!prevSh || prevSh.roleId !== sh.roleId);
+                            const isShiftEnd = sh && (!nextSh || nextSh.roleId !== sh.roleId);
                             const altBg = isToday
                               ? (si % 2 === 0 ? 'rgba(249,115,22,0.04)' : 'rgba(249,115,22,0.02)')
                               : (si % 2 === 1 ? 'rgba(248,250,252,0.8)' : 'transparent');
@@ -6683,11 +6870,31 @@ Key things to verify after rebuild:
                                 key={k}
                                 className={`border-r border-gray-100 p-0 relative ${selectedRole ? (selectedRole.id === 'eraser' ? 'cursor-cell' : 'cursor-crosshair') : 'cursor-pointer'} ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`}
                                 onMouseDown={(e) => handleMouseDown(e, dk, s.id, t, rowIdx)}
-                                onMouseEnter={() => handleMouseEnter(dk, s.id, t, rowIdx)}
+                                onMouseEnter={(e) => handleMouseEnter(e, dk, s.id, t, rowIdx)}
                                 onContextMenu={(e) => handleRightClick(e, dk, s.id, t)}
                                 style={{ backgroundColor: sh ? sh.roleColor : altBg, backgroundImage: wkOverlay, height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
                               >
                                 {sh && <div className="relative flex items-center justify-center text-white font-semibold h-full" style={{ fontSize: zoomLevel === 1 ? '8px' : zoomLevel === 2 ? '10px' : '12px' }}>{sh.roleCode}</div>}
+                                {sh && isShiftStart && (
+                                  <div
+                                    onMouseDown={(e) => handleResizeMouseDown(e, 'start', dk, s.id, rowIdx, 'v', rowHeight, columnWidth)}
+                                    className="absolute top-0 left-0 right-0 z-30 flex items-center justify-center group"
+                                    style={{ height: 6, cursor: 'row-resize' }}
+                                    title="Drag to change start time"
+                                  >
+                                    <div className="rounded-full bg-white/0 group-hover:bg-white/80 transition-colors" style={{ height: 3, width: '55%', marginTop: 1 }} />
+                                  </div>
+                                )}
+                                {sh && isShiftEnd && (
+                                  <div
+                                    onMouseDown={(e) => handleResizeMouseDown(e, 'end', dk, s.id, rowIdx, 'v', rowHeight, columnWidth)}
+                                    className="absolute bottom-0 left-0 right-0 z-30 flex items-center justify-center group"
+                                    style={{ height: 6, cursor: 'row-resize' }}
+                                    title="Drag to change end time"
+                                  >
+                                    <div className="rounded-full bg-white/0 group-hover:bg-white/80 transition-colors" style={{ height: 3, width: '55%', marginBottom: 1 }} />
+                                  </div>
+                                )}
                                 {swapRequests.has(`${dk}|${s.id}`) && (
                                   <div className="absolute bottom-0.5 right-0.5 pointer-events-none z-10 text-white font-bold leading-none" style={{ fontSize: 8 }} title="Flagged for swap">↔</div>
                                 )}
