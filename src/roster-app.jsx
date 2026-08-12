@@ -1062,7 +1062,12 @@ const RosterApp = () => {
     const staffMember = staff.find(s => s.id === staffId);
     if (!staffMember) return { hours: 0, cost: 0, baseCost: 0, isPublicHoliday: false };
 
-    const date = new Date(dateKey);
+    // Parse as local date components — new Date(dateKey) treats a bare
+    // 'YYYY-MM-DD' string as UTC midnight, which rolls back to the previous
+    // day's weekday in negative-UTC-offset timezones (e.g. Monday reads as
+    // Sunday), wrongly triggering weekend/public-holiday rates.
+    const [dkYear, dkMonth, dkDay] = dateKey.split('-').map(Number);
+    const date = new Date(dkYear, dkMonth - 1, dkDay);
     const dayOfWeek = date.getDay();
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
     const isPublicHoliday = publicHolidaySet.has(dateKey);
