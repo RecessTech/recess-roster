@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck, Link2 } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db, supabase } from './supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
@@ -144,6 +144,9 @@ const RosterApp = () => {
   const [exportSentId, setExportSentId] = useState(null);
   const [exportSendError, setExportSendError] = useState(null);
   const [exportSendingAll, setExportSendingAll] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [shareRegenerating, setShareRegenerating] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearTarget, setClearTarget] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
@@ -5809,6 +5812,77 @@ Key things to verify after rebuild:
     return dates.map(date => scheduleByDay[formatDateKey(date)]);
   };
 
+  const renderShareModal = () => {
+    const shareUrl = org?.public_token ? `${window.location.origin}/r/${org.public_token}` : null;
+
+    const copyLink = () => {
+      if (!shareUrl) return;
+      navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    };
+
+    const regenerate = async () => {
+      if (!org) return;
+      setShareRegenerating(true);
+      try {
+        const updated = await db.regenerateOrgPublicToken(org.id);
+        setOrg(prev => ({ ...prev, public_token: updated.public_token }));
+        setShareCopied(false);
+      } catch (err) {
+        console.error('Error regenerating share link:', err);
+        toast.error('Could not regenerate link.');
+      } finally {
+        setShareRegenerating(false);
+      }
+    };
+
+    return (
+      <div className="modal-overlay">
+        <div className="modal-container max-w-md">
+          <div className="modal-header">
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">Share Roster</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Read-only link — no login required</p>
+            </div>
+            <button onClick={() => setShowShareModal(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X size={16} className="text-gray-400" /></button>
+          </div>
+
+          <div className="p-4">
+            <p className="text-xs text-gray-500 mb-3">
+              Anyone with this link can view every staff member's shifts for any week — no wages, rates, or other business data. Great for sharing with a co-founder, landlord, or anyone who just needs to see who's on.
+            </p>
+
+            <div className="flex items-center gap-2">
+              <input
+                readOnly
+                value={shareUrl || 'Generating link…'}
+                onFocus={e => e.target.select()}
+                className="flex-1 text-xs font-mono bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700"
+              />
+              <button
+                onClick={copyLink}
+                disabled={!shareUrl}
+                className="btn-primary text-xs py-2 px-3 flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+              >
+                {shareCopied ? <CheckCircle size={14} /> : <Link2 size={14} />}
+                <span>{shareCopied ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+
+            <button
+              onClick={regenerate}
+              disabled={shareRegenerating || !org}
+              className="text-xs text-gray-400 hover:text-red-500 mt-3 disabled:opacity-50"
+            >
+              {shareRegenerating ? 'Regenerating…' : "Regenerate link (invalidates the old one)"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // renderExportModal is a plain function (not a React component) so it is called
   // inline — this avoids React treating a redefined inner component as a new type
   // and unmounting/remounting the modal on every parent re-render.
@@ -6451,6 +6525,10 @@ Key things to verify after rebuild:
                   <Clipboard size={14} />
                   <span>Export</span>
                 </button>
+                <button onClick={() => { setShowShareModal(true); setShareCopied(false); }} className="btn-ghost flex items-center gap-1.5 text-xs py-1.5 px-2.5">
+                  <Link2 size={14} />
+                  <span>Share Roster</span>
+                </button>
                 <button
                   onClick={() => { setShowTemplateMenu(true); if (templateMode) { setTemplateMode(false); setSelectedTemplate(null); } }}
                   className={`flex items-center gap-1.5 text-xs py-1.5 px-2.5 rounded-lg transition-colors ${templateMode ? 'bg-purple-600 text-white' : 'btn-ghost'}`}
@@ -6801,6 +6879,7 @@ Key things to verify after rebuild:
       {showSettingsModal && <BusinessSettingsModal />}
       {showQuickFillModal && <QuickFillModal />}
       {showExportModal && renderExportModal()}
+      {showShareModal && renderShareModal()}
       {showClearModal && <ClearConfirmModal />}
       {showTemplateModal && <TemplateModal />}
       {showTemplateMenu && <TemplateMenu />}
