@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
   ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart,
@@ -38,29 +39,55 @@ function Modal({ title, onClose, children, maxWidth = 'max-w-md' }) {
 
 function StatusDropdown({ value, onChange }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [coords, setCoords] = useState(null);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
-    function handleClick(e) { if (!ref.current?.contains(e.target)) setOpen(false); }
+    function handleClick(e) {
+      if (btnRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    }
+    function handleDismiss() { setOpen(false); }
     document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    window.addEventListener('scroll', handleDismiss, true);
+    window.addEventListener('resize', handleDismiss);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      window.removeEventListener('scroll', handleDismiss, true);
+      window.removeEventListener('resize', handleDismiss);
+    };
   }, [open]);
+
+  function toggle() {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setCoords({ top: rect.bottom + 6, left: rect.left });
+    }
+    setOpen(o => !o);
+  }
 
   const cfg = STATUS_CONFIG[value] || STATUS_CONFIG.in_stock;
 
   return (
-    <div className="relative inline-block" ref={ref}>
+    <>
       <button
-        onClick={() => setOpen(o => !o)}
+        ref={btnRef}
+        onClick={toggle}
         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all hover:opacity-80 whitespace-nowrap ${cfg.bg} ${cfg.text} ${cfg.border}`}
       >
         <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
         {cfg.label}
         <ChevronDown size={11} className="ml-0.5 opacity-60 flex-shrink-0" />
       </button>
-      {open && (
-        <div className="absolute left-0 mt-1.5 bg-white rounded-xl shadow-lg border border-gray-100 z-20 overflow-hidden min-w-[190px]">
+      {open && coords && createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: 'fixed', top: coords.top, left: coords.left }}
+          className="bg-white rounded-xl shadow-lg border border-gray-100 z-50 overflow-hidden min-w-[190px]"
+        >
           {Object.entries(STATUS_CONFIG).map(([key, s]) => (
             <button
               key={key}
@@ -71,9 +98,10 @@ function StatusDropdown({ value, onChange }) {
               {s.label}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
 
@@ -155,12 +183,12 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
               {supplier}
             </h3>
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm table-fixed">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Reference Qty</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                    <th className="w-1/2 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
+                    <th className="w-1/4 px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Reference Qty</th>
+                    <th className="w-1/4 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -283,13 +311,13 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
               {supplier}
             </h3>
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm table-fixed">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Order Qty</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Ordered</th>
+                    <th className="w-2/5 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
+                    <th className="w-[28%] px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                    <th className="w-[16%] px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Order Qty</th>
+                    <th className="w-[16%] px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Ordered</th>
                   </tr>
                 </thead>
                 <tbody>
