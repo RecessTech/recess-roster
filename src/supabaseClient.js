@@ -1088,6 +1088,21 @@ export const db = {
     return data;
   },
 
+  // ── Stock: Order history ────────────────────────────────────────────────────
+  // Rows are written only by the nightly archive_and_reset_stock_orders()
+  // Postgres function — the app only ever reads this.
+
+  async getStockOrderHistory(orgId) {
+    const { data, error } = await supabase
+      .from('stock_order_history')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('ordered_date', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
   // Bulk import for one site's CSV: matches existing items by name
   // (case-insensitive) within the org so the same ingredient uploaded for
   // two sites becomes two site-assignments on one catalog item, not two
