@@ -65,6 +65,28 @@ body {
   --top-border:     #E5E7EB;
 }
 
+/* Stock theme — R-Stock's distinct colourway (teal), kept visually
+   separate from R-Shift's blue so switching apps is unmistakable */
+[data-theme="stock"] {
+  --sb-bg:          #0F766E;
+  --sb-icon:        rgba(255, 255, 255, 0.6);
+  --sb-icon-active: #ffffff;
+  --sb-active:      rgba(255, 255, 255, 0.18);
+  --sb-hover:       rgba(255, 255, 255, 0.1);
+  --sb-logo-bg:     rgba(255, 255, 255, 0.15);
+  --sb-logo-fg:     #ffffff;
+  --sb-tooltip-bg:  #0B5D56;
+  --sb-tooltip-bd:  rgba(255,255,255,0.15);
+
+  --primary:        #0F766E;
+  --primary-dk:     #0B5D56;
+  --primary-fg:     white;
+
+  --app-bg:         #F4FAF9;
+  --top-bg:         white;
+  --top-border:     #D9F0EC;
+}
+
 /* Dark theme (logo 3) */
 [data-theme="dark"] {
   --sb-bg:          #171717;
