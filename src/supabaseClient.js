@@ -1051,6 +1051,17 @@ export const db = {
     if (error) throw error;
   },
 
+  async updateSiteItemStatus(siteRowId, status) {
+    const { data, error } = await supabase
+      .from('stock_item_sites')
+      .update({ current_status: status, updated_at: new Date().toISOString() })
+      .eq('id', siteRowId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
   // Bulk import for one site's CSV: matches existing items by name
   // (case-insensitive) within the org so the same ingredient uploaded for
   // two sites becomes two site-assignments on one catalog item, not two
