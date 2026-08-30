@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
-  ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown,
+  ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -78,11 +78,11 @@ function StatusDropdown({ value, onChange }) {
 }
 
 // ── Stocktake Tab ─────────────────────────────────────────────────────────────
+// Pure flagging — status only. Order qty and marking things as ordered
+// live in the Ordering tab, which works off whatever gets flagged here.
 
-function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, onUpdateOrderQty }) {
+function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
-  const [editingRowId, setEditingRowId] = useState(null);
-  const [qtyDraft, setQtyDraft] = useState('');
 
   const siteRows = useMemo(() => {
     return sites
@@ -102,19 +102,6 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
 
   const noStock  = siteRows.filter(r => r.current_status === 'no_stock').length;
   const lowStock = siteRows.filter(r => r.current_status === 'low_stock').length;
-
-  function startQtyEdit(row) {
-    setEditingRowId(row.id);
-    setQtyDraft(String(row.order_qty ?? row.reference_order_qty ?? 0));
-  }
-
-  function commitQtyEdit(row) {
-    setEditingRowId(null);
-    const parsed = parseFloat(qtyDraft);
-    if (isNaN(parsed) || parsed < 0) return;
-    if ((row.order_qty ?? row.reference_order_qty ?? 0) === parsed) return;
-    onUpdateOrderQty(row.id, parsed);
-  }
 
   if (locations.length === 0) {
     return (
@@ -173,22 +160,154 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                   <tr className="border-b border-gray-100 bg-gray-50">
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Reference Qty</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Order Qty</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(row => (
+                    <tr key={row.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/60 transition-colors">
+                      <td className="px-4 py-2.5">
+                        <div className="font-medium text-gray-900">{row.item.name}</div>
+                        <div className="text-xs text-gray-400">{row.item.sku} · {row.item.uom}</div>
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-gray-700">
+                        {row.reference_order_qty} {row.item.uom}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <StatusDropdown
+                          value={row.current_status}
+                          onChange={status => onUpdateStatus(row.id, status)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+// ── Ordering Tab ──────────────────────────────────────────────────────────────
+// The actionable worklist: only items flagged as needing attention in
+// Stocktake (anything but In Stock), with an editable order qty and a
+// checkbox to confirm it's been ordered.
+
+const NEEDS_ORDER_STATUSES = ['no_stock', 'low_stock', 'order_moq'];
+
+function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateOrderQty, onUpdateOrdered }) {
+  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+  const [editingRowId, setEditingRowId] = useState(null);
+  const [qtyDraft, setQtyDraft] = useState('');
+
+  const siteRows = useMemo(() => {
+    return sites
+      .filter(s => s.location_id === selectedLocationId && NEEDS_ORDER_STATUSES.includes(s.current_status))
+      .map(s => ({ ...s, item: itemById.get(s.item_id) }))
+      .filter(r => r.item);
+  }, [sites, selectedLocationId, itemById]);
+
+  const grouped = useMemo(() => {
+    const groups = {};
+    for (const row of siteRows) {
+      const supplier = row.supplier || 'No Supplier';
+      (groups[supplier] = groups[supplier] || []).push(row);
+    }
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [siteRows]);
+
+  const orderedCount = siteRows.filter(r => r.ordered).length;
+
+  function startQtyEdit(row) {
+    setEditingRowId(row.id);
+    setQtyDraft(String(row.order_qty ?? row.reference_order_qty ?? 0));
+  }
+
+  function commitQtyEdit(row) {
+    setEditingRowId(null);
+    const parsed = parseFloat(qtyDraft);
+    if (isNaN(parsed) || parsed < 0) return;
+    if ((row.order_qty ?? row.reference_order_qty ?? 0) === parsed) return;
+    onUpdateOrderQty(row.id, parsed);
+  }
+
+  if (locations.length === 0) {
+    return (
+      <div className="text-center py-20 text-gray-400">
+        <MapPin size={32} className="mx-auto mb-3 opacity-40" />
+        <p className="text-sm mb-1">No locations set up yet.</p>
+        <p className="text-xs">Add a site in the Locations tab first.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {locations.length > 1 && (
+        <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
+          {locations.map(loc => (
+            <button
+              key={loc.id}
+              onClick={() => onSelectLocation(loc.id)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${selectedLocationId === loc.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              {loc.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {siteRows.length > 0 && (
+        <div className="flex items-center gap-2 bg-teal-50 border border-teal-100 rounded-xl px-4 py-3">
+          <span className="text-sm font-medium text-teal-700">
+            {siteRows.length} item{siteRows.length !== 1 ? 's' : ''} need{siteRows.length === 1 ? 's' : ''} ordering
+            {orderedCount > 0 && ` · ${orderedCount} already marked as ordered`}
+          </span>
+        </div>
+      )}
+
+      {siteRows.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <Package size={32} className="mx-auto mb-3 opacity-40" />
+          <p className="text-sm">Nothing needs ordering at this site right now.</p>
+          <p className="text-xs mt-1">Flag items as low or out of stock in the Stocktake tab and they'll show up here.</p>
+        </div>
+      ) : (
+        grouped.map(([supplier, rows]) => (
+          <div key={supplier}>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+              <Truck size={12} />
+              {supplier}
+            </h3>
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Order Qty</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Ordered</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map(row => {
                     const isEditing = editingRowId === row.id;
                     const qty = row.order_qty ?? row.reference_order_qty ?? 0;
+                    const sc = STATUS_CONFIG[row.current_status];
                     return (
-                      <tr key={row.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/60 transition-colors">
+                      <tr key={row.id} className={`border-b border-gray-50 last:border-b-0 hover:bg-gray-50/60 transition-colors ${row.ordered ? 'opacity-50' : ''}`}>
                         <td className="px-4 py-2.5">
                           <div className="font-medium text-gray-900">{row.item.name}</div>
                           <div className="text-xs text-gray-400">{row.item.sku} · {row.item.uom}</div>
                         </td>
-                        <td className="px-4 py-2.5 text-right text-gray-700">
-                          {row.reference_order_qty} {row.item.uom}
+                        <td className="px-4 py-2.5">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${sc.bg} ${sc.text} ${sc.border}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${sc.dot}`} />
+                            {sc.label}
+                          </span>
                         </td>
                         <td className="px-4 py-2.5 text-center">
                           {isEditing ? (
@@ -210,10 +329,13 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                             </button>
                           )}
                         </td>
-                        <td className="px-4 py-2.5">
-                          <StatusDropdown
-                            value={row.current_status}
-                            onChange={status => onUpdateStatus(row.id, status)}
+                        <td className="px-4 py-2.5 text-center">
+                          <input
+                            type="checkbox"
+                            checked={!!row.ordered}
+                            onChange={e => onUpdateOrdered(row.id, e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-400 cursor-pointer"
+                            title={row.ordered_at ? `Ordered ${new Date(row.ordered_at).toLocaleDateString('en-AU')}` : 'Confirm ordered for next delivery'}
                           />
                         </td>
                       </tr>
@@ -801,9 +923,21 @@ export default function StockApp({ user, org }) {
     }
   }
 
+  async function handleOrderedUpdate(siteRowId, ordered) {
+    setSites(prev => prev.map(s => s.id === siteRowId ? { ...s, ordered, ordered_at: ordered ? new Date().toISOString() : null } : s));
+    try {
+      await db.updateSiteItemOrdered(siteRowId, ordered);
+    } catch (err) {
+      toast.error('Failed to update ordered status');
+      console.error(err);
+      loadData();
+    }
+  }
+
   const TABS = [
     { id: 'items',     label: 'Items',     Icon: Package },
     { id: 'stocktake', label: 'Stocktake', Icon: ClipboardList },
+    { id: 'ordering',  label: 'Ordering',  Icon: ShoppingCart },
     { id: 'locations', label: 'Locations', Icon: MapPin },
   ];
 
@@ -858,7 +992,17 @@ export default function StockApp({ user, org }) {
           selectedLocationId={selectedLocationId}
           onSelectLocation={setSelectedLocationId}
           onUpdateStatus={handleStatusUpdate}
+        />
+      )}
+      {activeTab === 'ordering' && (
+        <OrderingTab
+          items={items}
+          sites={sites}
+          locations={activeLocations}
+          selectedLocationId={selectedLocationId}
+          onSelectLocation={setSelectedLocationId}
           onUpdateOrderQty={handleOrderQtyUpdate}
+          onUpdateOrdered={handleOrderedUpdate}
         />
       )}
       {activeTab === 'locations' && (
