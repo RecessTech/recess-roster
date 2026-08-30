@@ -905,4 +905,198 @@ export const db = {
     if (error) throw error;
     return data;
   },
+
+  // ── Stock: Locations ────────────────────────────────────────────────────────
+
+  async getLocations(orgId) {
+    const { data, error } = await supabase
+      .from('locations')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  // Creates the location, then provisions a par row (default 0) for every
+  // existing stock item so the new site immediately shows up in Stocktake.
+  async createLocation(orgId, name) {
+    const { data: location, error } = await supabase
+      .from('locations')
+      .insert([{ org_id: orgId, name }])
+      .select()
+      .single();
+    if (error) throw error;
+
+    const { data: items, error: itemsError } = await supabase
+      .from('stock_items')
+      .select('id')
+      .eq('org_id', orgId);
+    if (itemsError) throw itemsError;
+
+    if (items && items.length > 0) {
+      const { error: parError } = await supabase
+        .from('stock_item_locations')
+        .insert(items.map(item => ({
+          org_id: orgId,
+          item_id: item.id,
+          location_id: location.id,
+          par_level: 0,
+        })));
+      if (parError) throw parError;
+    }
+
+    return location;
+  },
+
+  async updateLocation(locationId, updates) {
+    const { data, error } = await supabase
+      .from('locations')
+      .update(updates)
+      .eq('id', locationId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteLocation(locationId) {
+    const { error } = await supabase
+      .from('locations')
+      .delete()
+      .eq('id', locationId);
+    if (error) throw error;
+  },
+
+  // ── Stock: Items ─────────────────────────────────────────────────────────────
+
+  async getStockItems(orgId) {
+    const { data, error } = await supabase
+      .from('stock_items')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  // Creates the item, then provisions a par row (default 0) at every
+  // existing location so it immediately shows up in Stocktake.
+  async createStockItem(orgId, item) {
+    const { data: stockItem, error } = await supabase
+      .from('stock_items')
+      .insert([{ ...item, org_id: orgId }])
+      .select()
+      .single();
+    if (error) throw error;
+
+    const { data: locations, error: locError } = await supabase
+      .from('locations')
+      .select('id')
+      .eq('org_id', orgId);
+    if (locError) throw locError;
+
+    if (locations && locations.length > 0) {
+      const { error: parError } = await supabase
+        .from('stock_item_locations')
+        .insert(locations.map(loc => ({
+          org_id: orgId,
+          item_id: stockItem.id,
+          location_id: loc.id,
+          par_level: 0,
+        })));
+      if (parError) throw parError;
+    }
+
+    return stockItem;
+  },
+
+  async updateStockItem(itemId, item) {
+    const { data, error } = await supabase
+      .from('stock_items')
+      .update({ ...item, updated_at: new Date().toISOString() })
+      .eq('id', itemId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteStockItem(itemId) {
+    const { error } = await supabase
+      .from('stock_items')
+      .delete()
+      .eq('id', itemId);
+    if (error) throw error;
+  },
+
+  // ── Stock: Item/Location Par Levels ─────────────────────────────────────────
+
+  async getStockItemLocations(orgId) {
+    const { data, error } = await supabase
+      .from('stock_item_locations')
+      .select('*')
+      .eq('org_id', orgId);
+    if (error) throw error;
+    return data || [];
+  },
+
+  // Upserts so this also self-heals a missing par row (e.g. item/location
+  // created before the other existed).
+  async updateParLevel(orgId, itemId, locationId, parLevel) {
+    const { data, error } = await supabase
+      .from('stock_item_locations')
+      .upsert([{
+        org_id: orgId,
+        item_id: itemId,
+        location_id: locationId,
+        par_level: parLevel,
+        updated_at: new Date().toISOString(),
+      }], { onConflict: 'item_id,location_id' })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  // ── Stock: Counts (stocktake log) ───────────────────────────────────────────
+
+  // Current stock for an (item, location) is simply its most recent count —
+  // no consumption-rate estimation. Fetches all counts for the org, newest
+  // first, and reduces to one row per item+location on the client.
+  async getLatestStockCounts(orgId) {
+    const { data, error } = await supabase
+      .from('stock_counts')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('counted_at', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+
+    const latest = new Map();
+    for (const row of data || []) {
+      const key = `${row.item_id}:${row.location_id}`;
+      if (!latest.has(key)) latest.set(key, row);
+    }
+    return [...latest.values()];
+  },
+
+  async recordStockCount(orgId, { itemId, locationId, countedQty, countedBy, notes }) {
+    const { data, error } = await supabase
+      .from('stock_counts')
+      .insert([{
+        org_id: orgId,
+        item_id: itemId,
+        location_id: locationId,
+        counted_qty: countedQty,
+        counted_by: countedBy,
+        notes: notes || null,
+      }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
 };

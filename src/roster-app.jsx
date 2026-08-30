@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck, Link2 } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck, Link2, Package } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db, supabase } from './supabaseClient';
+import StockApp from './StockApp';
 import toast, { Toaster } from 'react-hot-toast';
 
 // Returns a Set<'YYYY-MM-DD'> of public holidays for a given year and AU state
@@ -85,9 +86,14 @@ function getAUPublicHolidays(year, region) {
 const RosterApp = () => {
   const { user } = useAuth();
 
+  const [activeApp, setActiveApp] = useState(() => {
+    try { return localStorage.getItem('rshift_active_app') || 'shift'; } catch { return 'shift'; }
+  });
+
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'blue');
-  }, []);
+    document.documentElement.setAttribute('data-theme', activeApp === 'stock' ? 'stock' : 'blue');
+    try { localStorage.setItem('rshift_active_app', activeApp); } catch {}
+  }, [activeApp]);
 
   const [org, setOrg] = useState(null);
   const [showOrgOnboarding, setShowOrgOnboarding] = useState(false);
@@ -6442,7 +6448,7 @@ Key things to verify after rebuild:
 
         {/* Nav */}
         <nav className="flex flex-col gap-0.5 flex-1 w-full px-2">
-          {[
+          {activeApp === 'shift' && [
             { view: 'roster',       icon: <CalendarDays size={20} />,    label: 'Grid View' },
             { view: 'staff-view',   icon: <Users size={20} />,           label: 'Staff View' },
             { view: 'availability', icon: <CalendarCheck size={20} />,   label: 'Availability' },
@@ -6461,7 +6467,23 @@ Key things to verify after rebuild:
           ))}
         </nav>
 
-        {/* Theme switcher — hidden until additional skins are ready */}
+        {/* App switcher — R-Shift ⇄ R-Stock */}
+        <div className="flex flex-col gap-0.5 w-full px-2 mb-1">
+          {[
+            { app: 'shift', icon: <CalendarDays size={18} />, label: 'R-Shift' },
+            { app: 'stock', icon: <Package size={18} />,      label: 'R-Stock' },
+          ].map(({ app, icon, label }) => (
+            <button key={app} onClick={() => setActiveApp(app)}
+              className={`sb-btn group w-full flex justify-center ${activeApp === app ? 'active' : ''}`}
+              title={label}>
+              {icon}
+              <span className="absolute left-full ml-3 px-2.5 py-1.5 text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50"
+                style={{ background: 'var(--sb-tooltip-bg)', color: 'var(--sb-icon-active)', border: '1px solid var(--sb-tooltip-bd)' }}>
+                {label}
+              </span>
+            </button>
+          ))}
+        </div>
 
         {/* Bottom actions */}
         <div className="flex flex-col gap-0.5 w-full px-2">
@@ -6494,6 +6516,15 @@ Key things to verify after rebuild:
         {/* Top bar */}
         <div className="border-b shadow-soft shrink-0 z-40" style={{ background: 'var(--top-bg)', borderColor: 'var(--top-border)' }}>
           <div className="px-4 py-2">
+            {activeApp === 'stock' ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-base font-bold text-gray-900 tracking-tight">{businessSettings.businessName || org?.name}</h1>
+                  <span className="text-gray-300">|</span>
+                  <span className="text-sm text-gray-400">R-Stock</span>
+                </div>
+              </div>
+            ) : (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <h1 className="text-base font-bold text-gray-900 tracking-tight">{businessSettings.businessName || org?.name}</h1>
@@ -6546,10 +6577,11 @@ Key things to verify after rebuild:
                 </button>
               </div>
             </div>
+            )}
           </div>
 
           {/* Toolbar row — roster only */}
-          {activeView === 'roster' && <div className="px-4 py-1.5 border-t border-gray-100 flex items-center gap-2">
+          {activeApp === 'shift' && activeView === 'roster' && <div className="px-4 py-1.5 border-t border-gray-100 flex items-center gap-2">
             <div className="flex items-center gap-2">
               {/* Layout toggle: weekly grid vs daily timeline */}
               <div className="flex rounded-lg border border-gray-200 overflow-hidden shrink-0 shadow-sm">
@@ -6636,7 +6668,9 @@ Key things to verify after rebuild:
         </div>
 
       <div className="flex-1 overflow-hidden view-transition">
-      {activeView === 'analytics' ? (
+      {activeApp === 'stock' ? (
+        <div className="h-full overflow-auto"><StockApp org={org} user={user} /></div>
+      ) : activeView === 'analytics' ? (
         <div className="h-full overflow-auto"><AnalyticsView /></div>
       ) : activeView === 'timesheet' ? (
         <div className="h-full overflow-auto"><TimesheetView /></div>
