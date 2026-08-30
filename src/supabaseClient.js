@@ -948,9 +948,9 @@ export const db = {
     if (error) throw error;
   },
 
-  // ── Stock: Items ─────────────────────────────────────────────────────────────
-  // Each item belongs to exactly one location — sites run independent lists,
-  // so the same SKU at two sites is two separate stock_items rows.
+  // ── Stock: Items (shared catalog) ───────────────────────────────────────────
+  // One item per SKU per org — never duplicated per site. Which site(s)
+  // carry it live in stock_item_sites below.
 
   async getStockItems(orgId) {
     const { data, error } = await supabase
@@ -990,24 +990,6 @@ export const db = {
     return data;
   },
 
-  // Bulk import for CSV upload — assigns sequential SKUs starting from the
-  // current max so the whole batch gets unique codes in one round trip.
-  async bulkCreateStockItems(orgId, locationId, items) {
-    const startNum = parseInt((await this._nextSku(orgId)).replace('SKU-', ''), 10);
-    const rows = items.map((item, i) => ({
-      ...item,
-      org_id: orgId,
-      location_id: locationId,
-      sku: `SKU-${String(startNum + i).padStart(4, '0')}`,
-    }));
-    const { data, error } = await supabase
-      .from('stock_items')
-      .insert(rows)
-      .select();
-    if (error) throw error;
-    return data || [];
-  },
-
   async updateStockItem(itemId, item) {
     const { data, error } = await supabase
       .from('stock_items')
@@ -1027,42 +1009,74 @@ export const db = {
     if (error) throw error;
   },
 
-  // ── Stock: Ordering workflow (Stocktake tab) ────────────────────────────────
+  // ── Stock: Site assignment ──────────────────────────────────────────────────
+  // stock_item_sites says which location(s) carry a given item, and holds
+  // that site's own supplier/reference qty — the same SKU can have a
+  // different supplier at each site.
 
-  async updateStockItemStatus(itemId, status) {
+  async getStockItemSites(orgId) {
     const { data, error } = await supabase
-      .from('stock_items')
-      .update({ current_status: status, updated_at: new Date().toISOString() })
-      .eq('id', itemId)
-      .select()
-      .single();
+      .from('stock_item_sites')
+      .select('*')
+      .eq('org_id', orgId);
     if (error) throw error;
-    return data;
+    return data || [];
   },
 
-  async updateStockItemOrderQty(itemId, orderQty) {
+  // Upserts so re-assigning an already-assigned item just updates its
+  // supplier/qty rather than erroring.
+  async assignItemToSite(orgId, itemId, locationId, { supplier, referenceOrderQty } = {}) {
     const { data, error } = await supabase
-      .from('stock_items')
-      .update({ order_qty: orderQty, updated_at: new Date().toISOString() })
-      .eq('id', itemId)
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
-  },
-
-  async updateStockItemOrdered(itemId, ordered) {
-    const { data, error } = await supabase
-      .from('stock_items')
-      .update({
-        ordered,
-        ordered_at: ordered ? new Date().toISOString() : null,
+      .from('stock_item_sites')
+      .upsert([{
+        org_id: orgId,
+        item_id: itemId,
+        location_id: locationId,
+        supplier: supplier || null,
+        reference_order_qty: referenceOrderQty || 0,
         updated_at: new Date().toISOString(),
-      })
-      .eq('id', itemId)
+      }], { onConflict: 'item_id,location_id' })
       .select()
       .single();
     if (error) throw error;
     return data;
+  },
+
+  async unassignItemFromSite(itemId, locationId) {
+    const { error } = await supabase
+      .from('stock_item_sites')
+      .delete()
+      .eq('item_id', itemId)
+      .eq('location_id', locationId);
+    if (error) throw error;
+  },
+
+  // Bulk import for one site's CSV: matches existing items by name
+  // (case-insensitive) within the org so the same ingredient uploaded for
+  // two sites becomes two site-assignments on one catalog item, not two
+  // separate SKUs. New names create a fresh stock_item first.
+  async bulkImportStockItems(orgId, locationId, rows) {
+    const existing = await this.getStockItems(orgId);
+    const byName = new Map(existing.map(i => [i.name.trim().toLowerCase(), i]));
+    const results = [];
+
+    for (const row of rows) {
+      const key = row.name.trim().toLowerCase();
+      let item = byName.get(key);
+      if (!item) {
+        item = await this.createStockItem(orgId, {
+          name: row.name.trim(),
+          category: row.category || null,
+          uom: row.uom || 'units',
+        });
+        byName.set(key, item);
+      }
+      const assignment = await this.assignItemToSite(orgId, item.id, locationId, {
+        supplier: row.supplier,
+        referenceOrderQty: row.reference_order_qty,
+      });
+      results.push({ item, assignment });
+    }
+    return results;
   },
 };

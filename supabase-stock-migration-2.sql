@@ -1,28 +1,45 @@
 -- ============================================================
--- R-Stock: Per-Site Item Lists + Ordering Workflow
+-- R-Stock Step 1: Shared SKU Catalog + Per-Site Assignment
 -- Run this in the R-Shift Supabase project SQL editor, after
 -- supabase-stock-migration.sql
 -- ============================================================
--- Supersedes the per-location-par / stocktake-count model from the
--- first migration: each item now belongs to exactly one location
--- (sites run their own independent lists, per business requirement —
--- "Bourke will have a different stock list than Crown"), and stock
--- level is a manually-set status rather than computed from counts.
--- The stock_item_locations / stock_counts tables are left in place
--- but unused going forward — nothing in this migration drops them.
+-- stock_items stays a single shared catalog per org (not duplicated
+-- per site). stock_item_sites is the join that says which site(s)
+-- carry a given item, and — since the same SKU can have a different
+-- supplier at each site — each site's own supplier + reference order
+-- qty lives on this join, not on the item itself.
+--
+-- Deliberately NOT included yet: stock status / this-cycle order qty /
+-- "ordered" checkbox (Step 2), and purchased-vs-transfer-from-another-
+-- site sourcing (Step 3). Both build on top of this without changing
+-- what's created here.
+--
+-- The stock_item_locations / stock_counts tables from the first
+-- migration are left in place but unused — nothing here drops them.
 
 ALTER TABLE stock_items
-  ADD COLUMN location_id UUID REFERENCES locations(id) ON DELETE CASCADE,
-  ADD COLUMN sku TEXT,
-  ADD COLUMN reference_order_qty NUMERIC NOT NULL DEFAULT 0,  -- from bulk-upload "Qty" — a suggested order qty, not a stock count
-  ADD COLUMN order_qty NUMERIC,                                -- this cycle's qty to order, editable in Stocktake
-  ADD COLUMN current_status TEXT NOT NULL DEFAULT 'in_stock'
-    CHECK (current_status IN ('no_stock', 'low_stock', 'order_moq', 'in_stock')),
-  ADD COLUMN ordered BOOLEAN NOT NULL DEFAULT FALSE,
-  ADD COLUMN ordered_at TIMESTAMPTZ;
+  ADD COLUMN sku TEXT;
 
-CREATE INDEX idx_stock_items_location_id ON stock_items(location_id);
-
--- SKUs are auto-assigned per org (e.g. "SKU-0001") and must stay unique
--- within the org once set; NULL is allowed only transiently.
 CREATE UNIQUE INDEX idx_stock_items_org_sku ON stock_items(org_id, sku) WHERE sku IS NOT NULL;
+
+CREATE TABLE stock_item_sites (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id              UUID NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
+  item_id             UUID NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
+  location_id         UUID NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+  supplier            TEXT,
+  reference_order_qty NUMERIC NOT NULL DEFAULT 0,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (item_id, location_id)
+);
+
+CREATE INDEX idx_stock_item_sites_org_id      ON stock_item_sites(org_id);
+CREATE INDEX idx_stock_item_sites_item_id     ON stock_item_sites(item_id);
+CREATE INDEX idx_stock_item_sites_location_id ON stock_item_sites(location_id);
+
+ALTER TABLE stock_item_sites ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "stock_item_sites_all" ON stock_item_sites
+  FOR ALL USING (is_org_member(org_id))
+  WITH CHECK (is_org_member(org_id));
