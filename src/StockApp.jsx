@@ -1,11 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
-  ClipboardList, Truck, Info,
+  ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
 import Papa from 'papaparse';
+
+// ── Constants ──────────────────────────────────────────────────────────────────
+
+const STATUS_CONFIG = {
+  no_stock:  { label: 'No Stock',              bg: 'bg-red-100',   text: 'text-red-700',   border: 'border-red-200',   dot: 'bg-red-500'   },
+  low_stock: { label: 'Low Stock',              bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-400' },
+  order_moq: { label: 'Order if MOQ Required',  bg: 'bg-purple-100',text: 'text-purple-700',border: 'border-purple-200',dot: 'bg-purple-500'},
+  in_stock:  { label: 'In Stock',               bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200', dot: 'bg-green-500' },
+};
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
 
@@ -25,11 +34,52 @@ function Modal({ title, onClose, children, maxWidth = 'max-w-md' }) {
   );
 }
 
-// ── Stocktake Tab ─────────────────────────────────────────────────────────────
-// Step 1 only shows what's assigned to each site. Flagging low stock,
-// order qty, and the "ordered" checkbox arrive in Step 2 on top of this.
+// ── Status Dropdown ────────────────────────────────────────────────────────────
 
-function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation }) {
+function StatusDropdown({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e) { if (!ref.current?.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const cfg = STATUS_CONFIG[value] || STATUS_CONFIG.in_stock;
+
+  return (
+    <div className="relative inline-block" ref={ref}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all hover:opacity-80 whitespace-nowrap ${cfg.bg} ${cfg.text} ${cfg.border}`}
+      >
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
+        {cfg.label}
+        <ChevronDown size={11} className="ml-0.5 opacity-60 flex-shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute left-0 mt-1.5 bg-white rounded-xl shadow-lg border border-gray-100 z-20 overflow-hidden min-w-[190px]">
+          {Object.entries(STATUS_CONFIG).map(([key, s]) => (
+            <button
+              key={key}
+              onClick={() => { onChange(key); setOpen(false); }}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors hover:bg-gray-50 text-left ${key === value ? 'bg-gray-50' : ''}`}
+            >
+              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${s.dot}`} />
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Stocktake Tab ─────────────────────────────────────────────────────────────
+
+function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
 
   const siteRows = useMemo(() => {
@@ -47,6 +97,9 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
     }
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [siteRows]);
+
+  const noStock  = siteRows.filter(r => r.current_status === 'no_stock').length;
+  const lowStock = siteRows.filter(r => r.current_status === 'low_stock').length;
 
   if (locations.length === 0) {
     return (
@@ -74,10 +127,18 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
         </div>
       )}
 
-      <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-700">
-        <Info size={14} className="flex-shrink-0 mt-0.5" />
-        <span>This is the catalog assigned to this site so far. Flagging stock as low, order quantities, and marking items as ordered are coming next — right now this is just confirming the foundation is right.</span>
-      </div>
+      {noStock > 0 && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          <XCircle size={15} className="text-red-600 flex-shrink-0" />
+          <span className="text-sm font-medium text-red-700">{noStock} item{noStock !== 1 ? 's' : ''} with no stock</span>
+        </div>
+      )}
+      {lowStock > 0 && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <AlertTriangle size={15} className="text-amber-600 flex-shrink-0" />
+          <span className="text-sm font-medium text-amber-700">{lowStock} item{lowStock !== 1 ? 's' : ''} running low</span>
+        </div>
+      )}
 
       {siteRows.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
@@ -97,6 +158,7 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                   <tr className="border-b border-gray-100 bg-gray-50">
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Reference Qty</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -108,6 +170,12 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                       </td>
                       <td className="px-4 py-2.5 text-right text-gray-700">
                         {row.reference_order_qty} {row.item.uom}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <StatusDropdown
+                          value={row.current_status}
+                          onChange={status => onUpdateStatus(row.id, status)}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -671,6 +739,17 @@ export default function StockApp({ user, org }) {
 
   const activeLocations = useMemo(() => locations.filter(l => l.active), [locations]);
 
+  async function handleStatusUpdate(siteRowId, status) {
+    setSites(prev => prev.map(s => s.id === siteRowId ? { ...s, current_status: status } : s));
+    try {
+      await db.updateSiteItemStatus(siteRowId, status);
+    } catch (err) {
+      toast.error('Failed to update status');
+      console.error(err);
+      loadData();
+    }
+  }
+
   const TABS = [
     { id: 'items',     label: 'Items',     Icon: Package },
     { id: 'stocktake', label: 'Stocktake', Icon: ClipboardList },
@@ -727,6 +806,7 @@ export default function StockApp({ user, org }) {
           locations={activeLocations}
           selectedLocationId={selectedLocationId}
           onSelectLocation={setSelectedLocationId}
+          onUpdateStatus={handleStatusUpdate}
         />
       )}
       {activeTab === 'locations' && (
