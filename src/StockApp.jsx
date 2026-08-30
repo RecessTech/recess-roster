@@ -1,31 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Package, Plus, Trash2, Edit2, X, MapPin,
-  ClipboardList, AlertTriangle,
+  Package, Plus, Trash2, Edit2, X, MapPin, Upload,
+  ClipboardList, Truck, Info,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
-
-// ── Constants ──────────────────────────────────────────────────────────────────
-
-const STATUS_CONFIG = {
-  ok:       { bg: 'bg-green-50',  border: 'border-green-200',  text: 'text-green-700',  label: 'OK'      },
-  low:      { bg: 'bg-amber-50',  border: 'border-amber-200',  text: 'text-amber-700',  label: 'Low'     },
-  out:      { bg: 'bg-red-50',    border: 'border-red-200',    text: 'text-red-700',    label: 'Out'     },
-  unknown:  { bg: 'bg-gray-50',   border: 'border-gray-200',   text: 'text-gray-400',   label: 'No count' },
-};
-
-function statusFor(countedQty, parLevel) {
-  if (countedQty === null || countedQty === undefined) return 'unknown';
-  if (countedQty <= 0) return 'out';
-  if (parLevel > 0 && countedQty < parLevel) return 'low';
-  return 'ok';
-}
-
-function fmtDate(d) {
-  if (!d) return '—';
-  return new Date(d + 'T12:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
-}
+import Papa from 'papaparse';
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
 
@@ -46,164 +26,277 @@ function Modal({ title, onClose, children, maxWidth = 'max-w-md' }) {
 }
 
 // ── Stocktake Tab ─────────────────────────────────────────────────────────────
+// Step 1 only shows what's assigned to each site. Flagging low stock,
+// order qty, and the "ordered" checkbox arrive in Step 2 on top of this.
 
-function StocktakeTab({ items, locations, latestByKey, parByKey, user, orgId, onCountSaved }) {
-  const [editingKey, setEditingKey] = useState(null); // `${itemId}:${locationId}`
-  const [draft, setDraft] = useState('');
-  const [saving, setSaving] = useState(false);
+function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation }) {
+  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+
+  const siteRows = useMemo(() => {
+    return sites
+      .filter(s => s.location_id === selectedLocationId)
+      .map(s => ({ ...s, item: itemById.get(s.item_id) }))
+      .filter(r => r.item);
+  }, [sites, selectedLocationId, itemById]);
 
   const grouped = useMemo(() => {
     const groups = {};
-    for (const item of items) {
-      const cat = item.category || 'Uncategorised';
-      (groups[cat] = groups[cat] || []).push(item);
+    for (const row of siteRows) {
+      const supplier = row.supplier || 'No Supplier';
+      (groups[supplier] = groups[supplier] || []).push(row);
     }
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
-  }, [items]);
+  }, [siteRows]);
 
   if (locations.length === 0) {
     return (
       <div className="text-center py-20 text-gray-400">
         <MapPin size={32} className="mx-auto mb-3 opacity-40" />
         <p className="text-sm mb-1">No locations set up yet.</p>
-        <p className="text-xs">Add a site in the Locations tab before recording a stocktake.</p>
+        <p className="text-xs">Add a site in the Locations tab first.</p>
       </div>
     );
   }
 
-  if (items.length === 0) {
-    return (
-      <div className="text-center py-20 text-gray-400">
-        <Package size={32} className="mx-auto mb-3 opacity-40" />
-        <p className="text-sm mb-1">No items yet.</p>
-        <p className="text-xs">Add your first SKU in the Items tab.</p>
+  return (
+    <div className="space-y-4">
+      {locations.length > 1 && (
+        <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
+          {locations.map(loc => (
+            <button
+              key={loc.id}
+              onClick={() => onSelectLocation(loc.id)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${selectedLocationId === loc.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              {loc.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-700">
+        <Info size={14} className="flex-shrink-0 mt-0.5" />
+        <span>This is the catalog assigned to this site so far. Flagging stock as low, order quantities, and marking items as ordered are coming next — right now this is just confirming the foundation is right.</span>
       </div>
-    );
+
+      {siteRows.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <Package size={32} className="mx-auto mb-3 opacity-40" />
+          <p className="text-sm">No items assigned to this site yet. Add or upload some in the Items tab.</p>
+        </div>
+      ) : (
+        grouped.map(([supplier, rows]) => (
+          <div key={supplier}>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+              <Truck size={12} />
+              {supplier}
+            </h3>
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Reference Qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(row => (
+                    <tr key={row.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/60 transition-colors">
+                      <td className="px-4 py-2.5">
+                        <div className="font-medium text-gray-900">{row.item.name}</div>
+                        <div className="text-xs text-gray-400">{row.item.sku} · {row.item.uom}</div>
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-gray-700">
+                        {row.reference_order_qty} {row.item.uom}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+// ── CSV Import Modal ───────────────────────────────────────────────────────────
+
+function CsvImportModal({ orgId, locations, onClose, onSave }) {
+  const [locationId, setLocationId] = useState(locations[0]?.id || '');
+  const [preview, setPreview] = useState(null);
+  const [error, setError] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef(null);
+
+  function handleFile(file) {
+    if (!file) return;
+    setError(null);
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete(results) {
+        const normalised = results.data.map(r => {
+          const keys = Object.keys(r).reduce((acc, k) => { acc[k.toLowerCase().trim()] = r[k]; return acc; }, {});
+          return {
+            name:                (keys['item'] || keys['name'] || '').toString().trim(),
+            reference_order_qty: parseFloat(keys['qty'] || keys['quantity'] || '0') || 0,
+            uom:                 (keys['uom'] || keys['unit'] || 'units').toString().trim(),
+            supplier:            (keys['supplier'] || '').toString().trim(),
+          };
+        }).filter(r => r.name);
+
+        if (normalised.length === 0) {
+          setError('No valid rows found. Ensure your CSV has an "Item" column.');
+          return;
+        }
+        setPreview(normalised);
+      },
+      error(err) { setError('Could not parse CSV: ' + err.message); },
+    });
   }
 
-  function startEdit(itemId, locationId) {
-    const key = `${itemId}:${locationId}`;
-    setEditingKey(key);
-    setDraft(latestByKey[key]?.counted_qty ?? '');
-  }
-
-  async function commitEdit(itemId, locationId) {
-    const key = `${itemId}:${locationId}`;
-    setEditingKey(null);
-    const parsed = parseFloat(draft);
-    if (isNaN(parsed) || parsed < 0) return;
-    if (latestByKey[key]?.counted_qty === parsed) return;
-
-    setSaving(true);
+  async function handleImport() {
+    if (!preview || !locationId) return;
+    setImporting(true);
     try {
-      const row = await db.recordStockCount(orgId, {
-        itemId, locationId, countedQty: parsed, countedBy: user.id,
-      });
-      onCountSaved(key, row);
+      await db.bulkImportStockItems(orgId, locationId, preview);
+      toast.success(`Imported ${preview.length} items — matched to existing SKUs where names already exist`);
+      onSave();
+      onClose();
     } catch (err) {
-      toast.error('Failed to save count');
+      toast.error('Import failed: ' + (err.message || 'Unknown error'));
       console.error(err);
     } finally {
-      setSaving(false);
+      setImporting(false);
     }
   }
 
   return (
-    <div className="space-y-6">
-      {grouped.map(([category, catItems]) => (
-        <div key={category}>
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{category}</h3>
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
-                  {locations.map(loc => (
-                    <th key={loc.id} className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-                      {loc.name}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {catItems.map(item => (
-                  <tr key={item.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/60 transition-colors">
-                    <td className="px-4 py-2.5">
-                      <div className="font-medium text-gray-900">{item.name}</div>
-                      <div className="text-xs text-gray-400">{item.uom}{item.supplier ? ` · ${item.supplier}` : ''}</div>
-                    </td>
-                    {locations.map(loc => {
-                      const key = `${item.id}:${loc.id}`;
-                      const latest = latestByKey[key];
-                      const par = parByKey[key]?.par_level || 0;
-                      const status = statusFor(latest?.counted_qty ?? null, par);
-                      const sc = STATUS_CONFIG[status];
-                      const isEditing = editingKey === key;
-
-                      return (
-                        <td key={loc.id} className="px-3 py-2.5 text-center">
-                          {isEditing ? (
-                            <input
-                              type="number" min="0" step="any" autoFocus
-                              value={draft}
-                              onChange={e => setDraft(e.target.value)}
-                              onBlur={() => commitEdit(item.id, loc.id)}
-                              onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditingKey(null); }}
-                              disabled={saving}
-                              className="w-20 text-center border border-teal-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
-                            />
-                          ) : (
-                            <button
-                              onClick={() => startEdit(item.id, loc.id)}
-                              className={`w-20 inline-flex flex-col items-center justify-center rounded-lg border px-2 py-1 transition-colors hover:opacity-80 ${sc.bg} ${sc.border} ${sc.text}`}
-                              title={par > 0 ? `Par: ${par}` : 'No par level set'}
-                            >
-                              <span className="font-semibold">{latest?.counted_qty ?? '—'}</span>
-                              <span className="text-[10px] opacity-70">
-                                {latest ? fmtDate(latest.counted_at) : sc.label}
-                              </span>
-                            </button>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+    <Modal title="Bulk Upload Items" onClose={onClose} maxWidth="max-w-lg">
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Site</label>
+          <select
+            value={locationId}
+            onChange={e => setLocationId(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 bg-white"
+          >
+            {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+          </select>
+          <p className="text-xs text-gray-400 mt-1">Every row is assigned to this site. If an item with the same name already exists (e.g. uploaded for another site), it's reused — not duplicated.</p>
         </div>
-      ))}
-    </div>
+
+        <div className="bg-teal-50 border border-teal-100 rounded-xl p-3 text-xs text-teal-700 space-y-1">
+          <p className="font-semibold">Expected columns:</p>
+          <p><code className="bg-teal-100 px-1 rounded">Item</code>, <code className="bg-teal-100 px-1 rounded">Qty</code>, <code className="bg-teal-100 px-1 rounded">uOm</code>, <code className="bg-teal-100 px-1 rounded">Supplier</code></p>
+          <p className="text-teal-500">SKU is assigned automatically — any SKU column in the file is ignored.</p>
+        </div>
+
+        {!preview ? (
+          <div
+            className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-teal-300 hover:bg-teal-50/30 transition-colors"
+            onClick={() => fileRef.current?.click()}
+            onDragOver={e => e.preventDefault()}
+            onDrop={e => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}
+          >
+            <Upload size={24} className="mx-auto mb-2 text-gray-300" />
+            <p className="text-sm text-gray-500">Drop your CSV here or <span className="text-teal-600 font-medium">browse</span></p>
+            <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={e => handleFile(e.target.files[0])} />
+          </div>
+        ) : (
+          <div>
+            <p className="text-sm text-gray-600 mb-2 font-medium">{preview.length} rows ready to import</p>
+            <div className="bg-gray-50 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-gray-100">
+                  <tr>
+                    <th className="text-left px-3 py-2 text-gray-500">Item</th>
+                    <th className="text-left px-3 py-2 text-gray-500">Qty</th>
+                    <th className="text-left px-3 py-2 text-gray-500">uOm</th>
+                    <th className="text-left px-3 py-2 text-gray-500">Supplier</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {preview.map((r, i) => (
+                    <tr key={i}>
+                      <td className="px-3 py-1.5 font-medium text-gray-800">{r.name}</td>
+                      <td className="px-3 py-1.5 text-gray-600">{r.reference_order_qty}</td>
+                      <td className="px-3 py-1.5 text-gray-600">{r.uom}</td>
+                      <td className="px-3 py-1.5 text-gray-500">{r.supplier || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <button onClick={() => setPreview(null)} className="mt-2 text-xs text-gray-400 hover:text-gray-600">
+              Choose a different file
+            </button>
+          </div>
+        )}
+
+        {error && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
+
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 rounded-xl py-2 text-sm font-medium hover:bg-gray-50 transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={handleImport}
+            disabled={!preview || !locationId || importing}
+            className="flex-1 bg-teal-600 text-white rounded-xl py-2 text-sm font-semibold hover:bg-teal-700 transition-colors disabled:opacity-40"
+          >
+            {importing ? 'Importing…' : `Import ${preview?.length ?? 0} items`}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
 // ── Items Tab ──────────────────────────────────────────────────────────────────
 
-const BLANK_ITEM = { name: '', category: '', uom: 'units', supplier: '' };
+const BLANK_ITEM = { name: '', category: '', uom: 'units' };
 
-function ItemsTab({ items, locations, parByKey, orgId, onRefresh }) {
+function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
   const [showForm, setShowForm] = useState(false);
+  const [showCsvImport, setShowCsvImport] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [form, setForm] = useState(BLANK_ITEM);
-  const [parDrafts, setParDrafts] = useState({});
+  const [siteAssignments, setSiteAssignments] = useState({}); // locationId -> { assigned, supplier, referenceOrderQty }
   const [saving, setSaving] = useState(false);
+
+  const sitesByItem = useMemo(() => {
+    const map = new Map();
+    sites.forEach(s => {
+      if (!map.has(s.item_id)) map.set(s.item_id, []);
+      map.get(s.item_id).push(s);
+    });
+    return map;
+  }, [sites]);
+
+  function blankAssignments() {
+    const initial = {};
+    locations.forEach(loc => { initial[loc.id] = { assigned: false, supplier: '', referenceOrderQty: 0 }; });
+    return initial;
+  }
 
   function openAdd() {
     setEditingItem(null);
     setForm(BLANK_ITEM);
-    setParDrafts({});
+    setSiteAssignments(blankAssignments());
     setShowForm(true);
   }
 
   function openEdit(item) {
     setEditingItem(item);
-    setForm({ name: item.name, category: item.category || '', uom: item.uom || 'units', supplier: item.supplier || '' });
-    const drafts = {};
-    locations.forEach(loc => {
-      drafts[loc.id] = parByKey[`${item.id}:${loc.id}`]?.par_level ?? 0;
+    setForm({ name: item.name, category: item.category || '', uom: item.uom || 'units' });
+    const initial = blankAssignments();
+    (sitesByItem.get(item.id) || []).forEach(s => {
+      initial[s.location_id] = { assigned: true, supplier: s.supplier || '', referenceOrderQty: s.reference_order_qty ?? 0 };
     });
-    setParDrafts(drafts);
+    setSiteAssignments(initial);
     setShowForm(true);
   }
 
@@ -214,18 +307,22 @@ function ItemsTab({ items, locations, parByKey, orgId, onRefresh }) {
       let item = editingItem;
       if (editingItem) {
         await db.updateStockItem(editingItem.id, form);
-        toast.success('Item updated');
       } else {
         item = await db.createStockItem(orgId, form);
-        toast.success('Item added');
       }
-      if (item) {
-        await Promise.all(
-          locations.map(loc =>
-            db.updateParLevel(orgId, item.id, loc.id, parseFloat(parDrafts[loc.id]) || 0)
-          )
-        );
-      }
+
+      const previouslyAssigned = editingItem ? new Set((sitesByItem.get(editingItem.id) || []).map(s => s.location_id)) : new Set();
+      await Promise.all(locations.map(loc => {
+        const a = siteAssignments[loc.id];
+        if (a?.assigned) {
+          return db.assignItemToSite(orgId, item.id, loc.id, { supplier: a.supplier, referenceOrderQty: parseFloat(a.referenceOrderQty) || 0 });
+        } else if (previouslyAssigned.has(loc.id)) {
+          return db.unassignItemFromSite(item.id, loc.id);
+        }
+        return null;
+      }));
+
+      toast.success(editingItem ? 'Item updated' : 'Item added');
       setShowForm(false);
       onRefresh();
     } catch (err) {
@@ -237,7 +334,7 @@ function ItemsTab({ items, locations, parByKey, orgId, onRefresh }) {
   }
 
   async function remove(itemId) {
-    if (!window.confirm('Delete this item and its stocktake history?')) return;
+    if (!window.confirm('Delete this item from the catalog? It will be removed from every site.')) return;
     try {
       await db.deleteStockItem(itemId);
       toast.success('Item deleted');
@@ -249,53 +346,78 @@ function ItemsTab({ items, locations, parByKey, orgId, onRefresh }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <p className="text-sm text-gray-500">{items.length} item{items.length !== 1 ? 's' : ''}</p>
-        <button
-          onClick={openAdd}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium bg-teal-600 text-white hover:bg-teal-700 transition-colors"
-        >
-          <Plus size={14} />
-          Add Item
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowCsvImport(true)}
+            disabled={locations.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40"
+          >
+            <Upload size={14} />
+            Bulk Upload
+          </button>
+          <button
+            onClick={openAdd}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium bg-teal-600 text-white hover:bg-teal-700 transition-colors"
+          >
+            <Plus size={14} />
+            Add Item
+          </button>
+        </div>
       </div>
 
       {items.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <Package size={32} className="mx-auto mb-3 opacity-40" />
-          <p className="text-sm">No items yet. Add your first SKU.</p>
+          <p className="text-sm">No items yet. Add one or bulk-upload a CSV.</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden divide-y divide-gray-50">
-          {items.map(item => (
-            <div key={item.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/60 transition-colors">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium text-gray-900">{item.name}</span>
-                  {item.category && (
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-teal-50 text-teal-700">{item.category}</span>
-                  )}
+          {items.map(item => {
+            const itemSites = sitesByItem.get(item.id) || [];
+            return (
+              <div key={item.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/60 transition-colors">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{item.sku}</span>
+                    <span className="text-sm font-medium text-gray-900">{item.name}</span>
+                    {item.category && <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{item.category}</span>}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                    <span>{item.uom}</span>
+                    {itemSites.length === 0 ? (
+                      <span className="text-amber-500">· not assigned to any site</span>
+                    ) : itemSites.map(s => {
+                      const loc = locations.find(l => l.id === s.location_id);
+                      return (
+                        <span key={s.id} className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 flex items-center gap-1">
+                          <MapPin size={10} />{loc?.name || '—'}{s.supplier ? ` · ${s.supplier}` : ''}
+                        </span>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="text-xs text-gray-400 mt-0.5">
-                  {item.uom}{item.supplier ? ` · ${item.supplier}` : ''}
+                <div className="flex items-center gap-1">
+                  <button onClick={() => openEdit(item)} className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors" title="Edit">
+                    <Edit2 size={13} />
+                  </button>
+                  <button onClick={() => remove(item.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                    <Trash2 size={13} />
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center gap-1">
-                <button onClick={() => openEdit(item)} className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors" title="Edit">
-                  <Edit2 size={13} />
-                </button>
-                <button onClick={() => remove(item.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {showForm && (
-        <Modal title={editingItem ? 'Edit Item' : 'Add Item'} onClose={() => setShowForm(false)}>
-          <div className="space-y-3">
+        <Modal title={editingItem ? 'Edit Item' : 'Add Item'} onClose={() => setShowForm(false)} maxWidth="max-w-lg">
+          <div className="space-y-4">
+            {editingItem && (
+              <div className="text-xs text-gray-400">SKU: <span className="font-mono">{editingItem.sku}</span></div>
+            )}
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Name *</label>
               <input
@@ -311,7 +433,7 @@ function ItemsTab({ items, locations, parByKey, orgId, onRefresh }) {
                 <input
                   type="text" value={form.category}
                   onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                  placeholder="e.g. Dry Goods"
+                  placeholder="Optional"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
               </div>
@@ -325,31 +447,52 @@ function ItemsTab({ items, locations, parByKey, orgId, onRefresh }) {
                 />
               </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Supplier</label>
-              <input
-                type="text" value={form.supplier}
-                onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}
-                placeholder="Optional"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
-              />
-            </div>
 
-            {locations.length > 0 && (
+            {locations.length === 0 ? (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                No sites yet — add one in the Locations tab, then come back to assign this item.
+              </p>
+            ) : (
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-2">Par levels by location</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {locations.map(loc => (
-                    <div key={loc.id}>
-                      <span className="text-xs text-gray-500">{loc.name}</span>
-                      <input
-                        type="number" min="0" step="any"
-                        value={parDrafts[loc.id] ?? 0}
-                        onChange={e => setParDrafts(d => ({ ...d, [loc.id]: e.target.value }))}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
-                      />
-                    </div>
-                  ))}
+                <label className="block text-xs font-medium text-gray-700 mb-2">Sites carrying this item</label>
+                <div className="space-y-2">
+                  {locations.map(loc => {
+                    const a = siteAssignments[loc.id] || { assigned: false, supplier: '', referenceOrderQty: 0 };
+                    return (
+                      <div key={loc.id} className={`border rounded-lg p-2.5 transition-colors ${a.assigned ? 'border-teal-200 bg-teal-50/40' : 'border-gray-200'}`}>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={a.assigned}
+                            onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, assigned: e.target.checked } }))}
+                            className="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-400"
+                          />
+                          <span className="text-sm font-medium text-gray-800">{loc.name}</span>
+                        </label>
+                        {a.assigned && (
+                          <div className="grid grid-cols-2 gap-2 mt-2 pl-6">
+                            <div>
+                              <span className="text-xs text-gray-500">Supplier</span>
+                              <input
+                                type="text" value={a.supplier}
+                                onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, supplier: e.target.value } }))}
+                                placeholder="Optional"
+                                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
+                              />
+                            </div>
+                            <div>
+                              <span className="text-xs text-gray-500">Reference Qty</span>
+                              <input
+                                type="number" min="0" step="any" value={a.referenceOrderQty}
+                                onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, referenceOrderQty: e.target.value } }))}
+                                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -364,6 +507,15 @@ function ItemsTab({ items, locations, parByKey, orgId, onRefresh }) {
             </div>
           </div>
         </Modal>
+      )}
+
+      {showCsvImport && (
+        <CsvImportModal
+          orgId={orgId}
+          locations={locations}
+          onClose={() => setShowCsvImport(false)}
+          onSave={onRefresh}
+        />
       )}
     </div>
   );
@@ -403,7 +555,7 @@ function LocationsTab({ locations, orgId, onRefresh }) {
   }
 
   async function remove(locId) {
-    if (!window.confirm('Delete this location and its stocktake history?')) return;
+    if (!window.confirm('Delete this location? Items assigned only to this site will lose that assignment.')) return;
     try {
       await db.deleteLocation(locId);
       toast.success('Location deleted');
@@ -429,7 +581,7 @@ function LocationsTab({ locations, orgId, onRefresh }) {
       {locations.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <MapPin size={32} className="mx-auto mb-3 opacity-40" />
-          <p className="text-sm">No locations yet. Add your first site (e.g. "Shop", "Busstop").</p>
+          <p className="text-sm">No locations yet. Add your first site (e.g. "Crown St", "Bourke St").</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden divide-y divide-gray-50">
@@ -466,7 +618,7 @@ function LocationsTab({ locations, orgId, onRefresh }) {
                 autoFocus value={name}
                 onChange={e => setName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && add()}
-                placeholder="e.g. Shop, Busstop"
+                placeholder="e.g. Crown St, Bourke St"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
               />
             </div>
@@ -488,12 +640,12 @@ function LocationsTab({ locations, orgId, onRefresh }) {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function StockApp({ user, org }) {
-  const [activeTab, setActiveTab] = useState('stocktake');
+  const [activeTab, setActiveTab] = useState('items');
   const [locations, setLocations] = useState([]);
   const [items, setItems] = useState([]);
-  const [pars, setPars] = useState([]);
-  const [counts, setCounts] = useState([]);
+  const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedLocationId, setSelectedLocationId] = useState(null);
 
   useEffect(() => { loadData(); }, [org?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -501,16 +653,15 @@ export default function StockApp({ user, org }) {
     if (!org?.id) return;
     setLoading(true);
     try {
-      const [locs, stockItems, parRows, countRows] = await Promise.all([
+      const [locs, stockItems, itemSites] = await Promise.all([
         db.getLocations(org.id),
         db.getStockItems(org.id),
-        db.getStockItemLocations(org.id),
-        db.getLatestStockCounts(org.id),
+        db.getStockItemSites(org.id),
       ]);
       setLocations(locs);
       setItems(stockItems);
-      setPars(parRows);
-      setCounts(countRows);
+      setSites(itemSites);
+      setSelectedLocationId(prev => prev && locs.some(l => l.id === prev) ? prev : (locs.find(l => l.active)?.id || locs[0]?.id || null));
     } catch (err) {
       toast.error('Failed to load stock data');
       console.error(err);
@@ -519,39 +670,10 @@ export default function StockApp({ user, org }) {
   }
 
   const activeLocations = useMemo(() => locations.filter(l => l.active), [locations]);
-  const activeItems = useMemo(() => items.filter(i => i.active !== false), [items]);
-
-  const latestByKey = useMemo(() => {
-    const map = {};
-    counts.forEach(c => { map[`${c.item_id}:${c.location_id}`] = c; });
-    return map;
-  }, [counts]);
-
-  const parByKey = useMemo(() => {
-    const map = {};
-    pars.forEach(p => { map[`${p.item_id}:${p.location_id}`] = p; });
-    return map;
-  }, [pars]);
-
-  const alertCount = useMemo(() => {
-    let n = 0;
-    activeItems.forEach(item => {
-      activeLocations.forEach(loc => {
-        const key = `${item.id}:${loc.id}`;
-        const status = statusFor(latestByKey[key]?.counted_qty ?? null, parByKey[key]?.par_level || 0);
-        if (status === 'low' || status === 'out') n++;
-      });
-    });
-    return n;
-  }, [activeItems, activeLocations, latestByKey, parByKey]);
-
-  function handleCountSaved(key, row) {
-    setCounts(prev => [row, ...prev.filter(c => `${c.item_id}:${c.location_id}` !== key)]);
-  }
 
   const TABS = [
-    { id: 'stocktake', label: 'Stocktake', Icon: ClipboardList },
     { id: 'items',     label: 'Items',     Icon: Package },
+    { id: 'stocktake', label: 'Stocktake', Icon: ClipboardList },
     { id: 'locations', label: 'Locations', Icon: MapPin },
   ];
 
@@ -569,15 +691,9 @@ export default function StockApp({ user, org }) {
         <div>
           <h2 className="text-xl font-bold text-gray-900">R-Stock</h2>
           <p className="text-sm text-gray-400 mt-0.5">
-            {activeItems.length} item{activeItems.length !== 1 ? 's' : ''} across {activeLocations.length} location{activeLocations.length !== 1 ? 's' : ''}
+            {items.length} item{items.length !== 1 ? 's' : ''} in the catalog · {activeLocations.length} location{activeLocations.length !== 1 ? 's' : ''}
           </p>
         </div>
-        {alertCount > 0 && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-xl text-xs font-medium text-amber-700">
-            <AlertTriangle size={13} />
-            {alertCount} below par
-          </div>
-        )}
       </div>
 
       <div className="flex gap-1 border-b border-gray-100">
@@ -595,24 +711,22 @@ export default function StockApp({ user, org }) {
         ))}
       </div>
 
-      {activeTab === 'stocktake' && (
-        <StocktakeTab
-          items={activeItems}
-          locations={activeLocations}
-          latestByKey={latestByKey}
-          parByKey={parByKey}
-          user={user}
-          orgId={org.id}
-          onCountSaved={handleCountSaved}
-        />
-      )}
       {activeTab === 'items' && (
         <ItemsTab
           items={items}
+          sites={sites}
           locations={activeLocations}
-          parByKey={parByKey}
           orgId={org.id}
           onRefresh={loadData}
+        />
+      )}
+      {activeTab === 'stocktake' && (
+        <StocktakeTab
+          items={items}
+          sites={sites}
+          locations={activeLocations}
+          selectedLocationId={selectedLocationId}
+          onSelectLocation={setSelectedLocationId}
         />
       )}
       {activeTab === 'locations' && (

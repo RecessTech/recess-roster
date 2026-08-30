@@ -919,35 +919,14 @@ export const db = {
     return data || [];
   },
 
-  // Creates the location, then provisions a par row (default 0) for every
-  // existing stock item so the new site immediately shows up in Stocktake.
   async createLocation(orgId, name) {
-    const { data: location, error } = await supabase
+    const { data, error } = await supabase
       .from('locations')
       .insert([{ org_id: orgId, name }])
       .select()
       .single();
     if (error) throw error;
-
-    const { data: items, error: itemsError } = await supabase
-      .from('stock_items')
-      .select('id')
-      .eq('org_id', orgId);
-    if (itemsError) throw itemsError;
-
-    if (items && items.length > 0) {
-      const { error: parError } = await supabase
-        .from('stock_item_locations')
-        .insert(items.map(item => ({
-          org_id: orgId,
-          item_id: item.id,
-          location_id: location.id,
-          par_level: 0,
-        })));
-      if (parError) throw parError;
-    }
-
-    return location;
+    return data;
   },
 
   async updateLocation(locationId, updates) {
@@ -969,7 +948,9 @@ export const db = {
     if (error) throw error;
   },
 
-  // ── Stock: Items ─────────────────────────────────────────────────────────────
+  // ── Stock: Items (shared catalog) ───────────────────────────────────────────
+  // One item per SKU per org — never duplicated per site. Which site(s)
+  // carry it live in stock_item_sites below.
 
   async getStockItems(orgId) {
     const { data, error } = await supabase
@@ -982,35 +963,31 @@ export const db = {
     return data || [];
   },
 
-  // Creates the item, then provisions a par row (default 0) at every
-  // existing location so it immediately shows up in Stocktake.
-  async createStockItem(orgId, item) {
-    const { data: stockItem, error } = await supabase
+  // Sequential per-org SKU, e.g. "SKU-0007". Not collision-proof under
+  // concurrent writers, but this is a low-concurrency admin workflow.
+  async _nextSku(orgId) {
+    const { data, error } = await supabase
       .from('stock_items')
-      .insert([{ ...item, org_id: orgId }])
+      .select('sku')
+      .eq('org_id', orgId)
+      .not('sku', 'is', null);
+    if (error) throw error;
+    const maxNum = (data || []).reduce((max, row) => {
+      const n = parseInt((row.sku || '').replace(/^SKU-/, ''), 10);
+      return isNaN(n) ? max : Math.max(max, n);
+    }, 0);
+    return `SKU-${String(maxNum + 1).padStart(4, '0')}`;
+  },
+
+  async createStockItem(orgId, item) {
+    const sku = await this._nextSku(orgId);
+    const { data, error } = await supabase
+      .from('stock_items')
+      .insert([{ ...item, org_id: orgId, sku }])
       .select()
       .single();
     if (error) throw error;
-
-    const { data: locations, error: locError } = await supabase
-      .from('locations')
-      .select('id')
-      .eq('org_id', orgId);
-    if (locError) throw locError;
-
-    if (locations && locations.length > 0) {
-      const { error: parError } = await supabase
-        .from('stock_item_locations')
-        .insert(locations.map(loc => ({
-          org_id: orgId,
-          item_id: stockItem.id,
-          location_id: loc.id,
-          par_level: 0,
-        })));
-      if (parError) throw parError;
-    }
-
-    return stockItem;
+    return data;
   },
 
   async updateStockItem(itemId, item) {
@@ -1032,27 +1009,31 @@ export const db = {
     if (error) throw error;
   },
 
-  // ── Stock: Item/Location Par Levels ─────────────────────────────────────────
+  // ── Stock: Site assignment ──────────────────────────────────────────────────
+  // stock_item_sites says which location(s) carry a given item, and holds
+  // that site's own supplier/reference qty — the same SKU can have a
+  // different supplier at each site.
 
-  async getStockItemLocations(orgId) {
+  async getStockItemSites(orgId) {
     const { data, error } = await supabase
-      .from('stock_item_locations')
+      .from('stock_item_sites')
       .select('*')
       .eq('org_id', orgId);
     if (error) throw error;
     return data || [];
   },
 
-  // Upserts so this also self-heals a missing par row (e.g. item/location
-  // created before the other existed).
-  async updateParLevel(orgId, itemId, locationId, parLevel) {
+  // Upserts so re-assigning an already-assigned item just updates its
+  // supplier/qty rather than erroring.
+  async assignItemToSite(orgId, itemId, locationId, { supplier, referenceOrderQty } = {}) {
     const { data, error } = await supabase
-      .from('stock_item_locations')
+      .from('stock_item_sites')
       .upsert([{
         org_id: orgId,
         item_id: itemId,
         location_id: locationId,
-        par_level: parLevel,
+        supplier: supplier || null,
+        reference_order_qty: referenceOrderQty || 0,
         updated_at: new Date().toISOString(),
       }], { onConflict: 'item_id,location_id' })
       .select()
@@ -1061,42 +1042,41 @@ export const db = {
     return data;
   },
 
-  // ── Stock: Counts (stocktake log) ───────────────────────────────────────────
-
-  // Current stock for an (item, location) is simply its most recent count —
-  // no consumption-rate estimation. Fetches all counts for the org, newest
-  // first, and reduces to one row per item+location on the client.
-  async getLatestStockCounts(orgId) {
-    const { data, error } = await supabase
-      .from('stock_counts')
-      .select('*')
-      .eq('org_id', orgId)
-      .order('counted_at', { ascending: false })
-      .order('created_at', { ascending: false });
+  async unassignItemFromSite(itemId, locationId) {
+    const { error } = await supabase
+      .from('stock_item_sites')
+      .delete()
+      .eq('item_id', itemId)
+      .eq('location_id', locationId);
     if (error) throw error;
-
-    const latest = new Map();
-    for (const row of data || []) {
-      const key = `${row.item_id}:${row.location_id}`;
-      if (!latest.has(key)) latest.set(key, row);
-    }
-    return [...latest.values()];
   },
 
-  async recordStockCount(orgId, { itemId, locationId, countedQty, countedBy, notes }) {
-    const { data, error } = await supabase
-      .from('stock_counts')
-      .insert([{
-        org_id: orgId,
-        item_id: itemId,
-        location_id: locationId,
-        counted_qty: countedQty,
-        counted_by: countedBy,
-        notes: notes || null,
-      }])
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
+  // Bulk import for one site's CSV: matches existing items by name
+  // (case-insensitive) within the org so the same ingredient uploaded for
+  // two sites becomes two site-assignments on one catalog item, not two
+  // separate SKUs. New names create a fresh stock_item first.
+  async bulkImportStockItems(orgId, locationId, rows) {
+    const existing = await this.getStockItems(orgId);
+    const byName = new Map(existing.map(i => [i.name.trim().toLowerCase(), i]));
+    const results = [];
+
+    for (const row of rows) {
+      const key = row.name.trim().toLowerCase();
+      let item = byName.get(key);
+      if (!item) {
+        item = await this.createStockItem(orgId, {
+          name: row.name.trim(),
+          category: row.category || null,
+          uom: row.uom || 'units',
+        });
+        byName.set(key, item);
+      }
+      const assignment = await this.assignItemToSite(orgId, item.id, locationId, {
+        supplier: row.supplier,
+        referenceOrderQty: row.reference_order_qty,
+      });
+      results.push({ item, assignment });
+    }
+    return results;
   },
 };
