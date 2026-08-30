@@ -1054,29 +1054,56 @@ export const db = {
   // Bulk import for one site's CSV: matches existing items by name
   // (case-insensitive) within the org so the same ingredient uploaded for
   // two sites becomes two site-assignments on one catalog item, not two
-  // separate SKUs. New names create a fresh stock_item first.
+  // separate SKUs. New names are created in one batch insert and every
+  // site-assignment is upserted in one batch — not one round trip per row,
+  // which is what made large uploads (100+ rows) look like they'd hung.
   async bulkImportStockItems(orgId, locationId, rows) {
-    const existing = await this.getStockItems(orgId);
-    const byName = new Map(existing.map(i => [i.name.trim().toLowerCase(), i]));
-    const results = [];
+    // De-dupe rows sharing a name within the file itself (keep the last),
+    // otherwise the same item_id+location_id could appear twice in the
+    // batch upsert below, which Postgres rejects.
+    const byName = new Map();
+    for (const row of rows) byName.set(row.name.trim().toLowerCase(), row);
+    const uniqueRows = [...byName.values()];
 
-    for (const row of rows) {
-      const key = row.name.trim().toLowerCase();
-      let item = byName.get(key);
-      if (!item) {
-        item = await this.createStockItem(orgId, {
-          name: row.name.trim(),
-          category: row.category || null,
-          uom: row.uom || 'units',
-        });
-        byName.set(key, item);
-      }
-      const assignment = await this.assignItemToSite(orgId, item.id, locationId, {
-        supplier: row.supplier,
-        referenceOrderQty: row.reference_order_qty,
-      });
-      results.push({ item, assignment });
+    const existing = await this.getStockItems(orgId);
+    const existingByName = new Map(existing.map(i => [i.name.trim().toLowerCase(), i]));
+
+    const newRows = uniqueRows.filter(r => !existingByName.has(r.name.trim().toLowerCase()));
+    let createdItems = [];
+    if (newRows.length > 0) {
+      const startNum = parseInt((await this._nextSku(orgId)).replace('SKU-', ''), 10);
+      const inserts = newRows.map((row, i) => ({
+        org_id: orgId,
+        name: row.name.trim(),
+        category: row.category || null,
+        uom: row.uom || 'units',
+        sku: `SKU-${String(startNum + i).padStart(4, '0')}`,
+      }));
+      const { data, error } = await supabase.from('stock_items').insert(inserts).select();
+      if (error) throw error;
+      createdItems = data || [];
     }
-    return results;
+
+    const itemByName = new Map([
+      ...existing.map(i => [i.name.trim().toLowerCase(), i]),
+      ...createdItems.map(i => [i.name.trim().toLowerCase(), i]),
+    ]);
+
+    const assignmentRows = uniqueRows.map(row => ({
+      org_id: orgId,
+      item_id: itemByName.get(row.name.trim().toLowerCase()).id,
+      location_id: locationId,
+      supplier: row.supplier || null,
+      reference_order_qty: row.reference_order_qty || 0,
+      updated_at: new Date().toISOString(),
+    }));
+
+    const { data: assignments, error: assignError } = await supabase
+      .from('stock_item_sites')
+      .upsert(assignmentRows, { onConflict: 'item_id,location_id' })
+      .select();
+    if (assignError) throw assignError;
+
+    return assignments || [];
   },
 };
