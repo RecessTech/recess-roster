@@ -79,8 +79,10 @@ function StatusDropdown({ value, onChange }) {
 
 // ── Stocktake Tab ─────────────────────────────────────────────────────────────
 
-function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus }) {
+function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, onUpdateOrderQty }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+  const [editingRowId, setEditingRowId] = useState(null);
+  const [qtyDraft, setQtyDraft] = useState('');
 
   const siteRows = useMemo(() => {
     return sites
@@ -100,6 +102,19 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
 
   const noStock  = siteRows.filter(r => r.current_status === 'no_stock').length;
   const lowStock = siteRows.filter(r => r.current_status === 'low_stock').length;
+
+  function startQtyEdit(row) {
+    setEditingRowId(row.id);
+    setQtyDraft(String(row.order_qty ?? row.reference_order_qty ?? 0));
+  }
+
+  function commitQtyEdit(row) {
+    setEditingRowId(null);
+    const parsed = parseFloat(qtyDraft);
+    if (isNaN(parsed) || parsed < 0) return;
+    if ((row.order_qty ?? row.reference_order_qty ?? 0) === parsed) return;
+    onUpdateOrderQty(row.id, parsed);
+  }
 
   if (locations.length === 0) {
     return (
@@ -158,27 +173,52 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                   <tr className="border-b border-gray-100 bg-gray-50">
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Reference Qty</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Order Qty</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(row => (
-                    <tr key={row.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/60 transition-colors">
-                      <td className="px-4 py-2.5">
-                        <div className="font-medium text-gray-900">{row.item.name}</div>
-                        <div className="text-xs text-gray-400">{row.item.sku} · {row.item.uom}</div>
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-gray-700">
-                        {row.reference_order_qty} {row.item.uom}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <StatusDropdown
-                          value={row.current_status}
-                          onChange={status => onUpdateStatus(row.id, status)}
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                  {rows.map(row => {
+                    const isEditing = editingRowId === row.id;
+                    const qty = row.order_qty ?? row.reference_order_qty ?? 0;
+                    return (
+                      <tr key={row.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/60 transition-colors">
+                        <td className="px-4 py-2.5">
+                          <div className="font-medium text-gray-900">{row.item.name}</div>
+                          <div className="text-xs text-gray-400">{row.item.sku} · {row.item.uom}</div>
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-gray-700">
+                          {row.reference_order_qty} {row.item.uom}
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          {isEditing ? (
+                            <input
+                              type="number" min="0" step="any" autoFocus
+                              value={qtyDraft}
+                              onChange={e => setQtyDraft(e.target.value)}
+                              onBlur={() => commitQtyEdit(row)}
+                              onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditingRowId(null); }}
+                              className="w-20 text-center border border-teal-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
+                            />
+                          ) : (
+                            <button
+                              onClick={() => startQtyEdit(row)}
+                              className={`w-20 inline-flex items-center justify-center px-2 py-1 rounded-lg font-semibold transition-colors hover:bg-gray-100 ${row.order_qty !== null && row.order_qty !== undefined ? 'text-teal-700 bg-teal-50' : 'text-gray-700'}`}
+                              title="Click to set how much to order"
+                            >
+                              {qty} {row.item.uom}
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <StatusDropdown
+                            value={row.current_status}
+                            onChange={status => onUpdateStatus(row.id, status)}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -750,6 +790,17 @@ export default function StockApp({ user, org }) {
     }
   }
 
+  async function handleOrderQtyUpdate(siteRowId, orderQty) {
+    setSites(prev => prev.map(s => s.id === siteRowId ? { ...s, order_qty: orderQty } : s));
+    try {
+      await db.updateSiteItemOrderQty(siteRowId, orderQty);
+    } catch (err) {
+      toast.error('Failed to update order qty');
+      console.error(err);
+      loadData();
+    }
+  }
+
   const TABS = [
     { id: 'items',     label: 'Items',     Icon: Package },
     { id: 'stocktake', label: 'Stocktake', Icon: ClipboardList },
@@ -807,6 +858,7 @@ export default function StockApp({ user, org }) {
           selectedLocationId={selectedLocationId}
           onSelectLocation={setSelectedLocationId}
           onUpdateStatus={handleStatusUpdate}
+          onUpdateOrderQty={handleOrderQtyUpdate}
         />
       )}
       {activeTab === 'locations' && (
