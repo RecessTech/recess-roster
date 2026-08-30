@@ -261,8 +261,8 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
       )}
 
       {siteRows.length > 0 && (
-        <div className="flex items-center gap-2 bg-teal-50 border border-teal-100 rounded-xl px-4 py-3">
-          <span className="text-sm font-medium text-teal-700">
+        <div className="flex items-center gap-2 bg-orange-50 border border-orange-100 rounded-xl px-4 py-3">
+          <span className="text-sm font-medium text-orange-700">
             {siteRows.length} item{siteRows.length !== 1 ? 's' : ''} need{siteRows.length === 1 ? 's' : ''} ordering
             {orderedCount > 0 && ` · ${orderedCount} already marked as ordered`}
           </span>
@@ -317,12 +317,12 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
                               onChange={e => setQtyDraft(e.target.value)}
                               onBlur={() => commitQtyEdit(row)}
                               onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditingRowId(null); }}
-                              className="w-20 text-center border border-teal-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
+                              className="w-20 text-center border border-orange-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
                             />
                           ) : (
                             <button
                               onClick={() => startQtyEdit(row)}
-                              className={`w-20 inline-flex items-center justify-center px-2 py-1 rounded-lg font-semibold transition-colors hover:bg-gray-100 ${row.order_qty !== null && row.order_qty !== undefined ? 'text-teal-700 bg-teal-50' : 'text-gray-700'}`}
+                              className={`w-20 inline-flex items-center justify-center px-2 py-1 rounded-lg font-semibold transition-colors hover:bg-gray-100 ${row.order_qty !== null && row.order_qty !== undefined ? 'text-orange-700 bg-orange-50' : 'text-gray-700'}`}
                               title="Click to set how much to order"
                             >
                               {qty} {row.item.uom}
@@ -334,7 +334,7 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
                             type="checkbox"
                             checked={!!row.ordered}
                             onChange={e => onUpdateOrdered(row.id, e.target.checked)}
-                            className="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-400 cursor-pointer"
+                            className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-400 cursor-pointer"
                             title={row.ordered_at ? `Ordered ${new Date(row.ordered_at).toLocaleDateString('en-AU')}` : 'Confirm ordered for next delivery'}
                           />
                         </td>
@@ -411,28 +411,28 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
           <select
             value={locationId}
             onChange={e => setLocationId(e.target.value)}
-            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 bg-white"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white"
           >
             {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
           </select>
           <p className="text-xs text-gray-400 mt-1">Every row is assigned to this site. If an item with the same name already exists (e.g. uploaded for another site), it's reused — not duplicated.</p>
         </div>
 
-        <div className="bg-teal-50 border border-teal-100 rounded-xl p-3 text-xs text-teal-700 space-y-1">
+        <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 text-xs text-orange-700 space-y-1">
           <p className="font-semibold">Expected columns:</p>
-          <p><code className="bg-teal-100 px-1 rounded">Item</code>, <code className="bg-teal-100 px-1 rounded">Qty</code>, <code className="bg-teal-100 px-1 rounded">uOm</code>, <code className="bg-teal-100 px-1 rounded">Supplier</code></p>
-          <p className="text-teal-500">SKU is assigned automatically — any SKU column in the file is ignored.</p>
+          <p><code className="bg-orange-100 px-1 rounded">Item</code>, <code className="bg-orange-100 px-1 rounded">Qty</code>, <code className="bg-orange-100 px-1 rounded">uOm</code>, <code className="bg-orange-100 px-1 rounded">Supplier</code></p>
+          <p className="text-orange-500">SKU is assigned automatically — any SKU column in the file is ignored.</p>
         </div>
 
         {!preview ? (
           <div
-            className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-teal-300 hover:bg-teal-50/30 transition-colors"
+            className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-orange-300 hover:bg-orange-50/30 transition-colors"
             onClick={() => fileRef.current?.click()}
             onDragOver={e => e.preventDefault()}
             onDrop={e => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}
           >
             <Upload size={24} className="mx-auto mb-2 text-gray-300" />
-            <p className="text-sm text-gray-500">Drop your CSV here or <span className="text-teal-600 font-medium">browse</span></p>
+            <p className="text-sm text-gray-500">Drop your CSV here or <span className="text-orange-600 font-medium">browse</span></p>
             <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={e => handleFile(e.target.files[0])} />
           </div>
         ) : (
@@ -475,7 +475,7 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
           <button
             onClick={handleImport}
             disabled={!preview || !locationId || importing}
-            className="flex-1 bg-teal-600 text-white rounded-xl py-2 text-sm font-semibold hover:bg-teal-700 transition-colors disabled:opacity-40"
+            className="flex-1 bg-orange-600 text-white rounded-xl py-2 text-sm font-semibold hover:bg-orange-700 transition-colors disabled:opacity-40"
           >
             {importing ? 'Importing…' : `Import ${preview?.length ?? 0} items`}
           </button>
@@ -589,7 +589,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
           </button>
           <button
             onClick={openAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium bg-teal-600 text-white hover:bg-teal-700 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium bg-orange-600 text-white hover:bg-orange-700 transition-colors"
           >
             <Plus size={14} />
             Add Item
@@ -621,7 +621,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                     ) : itemSites.map(s => {
                       const loc = locations.find(l => l.id === s.location_id);
                       return (
-                        <span key={s.id} className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 flex items-center gap-1">
+                        <span key={s.id} className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 flex items-center gap-1">
                           <MapPin size={10} />{loc?.name || '—'}{s.supplier ? ` · ${s.supplier}` : ''}
                         </span>
                       );
@@ -629,7 +629,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => openEdit(item)} className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors" title="Edit">
+                  <button onClick={() => openEdit(item)} className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors" title="Edit">
                     <Edit2 size={13} />
                   </button>
                   <button onClick={() => remove(item.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
@@ -654,7 +654,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                 type="text" value={form.name} autoFocus
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 placeholder="e.g. Full Cream Milk 10L"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -664,7 +664,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                   type="text" value={form.category}
                   onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
                   placeholder="Optional"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
                 />
               </div>
               <div>
@@ -673,7 +673,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                   type="text" value={form.uom}
                   onChange={e => setForm(f => ({ ...f, uom: e.target.value }))}
                   placeholder="units, kg, L…"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
                 />
               </div>
             </div>
@@ -689,13 +689,13 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                   {locations.map(loc => {
                     const a = siteAssignments[loc.id] || { assigned: false, supplier: '', referenceOrderQty: 0 };
                     return (
-                      <div key={loc.id} className={`border rounded-lg p-2.5 transition-colors ${a.assigned ? 'border-teal-200 bg-teal-50/40' : 'border-gray-200'}`}>
+                      <div key={loc.id} className={`border rounded-lg p-2.5 transition-colors ${a.assigned ? 'border-orange-200 bg-orange-50/40' : 'border-gray-200'}`}>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={a.assigned}
                             onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, assigned: e.target.checked } }))}
-                            className="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-400"
+                            className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-400"
                           />
                           <span className="text-sm font-medium text-gray-800">{loc.name}</span>
                         </label>
@@ -707,7 +707,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                                 type="text" value={a.supplier}
                                 onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, supplier: e.target.value } }))}
                                 placeholder="Optional"
-                                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
+                                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
                               />
                             </div>
                             <div>
@@ -715,7 +715,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                               <input
                                 type="number" min="0" step="any" value={a.referenceOrderQty}
                                 onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, referenceOrderQty: e.target.value } }))}
-                                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
+                                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
                               />
                             </div>
                           </div>
@@ -728,7 +728,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
             )}
 
             <div className="flex gap-2 pt-2">
-              <button onClick={save} disabled={saving} className="flex-1 px-4 py-2 text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors disabled:opacity-50">
+              <button onClick={save} disabled={saving} className="flex-1 px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors disabled:opacity-50">
                 {saving ? 'Saving…' : editingItem ? 'Update' : 'Add Item'}
               </button>
               <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
@@ -801,7 +801,7 @@ function LocationsTab({ locations, orgId, onRefresh }) {
         <p className="text-sm text-gray-500">{locations.length} location{locations.length !== 1 ? 's' : ''}</p>
         <button
           onClick={() => setShowAdd(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium bg-teal-600 text-white hover:bg-teal-700 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium bg-orange-600 text-white hover:bg-orange-700 transition-colors"
         >
           <Plus size={14} />
           Add Location
@@ -818,8 +818,8 @@ function LocationsTab({ locations, orgId, onRefresh }) {
           {locations.map(loc => (
             <div key={loc.id} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50/60 transition-colors">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 bg-teal-50 rounded-lg flex items-center justify-center">
-                  <MapPin size={14} className="text-teal-600" />
+                <div className="w-8 h-8 bg-orange-50 rounded-lg flex items-center justify-center">
+                  <MapPin size={14} className="text-orange-600" />
                 </div>
                 <span className={`text-sm font-medium ${loc.active ? 'text-gray-900' : 'text-gray-400 line-through'}`}>{loc.name}</span>
               </div>
@@ -849,11 +849,11 @@ function LocationsTab({ locations, orgId, onRefresh }) {
                 onChange={e => setName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && add()}
                 placeholder="e.g. Crown St, Bourke St"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
               />
             </div>
             <div className="flex gap-2">
-              <button onClick={add} disabled={saving} className="flex-1 px-4 py-2 text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors disabled:opacity-50">
+              <button onClick={add} disabled={saving} className="flex-1 px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors disabled:opacity-50">
                 {saving ? 'Adding…' : 'Add'}
               </button>
               <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
@@ -944,7 +944,7 @@ export default function StockApp({ user, org }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600" />
       </div>
     );
   }
@@ -966,7 +966,7 @@ export default function StockApp({ user, org }) {
             key={id}
             onClick={() => setActiveTab(id)}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all -mb-px ${
-              activeTab === id ? 'border-teal-600 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+              activeTab === id ? 'border-orange-600 text-orange-600' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             <Icon size={15} />

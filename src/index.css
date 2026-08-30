@@ -65,26 +65,27 @@ body {
   --top-border:     #E5E7EB;
 }
 
-/* Stock theme — R-Stock's distinct colourway (teal), kept visually
-   separate from R-Shift's blue so switching apps is unmistakable */
+/* Stock theme — R-Stock's colourway, matched to the brand orange
+   (same values as the orange skin above) so it's still clearly
+   distinct from R-Shift's blue when switching apps */
 [data-theme="stock"] {
-  --sb-bg:          #0F766E;
-  --sb-icon:        rgba(255, 255, 255, 0.6);
-  --sb-icon-active: #ffffff;
-  --sb-active:      rgba(255, 255, 255, 0.18);
-  --sb-hover:       rgba(255, 255, 255, 0.1);
-  --sb-logo-bg:     rgba(255, 255, 255, 0.15);
-  --sb-logo-fg:     #ffffff;
-  --sb-tooltip-bg:  #0B5D56;
-  --sb-tooltip-bd:  rgba(255,255,255,0.15);
+  --sb-bg:          #E85018;
+  --sb-icon:        rgba(243, 237, 219, 0.75);
+  --sb-icon-active: #F3EDDB;
+  --sb-active:      rgba(243, 237, 219, 0.2);
+  --sb-hover:       rgba(243, 237, 219, 0.1);
+  --sb-logo-bg:     rgba(243, 237, 219, 0.15);
+  --sb-logo-fg:     #F3EDDB;
+  --sb-tooltip-bg:  #C44010;
+  --sb-tooltip-bd:  rgba(243,237,219,0.15);
 
-  --primary:        #0F766E;
-  --primary-dk:     #0B5D56;
+  --primary:        #E85018;
+  --primary-dk:     #C94410;
   --primary-fg:     white;
 
-  --app-bg:         #F4FAF9;
+  --app-bg:         #FBF3EC;
   --top-bg:         white;
-  --top-border:     #D9F0EC;
+  --top-border:     #F3DCC9;
 }
 
 /* Dark theme (logo 3) */
