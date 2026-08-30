@@ -17,19 +17,50 @@ const STATUS_CONFIG = {
   in_stock:  { label: 'In Stock',               bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200', dot: 'bg-green-500' },
 };
 
+// ── Shared bits ───────────────────────────────────────────────────────────────
+
+function EmptyState({ Icon, title, hint }) {
+  return (
+    <div className="text-center py-16">
+      <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
+        <Icon size={24} className="text-gray-400" />
+      </div>
+      <p className="text-sm font-medium text-gray-700">{title}</p>
+      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
+    </div>
+  );
+}
+
+function LocationSwitcher({ locations, selectedLocationId, onSelectLocation }) {
+  if (locations.length <= 1) return null;
+  return (
+    <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
+      {locations.map(loc => (
+        <button
+          key={loc.id}
+          onClick={() => onSelectLocation(loc.id)}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${selectedLocationId === loc.id ? 'bg-white text-gray-900 shadow-soft' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          {loc.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── Modal ─────────────────────────────────────────────────────────────────────
 
 function Modal({ title, onClose, children, maxWidth = 'max-w-md' }) {
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className={`bg-white rounded-2xl shadow-xl w-full ${maxWidth} max-h-[90vh] flex flex-col`}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+    <div className="modal-overlay">
+      <div className={`modal-container ${maxWidth} max-h-[90vh] flex flex-col`}>
+        <div className="modal-header flex-shrink-0">
           <h2 className="text-base font-semibold text-gray-900">{title}</h2>
           <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
             <X size={16} />
           </button>
         </div>
-        <div className="px-6 py-4 overflow-y-auto">{children}</div>
+        <div className="modal-body overflow-y-auto">{children}</div>
       </div>
     </div>
   );
@@ -76,7 +107,7 @@ function StatusDropdown({ value, onChange }) {
       <button
         ref={btnRef}
         onClick={toggle}
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all hover:opacity-80 whitespace-nowrap ${cfg.bg} ${cfg.text} ${cfg.border}`}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all hover:shadow-soft whitespace-nowrap ${cfg.bg} ${cfg.text} ${cfg.border}`}
       >
         <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
         {cfg.label}
@@ -86,7 +117,7 @@ function StatusDropdown({ value, onChange }) {
         <div
           ref={menuRef}
           style={{ position: 'fixed', top: coords.top, left: coords.left }}
-          className="bg-white rounded-xl shadow-lg border border-gray-100 z-50 overflow-hidden min-w-[190px]"
+          className="bg-white rounded-xl shadow-elevated border border-gray-100 z-50 overflow-hidden min-w-[190px] animate-fade-in"
         >
           {Object.entries(STATUS_CONFIG).map(([key, s]) => (
             <button
@@ -132,76 +163,59 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
   const lowStock = siteRows.filter(r => r.current_status === 'low_stock').length;
 
   if (locations.length === 0) {
-    return (
-      <div className="text-center py-20 text-gray-400">
-        <MapPin size={32} className="mx-auto mb-3 opacity-40" />
-        <p className="text-sm mb-1">No locations set up yet.</p>
-        <p className="text-xs">Add a site in the Locations tab first.</p>
-      </div>
-    );
+    return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
   }
 
   return (
-    <div className="space-y-4">
-      {locations.length > 1 && (
-        <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
-          {locations.map(loc => (
-            <button
-              key={loc.id}
-              onClick={() => onSelectLocation(loc.id)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${selectedLocationId === loc.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              {loc.name}
-            </button>
-          ))}
-        </div>
-      )}
+    <div className="space-y-4 animate-fade-in">
+      <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
 
       {noStock > 0 && (
-        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-          <XCircle size={15} className="text-red-600 flex-shrink-0" />
+        <div className="flex items-center gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+            <XCircle size={14} className="text-red-600" />
+          </div>
           <span className="text-sm font-medium text-red-700">{noStock} item{noStock !== 1 ? 's' : ''} with no stock</span>
         </div>
       )}
       {lowStock > 0 && (
-        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-          <AlertTriangle size={15} className="text-amber-600 flex-shrink-0" />
+        <div className="flex items-center gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle size={14} className="text-amber-600" />
+          </div>
           <span className="text-sm font-medium text-amber-700">{lowStock} item{lowStock !== 1 ? 's' : ''} running low</span>
         </div>
       )}
 
       {siteRows.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <Package size={32} className="mx-auto mb-3 opacity-40" />
-          <p className="text-sm">No items assigned to this site yet. Add or upload some in the Items tab.</p>
-        </div>
+        <EmptyState Icon={Package} title="No items assigned to this site yet" hint="Add or upload some in the Items tab." />
       ) : (
         grouped.map(([supplier, rows]) => (
           <div key={supplier}>
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-              <Truck size={12} />
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <Truck size={12} className="text-gray-400" />
               {supplier}
             </h3>
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="card overflow-hidden">
               <table className="w-full text-sm table-fixed">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="w-1/2 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
-                    <th className="w-1/4 px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Reference Qty</th>
-                    <th className="w-1/4 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                  <tr className="border-b border-gray-100 bg-gray-50/80">
+                    <th className="w-1/2 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
+                    <th className="w-1/4 px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Reference Qty</th>
+                    <th className="w-1/4 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map(row => (
-                    <tr key={row.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/60 transition-colors">
-                      <td className="px-4 py-2.5">
+                    <tr key={row.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors">
+                      <td className="px-4 py-3">
                         <div className="font-medium text-gray-900">{row.item.name}</div>
                         <div className="text-xs text-gray-400">{row.item.sku} · {row.item.uom}</div>
                       </td>
-                      <td className="px-4 py-2.5 text-right text-gray-700">
+                      <td className="px-4 py-3 text-right text-gray-700">
                         {row.reference_order_qty} {row.item.uom}
                       </td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-4 py-3">
                         <StatusDropdown
                           value={row.current_status}
                           onChange={status => onUpdateStatus(row.id, status)}
@@ -263,34 +277,19 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
   }
 
   if (locations.length === 0) {
-    return (
-      <div className="text-center py-20 text-gray-400">
-        <MapPin size={32} className="mx-auto mb-3 opacity-40" />
-        <p className="text-sm mb-1">No locations set up yet.</p>
-        <p className="text-xs">Add a site in the Locations tab first.</p>
-      </div>
-    );
+    return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
   }
 
   return (
-    <div className="space-y-4">
-      {locations.length > 1 && (
-        <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
-          {locations.map(loc => (
-            <button
-              key={loc.id}
-              onClick={() => onSelectLocation(loc.id)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${selectedLocationId === loc.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              {loc.name}
-            </button>
-          ))}
-        </div>
-      )}
+    <div className="space-y-4 animate-fade-in">
+      <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
 
       {siteRows.length > 0 && (
-        <div className="flex items-center gap-2 bg-orange-50 border border-orange-100 rounded-xl px-4 py-3">
-          <span className="text-sm font-medium text-orange-700">
+        <div className="flex items-center gap-2.5 rounded-xl px-4 py-3 border" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 8%, white)', borderColor: 'color-mix(in srgb, var(--primary) 20%, white)' }}>
+          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 18%, white)' }}>
+            <ShoppingCart size={14} style={{ color: 'var(--primary)' }} />
+          </div>
+          <span className="text-sm font-medium" style={{ color: 'var(--primary-dk)' }}>
             {siteRows.length} item{siteRows.length !== 1 ? 's' : ''} need{siteRows.length === 1 ? 's' : ''} ordering
             {orderedCount > 0 && ` · ${orderedCount} already marked as ordered`}
           </span>
@@ -298,26 +297,22 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
       )}
 
       {siteRows.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <Package size={32} className="mx-auto mb-3 opacity-40" />
-          <p className="text-sm">Nothing needs ordering at this site right now.</p>
-          <p className="text-xs mt-1">Flag items as low or out of stock in the Stocktake tab and they'll show up here.</p>
-        </div>
+        <EmptyState Icon={ShoppingCart} title="Nothing needs ordering at this site right now" hint="Flag items as low or out of stock in the Stocktake tab and they'll show up here." />
       ) : (
         grouped.map(([supplier, rows]) => (
           <div key={supplier}>
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-              <Truck size={12} />
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <Truck size={12} className="text-gray-400" />
               {supplier}
             </h3>
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="card overflow-hidden">
               <table className="w-full text-sm table-fixed">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="w-2/5 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
-                    <th className="w-[28%] px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                    <th className="w-[16%] px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Order Qty</th>
-                    <th className="w-[16%] px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Ordered</th>
+                  <tr className="border-b border-gray-100 bg-gray-50/80">
+                    <th className="w-2/5 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
+                    <th className="w-[28%] px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="w-[16%] px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Order Qty</th>
+                    <th className="w-[16%] px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Ordered</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -326,18 +321,18 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
                     const qty = row.order_qty ?? row.reference_order_qty ?? 0;
                     const sc = STATUS_CONFIG[row.current_status];
                     return (
-                      <tr key={row.id} className={`border-b border-gray-50 last:border-b-0 hover:bg-gray-50/60 transition-colors ${row.ordered ? 'opacity-50' : ''}`}>
-                        <td className="px-4 py-2.5">
+                      <tr key={row.id} className={`border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors ${row.ordered ? 'opacity-50' : ''}`}>
+                        <td className="px-4 py-3">
                           <div className="font-medium text-gray-900">{row.item.name}</div>
                           <div className="text-xs text-gray-400">{row.item.sku} · {row.item.uom}</div>
                         </td>
-                        <td className="px-4 py-2.5">
+                        <td className="px-4 py-3">
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${sc.bg} ${sc.text} ${sc.border}`}>
                             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${sc.dot}`} />
                             {sc.label}
                           </span>
                         </td>
-                        <td className="px-4 py-2.5 text-center">
+                        <td className="px-4 py-3 text-center">
                           {isEditing ? (
                             <input
                               type="number" min="0" step="any" autoFocus
@@ -345,24 +340,26 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
                               onChange={e => setQtyDraft(e.target.value)}
                               onBlur={() => commitQtyEdit(row)}
                               onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditingRowId(null); }}
-                              className="w-20 text-center border border-orange-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                              className="input-base w-20 text-center px-2 py-1"
                             />
                           ) : (
                             <button
                               onClick={() => startQtyEdit(row)}
-                              className={`w-20 inline-flex items-center justify-center px-2 py-1 rounded-lg font-semibold transition-colors hover:bg-gray-100 ${row.order_qty !== null && row.order_qty !== undefined ? 'text-orange-700 bg-orange-50' : 'text-gray-700'}`}
+                              className={`w-20 inline-flex items-center justify-center px-2 py-1 rounded-lg font-semibold transition-colors hover:bg-gray-100 ${row.order_qty !== null && row.order_qty !== undefined ? 'text-gray-900' : 'text-gray-500'}`}
+                              style={row.order_qty !== null && row.order_qty !== undefined ? { backgroundColor: 'color-mix(in srgb, var(--primary) 10%, white)' } : undefined}
                               title="Click to set how much to order"
                             >
                               {qty} {row.item.uom}
                             </button>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-center">
+                        <td className="px-4 py-3 text-center">
                           <input
                             type="checkbox"
                             checked={!!row.ordered}
                             onChange={e => onUpdateOrdered(row.id, e.target.checked)}
-                            className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-400 cursor-pointer"
+                            className="w-4 h-4 rounded border-gray-300 cursor-pointer accent-current"
+                            style={{ color: 'var(--primary)' }}
                             title={row.ordered_at ? `Ordered ${new Date(row.ordered_at).toLocaleDateString('en-AU')}` : 'Confirm ordered for next delivery'}
                           />
                         </td>
@@ -439,34 +436,41 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
           <select
             value={locationId}
             onChange={e => setLocationId(e.target.value)}
-            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white"
+            className="input-base bg-white"
           >
             {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
           </select>
-          <p className="text-xs text-gray-400 mt-1">Every row is assigned to this site. If an item with the same name already exists (e.g. uploaded for another site), it's reused — not duplicated.</p>
+          <p className="text-xs text-gray-400 mt-1.5">Every row is assigned to this site. If an item with the same name already exists (e.g. uploaded for another site), it's reused — not duplicated.</p>
         </div>
 
-        <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 text-xs text-orange-700 space-y-1">
+        <div className="rounded-xl p-3 text-xs space-y-1 border" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 6%, white)', borderColor: 'color-mix(in srgb, var(--primary) 18%, white)', color: 'var(--primary-dk)' }}>
           <p className="font-semibold">Expected columns:</p>
-          <p><code className="bg-orange-100 px-1 rounded">Item</code>, <code className="bg-orange-100 px-1 rounded">Qty</code>, <code className="bg-orange-100 px-1 rounded">uOm</code>, <code className="bg-orange-100 px-1 rounded">Supplier</code></p>
-          <p className="text-orange-500">SKU is assigned automatically — any SKU column in the file is ignored.</p>
+          <p>
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Item</code>{', '}
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Qty</code>{', '}
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>uOm</code>{', '}
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Supplier</code>
+          </p>
+          <p className="opacity-80">SKU is assigned automatically — any SKU column in the file is ignored.</p>
         </div>
 
         {!preview ? (
           <div
-            className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-orange-300 hover:bg-orange-50/30 transition-colors"
+            className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:bg-gray-50 transition-colors"
             onClick={() => fileRef.current?.click()}
             onDragOver={e => e.preventDefault()}
             onDrop={e => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}
           >
-            <Upload size={24} className="mx-auto mb-2 text-gray-300" />
-            <p className="text-sm text-gray-500">Drop your CSV here or <span className="text-orange-600 font-medium">browse</span></p>
+            <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
+              <Upload size={20} className="text-gray-400" />
+            </div>
+            <p className="text-sm text-gray-500">Drop your CSV here or <span className="font-medium" style={{ color: 'var(--primary)' }}>browse</span></p>
             <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={e => handleFile(e.target.files[0])} />
           </div>
         ) : (
           <div>
             <p className="text-sm text-gray-600 mb-2 font-medium">{preview.length} rows ready to import</p>
-            <div className="bg-gray-50 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+            <div className="bg-gray-50 rounded-xl overflow-hidden max-h-48 overflow-y-auto border border-gray-100">
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-gray-100">
                   <tr>
@@ -496,14 +500,14 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
 
         {error && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
 
-        <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 rounded-xl py-2 text-sm font-medium hover:bg-gray-50 transition-colors">
+        <div className="flex gap-2 pt-1">
+          <button onClick={onClose} className="btn-secondary flex-1">
             Cancel
           </button>
           <button
             onClick={handleImport}
             disabled={!preview || !locationId || importing}
-            className="flex-1 bg-orange-600 text-white rounded-xl py-2 text-sm font-semibold hover:bg-orange-700 transition-colors disabled:opacity-40"
+            className="btn-primary flex-1"
           >
             {importing ? 'Importing…' : `Import ${preview?.length ?? 0} items`}
           </button>
@@ -603,21 +607,21 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <p className="text-sm text-gray-500">{items.length} item{items.length !== 1 ? 's' : ''}</p>
         <div className="flex gap-2">
           <button
             onClick={() => setShowCsvImport(true)}
             disabled={locations.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40"
+            className="btn-ghost border border-gray-200 flex items-center gap-1.5 disabled:opacity-40"
           >
             <Upload size={14} />
             Bulk Upload
           </button>
           <button
             onClick={openAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium bg-orange-600 text-white hover:bg-orange-700 transition-colors"
+            className="btn-primary flex items-center gap-1.5"
           >
             <Plus size={14} />
             Add Item
@@ -626,30 +630,31 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
       </div>
 
       {items.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <Package size={32} className="mx-auto mb-3 opacity-40" />
-          <p className="text-sm">No items yet. Add one or bulk-upload a CSV.</p>
-        </div>
+        <EmptyState Icon={Package} title="No items yet" hint="Add one or bulk-upload a CSV." />
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden divide-y divide-gray-50">
+        <div className="card overflow-hidden divide-y divide-gray-50">
           {items.map(item => {
             const itemSites = sitesByItem.get(item.id) || [];
             return (
-              <div key={item.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/60 transition-colors">
+              <div key={item.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/70 transition-colors">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{item.sku}</span>
                     <span className="text-sm font-medium text-gray-900">{item.name}</span>
                     {item.category && <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{item.category}</span>}
                   </div>
-                  <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                  <div className="text-xs text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
                     <span>{item.uom}</span>
                     {itemSites.length === 0 ? (
                       <span className="text-amber-500">· not assigned to any site</span>
                     ) : itemSites.map(s => {
                       const loc = locations.find(l => l.id === s.location_id);
                       return (
-                        <span key={s.id} className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 flex items-center gap-1">
+                        <span
+                          key={s.id}
+                          className="px-1.5 py-0.5 rounded flex items-center gap-1"
+                          style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 8%, white)', color: 'var(--primary-dk)' }}
+                        >
                           <MapPin size={10} />{loc?.name || '—'}{s.supplier ? ` · ${s.supplier}` : ''}
                         </span>
                       );
@@ -682,7 +687,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                 type="text" value={form.name} autoFocus
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 placeholder="e.g. Full Cream Milk 10L"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                className="input-base"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -692,7 +697,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                   type="text" value={form.category}
                   onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
                   placeholder="Optional"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                  className="input-base"
                 />
               </div>
               <div>
@@ -701,7 +706,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                   type="text" value={form.uom}
                   onChange={e => setForm(f => ({ ...f, uom: e.target.value }))}
                   placeholder="units, kg, L…"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                  className="input-base"
                 />
               </div>
             </div>
@@ -717,13 +722,18 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                   {locations.map(loc => {
                     const a = siteAssignments[loc.id] || { assigned: false, supplier: '', referenceOrderQty: 0 };
                     return (
-                      <div key={loc.id} className={`border rounded-lg p-2.5 transition-colors ${a.assigned ? 'border-orange-200 bg-orange-50/40' : 'border-gray-200'}`}>
+                      <div
+                        key={loc.id}
+                        className="border rounded-lg p-2.5 transition-colors"
+                        style={a.assigned ? { borderColor: 'color-mix(in srgb, var(--primary) 30%, white)', backgroundColor: 'color-mix(in srgb, var(--primary) 5%, white)' } : { borderColor: '#e5e7eb' }}
+                      >
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={a.assigned}
                             onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, assigned: e.target.checked } }))}
-                            className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-400"
+                            className="w-4 h-4 rounded border-gray-300"
+                            style={{ accentColor: 'var(--primary)' }}
                           />
                           <span className="text-sm font-medium text-gray-800">{loc.name}</span>
                         </label>
@@ -735,7 +745,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                                 type="text" value={a.supplier}
                                 onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, supplier: e.target.value } }))}
                                 placeholder="Optional"
-                                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                                className="input-base py-1.5"
                               />
                             </div>
                             <div>
@@ -743,7 +753,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                               <input
                                 type="number" min="0" step="any" value={a.referenceOrderQty}
                                 onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, referenceOrderQty: e.target.value } }))}
-                                className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                                className="input-base py-1.5"
                               />
                             </div>
                           </div>
@@ -756,10 +766,10 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
             )}
 
             <div className="flex gap-2 pt-2">
-              <button onClick={save} disabled={saving} className="flex-1 px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors disabled:opacity-50">
+              <button onClick={save} disabled={saving} className="btn-primary flex-1">
                 {saving ? 'Saving…' : editingItem ? 'Update' : 'Add Item'}
               </button>
-              <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              <button onClick={() => setShowForm(false)} className="btn-secondary">
                 Cancel
               </button>
             </div>
@@ -824,12 +834,12 @@ function LocationsTab({ locations, orgId, onRefresh }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">{locations.length} location{locations.length !== 1 ? 's' : ''}</p>
         <button
           onClick={() => setShowAdd(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium bg-orange-600 text-white hover:bg-orange-700 transition-colors"
+          className="btn-primary flex items-center gap-1.5"
         >
           <Plus size={14} />
           Add Location
@@ -837,17 +847,14 @@ function LocationsTab({ locations, orgId, onRefresh }) {
       </div>
 
       {locations.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <MapPin size={32} className="mx-auto mb-3 opacity-40" />
-          <p className="text-sm">No locations yet. Add your first site (e.g. "Crown St", "Bourke St").</p>
-        </div>
+        <EmptyState Icon={MapPin} title="No locations yet" hint='Add your first site (e.g. "Crown St", "Bourke St").' />
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden divide-y divide-gray-50">
+        <div className="card overflow-hidden divide-y divide-gray-50">
           {locations.map(loc => (
-            <div key={loc.id} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50/60 transition-colors">
+            <div key={loc.id} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50/70 transition-colors">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 bg-orange-50 rounded-lg flex items-center justify-center">
-                  <MapPin size={14} className="text-orange-600" />
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 10%, white)' }}>
+                  <MapPin size={15} style={{ color: 'var(--primary)' }} />
                 </div>
                 <span className={`text-sm font-medium ${loc.active ? 'text-gray-900' : 'text-gray-400 line-through'}`}>{loc.name}</span>
               </div>
@@ -877,14 +884,14 @@ function LocationsTab({ locations, orgId, onRefresh }) {
                 onChange={e => setName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && add()}
                 placeholder="e.g. Crown St, Bourke St"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                className="input-base"
               />
             </div>
             <div className="flex gap-2">
-              <button onClick={add} disabled={saving} className="flex-1 px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors disabled:opacity-50">
+              <button onClick={add} disabled={saving} className="btn-primary flex-1">
                 {saving ? 'Adding…' : 'Add'}
               </button>
-              <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              <button onClick={() => setShowAdd(false)} className="btn-secondary">
                 Cancel
               </button>
             </div>
@@ -971,31 +978,45 @@ export default function StockApp({ user, org }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600" />
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200" style={{ borderTopColor: 'var(--primary)' }} />
+        <span className="text-xs text-gray-400">Loading R-Stock…</span>
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">R-Stock</h2>
-          <p className="text-sm text-gray-400 mt-0.5">
-            {items.length} item{items.length !== 1 ? 's' : ''} in the catalog · {activeLocations.length} location{activeLocations.length !== 1 ? 's' : ''}
-          </p>
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl flex items-center justify-center shadow-soft" style={{ backgroundColor: 'var(--primary)' }}>
+            <Package size={22} className="text-white" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 tracking-tight">R-Stock</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Inventory &amp; ordering</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-gray-200 shadow-soft">
+            <Package size={14} className="text-gray-400" />
+            <span className="text-sm font-semibold text-gray-900">{items.length}</span>
+            <span className="text-xs text-gray-500">item{items.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-gray-200 shadow-soft">
+            <MapPin size={14} className="text-gray-400" />
+            <span className="text-sm font-semibold text-gray-900">{activeLocations.length}</span>
+            <span className="text-xs text-gray-500">location{activeLocations.length !== 1 ? 's' : ''}</span>
+          </div>
         </div>
       </div>
 
-      <div className="flex gap-1 border-b border-gray-100">
+      <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
         {TABS.map(({ id, label, Icon }) => (
           <button
             key={id}
             onClick={() => setActiveTab(id)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all -mb-px ${
-              activeTab === id ? 'border-orange-600 text-orange-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === id ? 'tab-active' : 'tab-inactive'}`}
           >
             <Icon size={15} />
             {label}
