@@ -1025,7 +1025,7 @@ export const db = {
 
   // Upserts so re-assigning an already-assigned item just updates its
   // supplier/qty rather than erroring.
-  async assignItemToSite(orgId, itemId, locationId, { supplier, referenceOrderQty } = {}) {
+  async assignItemToSite(orgId, itemId, locationId, { supplier, supplierCode, referenceOrderQty } = {}) {
     const { data, error } = await supabase
       .from('stock_item_sites')
       .upsert([{
@@ -1033,6 +1033,7 @@ export const db = {
         item_id: itemId,
         location_id: locationId,
         supplier: supplier || null,
+        supplier_code: supplierCode || null,
         reference_order_qty: referenceOrderQty || 0,
         updated_at: new Date().toISOString(),
       }], { onConflict: 'item_id,location_id' })
@@ -1130,6 +1131,8 @@ export const db = {
         category: row.category || null,
         uom: row.uom || 'units',
         sku: `SKU-${String(startNum + i).padStart(4, '0')}`,
+        description: row.description || null,
+        units_per_carton: row.units_per_carton || row.unitsPerCarton || null,
       }));
       const { data, error } = await supabase.from('stock_items').insert(inserts).select();
       if (error) throw error;
@@ -1146,6 +1149,7 @@ export const db = {
       item_id: itemByName.get(row.name.trim().toLowerCase()).id,
       location_id: locationId,
       supplier: row.supplier || null,
+      supplier_code: row.supplierCode || row.supplier_code || null,
       reference_order_qty: row.reference_order_qty || 0,
       updated_at: new Date().toISOString(),
     }));

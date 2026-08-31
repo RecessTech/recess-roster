@@ -599,7 +599,10 @@ function CsvImportModal({ orgId, locations, onClose, onSave, defaultCategory = '
             reference_order_qty: parseFloat(keys['qty'] || keys['quantity'] || '0') || 0,
             uom:                 (keys['uom'] || keys['unit'] || 'units').toString().trim(),
             supplier:            (keys['supplier'] || '').toString().trim(),
+            supplier_code:       (keys['supplier code'] || keys['supplier_code'] || keys['product code'] || keys['code'] || '').toString().trim(),
             category:            (keys['category'] || '').toString().trim(),
+            description:         (keys['description'] || '').toString().trim(),
+            units_per_carton:    parseFloat(keys['units per carton'] || keys['units_per_carton'] || keys['carton'] || '') || null,
           };
         }).filter(r => r.name);
 
@@ -667,7 +670,10 @@ function CsvImportModal({ orgId, locations, onClose, onSave, defaultCategory = '
             <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Qty</code>{', '}
             <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>uOm</code>{', '}
             <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Supplier</code>{', '}
-            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Category</code> <span className="opacity-70">(optional)</span>
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Category</code> <span className="opacity-70">(optional)</span>{', '}
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Supplier Code</code>{', '}
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Description</code>{', '}
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Units Per Carton</code> <span className="opacity-70">(all optional)</span>
           </p>
           <p className="opacity-80">SKU is assigned automatically — any SKU column in the file is ignored.</p>
         </div>
@@ -697,6 +703,7 @@ function CsvImportModal({ orgId, locations, onClose, onSave, defaultCategory = '
                     <th className="text-left px-3 py-2 text-gray-500">uOm</th>
                     <th className="text-left px-3 py-2 text-gray-500">Supplier</th>
                     <th className="text-left px-3 py-2 text-gray-500">Category</th>
+                    <th className="text-left px-3 py-2 text-gray-500">Units/Ctn</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -707,6 +714,7 @@ function CsvImportModal({ orgId, locations, onClose, onSave, defaultCategory = '
                       <td className="px-3 py-1.5 text-gray-600">{r.uom}</td>
                       <td className="px-3 py-1.5 text-gray-500">{r.supplier || '—'}</td>
                       <td className="px-3 py-1.5 text-gray-500">{r.category || categoryDefault || '—'}</td>
+                      <td className="px-3 py-1.5 text-gray-500">{r.units_per_carton ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -739,7 +747,7 @@ function CsvImportModal({ orgId, locations, onClose, onSave, defaultCategory = '
 
 // ── Items Tab ──────────────────────────────────────────────────────────────────
 
-const BLANK_ITEM = { name: '', category: '', uom: 'units' };
+const BLANK_ITEM = { name: '', category: '', uom: 'units', description: '', units_per_carton: '' };
 
 function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
   const [showForm, setShowForm] = useState(false);
@@ -760,7 +768,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
 
   function blankAssignments() {
     const initial = {};
-    locations.forEach(loc => { initial[loc.id] = { assigned: false, supplier: '', referenceOrderQty: 0 }; });
+    locations.forEach(loc => { initial[loc.id] = { assigned: false, supplier: '', supplierCode: '', referenceOrderQty: 0 }; });
     return initial;
   }
 
@@ -773,10 +781,16 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
 
   function openEdit(item) {
     setEditingItem(item);
-    setForm({ name: item.name, category: item.category || '', uom: item.uom || 'units' });
+    setForm({
+      name: item.name,
+      category: item.category || '',
+      uom: item.uom || 'units',
+      description: item.description || '',
+      units_per_carton: item.units_per_carton ?? '',
+    });
     const initial = blankAssignments();
     (sitesByItem.get(item.id) || []).forEach(s => {
-      initial[s.location_id] = { assigned: true, supplier: s.supplier || '', referenceOrderQty: s.reference_order_qty ?? 0 };
+      initial[s.location_id] = { assigned: true, supplier: s.supplier || '', supplierCode: s.supplier_code || '', referenceOrderQty: s.reference_order_qty ?? 0 };
     });
     setSiteAssignments(initial);
     setShowForm(true);
@@ -786,18 +800,23 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
     if (!form.name.trim()) { toast.error('Name is required'); return; }
     setSaving(true);
     try {
+      const payload = {
+        ...form,
+        description: form.description || null,
+        units_per_carton: form.units_per_carton === '' ? null : parseFloat(form.units_per_carton),
+      };
       let item = editingItem;
       if (editingItem) {
-        await db.updateStockItem(editingItem.id, form);
+        await db.updateStockItem(editingItem.id, payload);
       } else {
-        item = await db.createStockItem(orgId, form);
+        item = await db.createStockItem(orgId, payload);
       }
 
       const previouslyAssigned = editingItem ? new Set((sitesByItem.get(editingItem.id) || []).map(s => s.location_id)) : new Set();
       await Promise.all(locations.map(loc => {
         const a = siteAssignments[loc.id];
         if (a?.assigned) {
-          return db.assignItemToSite(orgId, item.id, loc.id, { supplier: a.supplier, referenceOrderQty: parseFloat(a.referenceOrderQty) || 0 });
+          return db.assignItemToSite(orgId, item.id, loc.id, { supplier: a.supplier, supplierCode: a.supplierCode, referenceOrderQty: parseFloat(a.referenceOrderQty) || 0 });
         } else if (previouslyAssigned.has(loc.id)) {
           return db.unassignItemFromSite(item.id, loc.id);
         }
@@ -865,6 +884,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                   </div>
                   <div className="text-xs text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
                     <span>{item.uom}</span>
+                    {item.units_per_carton && <span>· {item.units_per_carton}/carton</span>}
                     {itemSites.length === 0 ? (
                       <span className="text-amber-500">· not assigned to any site</span>
                     ) : itemSites.map(s => {
@@ -930,6 +950,26 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                 />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                <input
+                  type="text" value={form.description}
+                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  placeholder="Optional — supplier spec"
+                  className="input-base"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Units / Carton</label>
+                <input
+                  type="number" min="0" step="any" value={form.units_per_carton}
+                  onChange={e => setForm(f => ({ ...f, units_per_carton: e.target.value }))}
+                  placeholder="Optional"
+                  className="input-base"
+                />
+              </div>
+            </div>
 
             {locations.length === 0 ? (
               <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
@@ -940,7 +980,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                 <label className="block text-xs font-medium text-gray-700 mb-2">Sites carrying this item</label>
                 <div className="space-y-2">
                   {locations.map(loc => {
-                    const a = siteAssignments[loc.id] || { assigned: false, supplier: '', referenceOrderQty: 0 };
+                    const a = siteAssignments[loc.id] || { assigned: false, supplier: '', supplierCode: '', referenceOrderQty: 0 };
                     return (
                       <div
                         key={loc.id}
@@ -969,6 +1009,15 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                               />
                             </div>
                             <div>
+                              <span className="text-xs text-gray-500">Supplier Code</span>
+                              <input
+                                type="text" value={a.supplierCode}
+                                onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, supplierCode: e.target.value } }))}
+                                placeholder="Optional"
+                                className="input-base py-1.5"
+                              />
+                            </div>
+                            <div className="col-span-2">
                               <span className="text-xs text-gray-500">Reference Qty</span>
                               <input
                                 type="number" min="0" step="any" value={a.referenceOrderQty}
