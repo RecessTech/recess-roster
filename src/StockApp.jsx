@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
-  ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History,
+  ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History, Box,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -221,17 +221,21 @@ function StatusDropdown({ value, onChange }) {
 // Pure flagging — status only. Order qty and marking things as ordered
 // live in the Ordering tab, which works off whatever gets flagged here.
 
-function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, onUpdateOrderQty, lastOrderedByKey }) {
+function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, onUpdateOrderQty, lastOrderedByKey, pinnedCategory }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
   const [collapsed, setCollapsed] = useState({});
   const toggleSupplier = supplier => setCollapsed(c => ({ ...c, [supplier]: !c[supplier] }));
 
+  // pinnedCategory scopes this same view to one category (e.g. the
+  // Packaging tab) without needing a separate data model or component —
+  // items still show up in the unfiltered Stocktake tab too.
   const siteRows = useMemo(() => {
     return sites
       .filter(s => s.location_id === selectedLocationId)
       .map(s => ({ ...s, item: itemById.get(s.item_id) }))
-      .filter(r => r.item);
-  }, [sites, selectedLocationId, itemById]);
+      .filter(r => r.item)
+      .filter(r => !pinnedCategory || r.item.category === pinnedCategory);
+  }, [sites, selectedLocationId, itemById, pinnedCategory]);
 
   const grouped = useMemo(() => {
     const groups = {};
@@ -347,7 +351,11 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
       )}
 
       {siteRows.length === 0 ? (
-        <EmptyState Icon={Package} title="No items assigned to this site yet" hint="Add or upload some in the Items tab." />
+        <EmptyState
+          Icon={Package}
+          title={pinnedCategory ? `No ${pinnedCategory} items assigned to this site yet` : 'No items assigned to this site yet'}
+          hint="Add or upload some in the Items tab."
+        />
       ) : (
         <div className="flex flex-col lg:flex-row gap-4 items-start">
           <div className="flex-1 min-w-0 w-full space-y-4">{leftColumn.map(renderSupplierGroup)}</div>
@@ -559,8 +567,19 @@ function HistoryTab({ items, locations, orderHistory, selectedLocationId, onSele
 
 // ── CSV Import Modal ───────────────────────────────────────────────────────────
 
-function CsvImportModal({ orgId, locations, onClose, onSave }) {
+// Known category codes — shown as suggestions, but any code can be typed;
+// new ones are just free text on the item, no schema change needed.
+const CATEGORY_SUGGESTIONS = [
+  { code: 'PCK', label: 'Packaging' },
+  { code: 'DAI', label: 'Dairy' },
+  { code: 'FZN', label: 'Frozen' },
+  { code: 'PHF', label: 'Fruit & Veg' },
+  { code: 'PTN', label: 'Protein' },
+];
+
+function CsvImportModal({ orgId, locations, onClose, onSave, defaultCategory = '' }) {
   const [locationId, setLocationId] = useState(locations[0]?.id || '');
+  const [categoryDefault, setCategoryDefault] = useState(defaultCategory);
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -580,6 +599,10 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
             reference_order_qty: parseFloat(keys['qty'] || keys['quantity'] || '0') || 0,
             uom:                 (keys['uom'] || keys['unit'] || 'units').toString().trim(),
             supplier:            (keys['supplier'] || '').toString().trim(),
+            supplier_code:       (keys['supplier code'] || keys['supplier_code'] || keys['product code'] || keys['code'] || '').toString().trim(),
+            category:            (keys['category'] || '').toString().trim(),
+            description:         (keys['description'] || '').toString().trim(),
+            units_per_carton:    parseFloat(keys['units per carton'] || keys['units_per_carton'] || keys['carton'] || '') || null,
           };
         }).filter(r => r.name);
 
@@ -597,7 +620,8 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
     if (!preview || !locationId) return;
     setImporting(true);
     try {
-      await db.bulkImportStockItems(orgId, locationId, preview);
+      const rows = preview.map(r => ({ ...r, category: r.category || categoryDefault || null }));
+      await db.bulkImportStockItems(orgId, locationId, rows);
       toast.success(`Imported ${preview.length} items — matched to existing SKUs where names already exist`);
       onSave();
       onClose();
@@ -624,13 +648,32 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
           <p className="text-xs text-gray-400 mt-1.5">Every row is assigned to this site. If an item with the same name already exists (e.g. uploaded for another site), it's reused — not duplicated.</p>
         </div>
 
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Default Category (optional)</label>
+          <input
+            list="category-suggestions"
+            value={categoryDefault}
+            onChange={e => setCategoryDefault(e.target.value)}
+            placeholder="e.g. PCK — applied to rows with no Category column"
+            className="input-base"
+          />
+          <datalist id="category-suggestions">
+            {CATEGORY_SUGGESTIONS.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+          </datalist>
+          <p className="text-xs text-gray-400 mt-1.5">Used for any row that doesn't have its own Category column — handy for uploading a whole single-category list at once.</p>
+        </div>
+
         <div className="rounded-xl p-3 text-xs space-y-1 border" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 6%, white)', borderColor: 'color-mix(in srgb, var(--primary) 18%, white)', color: 'var(--primary-dk)' }}>
           <p className="font-semibold">Expected columns:</p>
           <p>
             <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Item</code>{', '}
             <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Qty</code>{', '}
             <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>uOm</code>{', '}
-            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Supplier</code>
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Supplier</code>{', '}
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Category</code> <span className="opacity-70">(optional)</span>{', '}
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Supplier Code</code>{', '}
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Description</code>{', '}
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Units Per Carton</code> <span className="opacity-70">(all optional)</span>
           </p>
           <p className="opacity-80">SKU is assigned automatically — any SKU column in the file is ignored.</p>
         </div>
@@ -659,6 +702,8 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
                     <th className="text-left px-3 py-2 text-gray-500">Qty</th>
                     <th className="text-left px-3 py-2 text-gray-500">uOm</th>
                     <th className="text-left px-3 py-2 text-gray-500">Supplier</th>
+                    <th className="text-left px-3 py-2 text-gray-500">Category</th>
+                    <th className="text-left px-3 py-2 text-gray-500">Units/Ctn</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -668,6 +713,8 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
                       <td className="px-3 py-1.5 text-gray-600">{r.reference_order_qty}</td>
                       <td className="px-3 py-1.5 text-gray-600">{r.uom}</td>
                       <td className="px-3 py-1.5 text-gray-500">{r.supplier || '—'}</td>
+                      <td className="px-3 py-1.5 text-gray-500">{r.category || categoryDefault || '—'}</td>
+                      <td className="px-3 py-1.5 text-gray-500">{r.units_per_carton ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -700,7 +747,7 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
 
 // ── Items Tab ──────────────────────────────────────────────────────────────────
 
-const BLANK_ITEM = { name: '', category: '', uom: 'units' };
+const BLANK_ITEM = { name: '', category: '', uom: 'units', description: '', units_per_carton: '' };
 
 function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
   const [showForm, setShowForm] = useState(false);
@@ -721,7 +768,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
 
   function blankAssignments() {
     const initial = {};
-    locations.forEach(loc => { initial[loc.id] = { assigned: false, supplier: '', referenceOrderQty: 0 }; });
+    locations.forEach(loc => { initial[loc.id] = { assigned: false, supplier: '', supplierCode: '', referenceOrderQty: 0 }; });
     return initial;
   }
 
@@ -734,10 +781,16 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
 
   function openEdit(item) {
     setEditingItem(item);
-    setForm({ name: item.name, category: item.category || '', uom: item.uom || 'units' });
+    setForm({
+      name: item.name,
+      category: item.category || '',
+      uom: item.uom || 'units',
+      description: item.description || '',
+      units_per_carton: item.units_per_carton ?? '',
+    });
     const initial = blankAssignments();
     (sitesByItem.get(item.id) || []).forEach(s => {
-      initial[s.location_id] = { assigned: true, supplier: s.supplier || '', referenceOrderQty: s.reference_order_qty ?? 0 };
+      initial[s.location_id] = { assigned: true, supplier: s.supplier || '', supplierCode: s.supplier_code || '', referenceOrderQty: s.reference_order_qty ?? 0 };
     });
     setSiteAssignments(initial);
     setShowForm(true);
@@ -747,18 +800,23 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
     if (!form.name.trim()) { toast.error('Name is required'); return; }
     setSaving(true);
     try {
+      const payload = {
+        ...form,
+        description: form.description || null,
+        units_per_carton: form.units_per_carton === '' ? null : parseFloat(form.units_per_carton),
+      };
       let item = editingItem;
       if (editingItem) {
-        await db.updateStockItem(editingItem.id, form);
+        await db.updateStockItem(editingItem.id, payload);
       } else {
-        item = await db.createStockItem(orgId, form);
+        item = await db.createStockItem(orgId, payload);
       }
 
       const previouslyAssigned = editingItem ? new Set((sitesByItem.get(editingItem.id) || []).map(s => s.location_id)) : new Set();
       await Promise.all(locations.map(loc => {
         const a = siteAssignments[loc.id];
         if (a?.assigned) {
-          return db.assignItemToSite(orgId, item.id, loc.id, { supplier: a.supplier, referenceOrderQty: parseFloat(a.referenceOrderQty) || 0 });
+          return db.assignItemToSite(orgId, item.id, loc.id, { supplier: a.supplier, supplierCode: a.supplierCode, referenceOrderQty: parseFloat(a.referenceOrderQty) || 0 });
         } else if (previouslyAssigned.has(loc.id)) {
           return db.unassignItemFromSite(item.id, loc.id);
         }
@@ -826,6 +884,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                   </div>
                   <div className="text-xs text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
                     <span>{item.uom}</span>
+                    {item.units_per_carton && <span>· {item.units_per_carton}/carton</span>}
                     {itemSites.length === 0 ? (
                       <span className="text-amber-500">· not assigned to any site</span>
                     ) : itemSites.map(s => {
@@ -891,6 +950,26 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                 />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                <input
+                  type="text" value={form.description}
+                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  placeholder="Optional — supplier spec"
+                  className="input-base"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Units / Carton</label>
+                <input
+                  type="number" min="0" step="any" value={form.units_per_carton}
+                  onChange={e => setForm(f => ({ ...f, units_per_carton: e.target.value }))}
+                  placeholder="Optional"
+                  className="input-base"
+                />
+              </div>
+            </div>
 
             {locations.length === 0 ? (
               <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
@@ -901,7 +980,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                 <label className="block text-xs font-medium text-gray-700 mb-2">Sites carrying this item</label>
                 <div className="space-y-2">
                   {locations.map(loc => {
-                    const a = siteAssignments[loc.id] || { assigned: false, supplier: '', referenceOrderQty: 0 };
+                    const a = siteAssignments[loc.id] || { assigned: false, supplier: '', supplierCode: '', referenceOrderQty: 0 };
                     return (
                       <div
                         key={loc.id}
@@ -930,6 +1009,15 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                               />
                             </div>
                             <div>
+                              <span className="text-xs text-gray-500">Supplier Code</span>
+                              <input
+                                type="text" value={a.supplierCode}
+                                onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, supplierCode: e.target.value } }))}
+                                placeholder="Optional"
+                                className="input-base py-1.5"
+                              />
+                            </div>
+                            <div className="col-span-2">
                               <span className="text-xs text-gray-500">Reference Qty</span>
                               <input
                                 type="number" min="0" step="any" value={a.referenceOrderQty}
@@ -1167,6 +1255,7 @@ export default function StockApp({ user, org }) {
   const TABS = [
     { id: 'items',     label: 'Items',     Icon: Package },
     { id: 'stocktake', label: 'Stocktake', Icon: ClipboardList },
+    { id: 'packaging', label: 'Packaging', Icon: Box },
     { id: 'ordering',  label: 'Ordering',  Icon: ShoppingCart },
     { id: 'history',   label: 'History',   Icon: History },
     { id: 'locations', label: 'Locations', Icon: MapPin },
@@ -1239,6 +1328,19 @@ export default function StockApp({ user, org }) {
           onUpdateStatus={handleStatusUpdate}
           onUpdateOrderQty={handleOrderQtyUpdate}
           lastOrderedByKey={lastOrderedByKey}
+        />
+      )}
+      {activeTab === 'packaging' && (
+        <StocktakeTab
+          items={items}
+          sites={sites}
+          locations={activeLocations}
+          selectedLocationId={selectedLocationId}
+          onSelectLocation={setSelectedLocationId}
+          onUpdateStatus={handleStatusUpdate}
+          onUpdateOrderQty={handleOrderQtyUpdate}
+          lastOrderedByKey={lastOrderedByKey}
+          pinnedCategory="PCK"
         />
       )}
       {activeTab === 'ordering' && (
