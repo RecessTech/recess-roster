@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
-  ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart,
+  ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -16,6 +16,41 @@ const STATUS_CONFIG = {
   order_moq: { label: 'Order if MOQ Required',  bg: 'bg-purple-100',text: 'text-purple-700',border: 'border-purple-200',dot: 'bg-purple-500'},
   in_stock:  { label: 'In Stock',               bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200', dot: 'bg-green-500' },
 };
+
+// ── Date helpers ──────────────────────────────────────────────────────────────
+
+function daysAgo(dateStr) {
+  if (!dateStr) return null;
+  const then = new Date(dateStr.slice(0, 10) + 'T00:00:00');
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((today - then) / 86400000);
+}
+
+function relativeDayLabel(days) {
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  return `${days}d ago`;
+}
+
+// Prefers a still-live "ordered today, not yet archived" flag over the
+// archived history, since the archive won't have today's entry until the
+// midnight job runs.
+function lastOrderedLabel(row, lastOrderedByKey) {
+  if (row.ordered && row.ordered_at) {
+    return `Ordered ${relativeDayLabel(daysAgo(row.ordered_at))}`;
+  }
+  const lastDate = lastOrderedByKey[`${row.item_id}:${row.location_id}`];
+  if (!lastDate) return null;
+  return `Last ordered ${relativeDayLabel(daysAgo(lastDate))}`;
+}
+
+function formatHistoryDate(dateStr) {
+  const days = daysAgo(dateStr);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return new Date(dateStr.slice(0, 10) + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+}
 
 // ── Shared bits ───────────────────────────────────────────────────────────────
 
@@ -140,7 +175,7 @@ function StatusDropdown({ value, onChange }) {
 // Pure flagging — status only. Order qty and marking things as ordered
 // live in the Ordering tab, which works off whatever gets flagged here.
 
-function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus }) {
+function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, lastOrderedByKey }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
 
   const siteRows = useMemo(() => {
@@ -200,9 +235,10 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
               <table className="w-full text-sm table-fixed">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/80">
-                    <th className="w-1/2 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
-                    <th className="w-1/4 px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Reference Qty</th>
-                    <th className="w-1/4 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="w-[38%] px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
+                    <th className="w-[19%] px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Reference Qty</th>
+                    <th className="w-[24%] px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="w-[19%] px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Ordered</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -220,6 +256,9 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                           value={row.current_status}
                           onChange={status => onUpdateStatus(row.id, status)}
                         />
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs text-gray-400">
+                        {lastOrderedLabel(row, lastOrderedByKey) || '—'}
                       </td>
                     </tr>
                   ))}
@@ -371,6 +410,91 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
             </div>
           </div>
         ))
+      )}
+    </div>
+  );
+}
+
+// ── History Tab ───────────────────────────────────────────────────────────────
+// Read-only record of what got archived by the midnight job — grouped by
+// the day it was ordered, then by supplier within that day.
+
+function HistoryTab({ items, locations, orderHistory, selectedLocationId, onSelectLocation }) {
+  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+
+  const locationRows = useMemo(() => {
+    return orderHistory
+      .filter(h => h.location_id === selectedLocationId)
+      .map(h => ({ ...h, item: itemById.get(h.item_id) }))
+      .filter(h => h.item);
+  }, [orderHistory, selectedLocationId, itemById]);
+
+  const groupedByDate = useMemo(() => {
+    const groups = {};
+    for (const row of locationRows) {
+      (groups[row.ordered_date] = groups[row.ordered_date] || []).push(row);
+    }
+    return Object.entries(groups).sort(([a], [b]) => b.localeCompare(a));
+  }, [locationRows]);
+
+  if (locations.length === 0) {
+    return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
+  }
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
+
+      {groupedByDate.length === 0 ? (
+        <EmptyState
+          Icon={History}
+          title="No order history yet for this site"
+          hint="Items ticked as ordered are archived here automatically each night."
+        />
+      ) : (
+        groupedByDate.map(([date, rows]) => {
+          const bySupplier = {};
+          for (const row of rows) {
+            const supplier = row.supplier || 'No Supplier';
+            (bySupplier[supplier] = bySupplier[supplier] || []).push(row);
+          }
+          return (
+            <div key={date}>
+              <h3 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                <History size={14} className="text-gray-400" />
+                {formatHistoryDate(date)}
+                <span className="text-xs font-normal text-gray-400">· {rows.length} item{rows.length !== 1 ? 's' : ''} ordered</span>
+              </h3>
+              <div className="card overflow-hidden divide-y divide-gray-50">
+                {Object.entries(bySupplier).sort(([a], [b]) => a.localeCompare(b)).map(([supplier, supplierRows]) => (
+                  <div key={supplier} className="px-4 py-3">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <Truck size={11} />
+                      {supplier}
+                    </p>
+                    <div className="space-y-1.5">
+                      {supplierRows.map(row => {
+                        const sc = STATUS_CONFIG[row.status_at_order] || STATUS_CONFIG.in_stock;
+                        return (
+                          <div key={row.id} className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${sc.dot}`} />
+                              <span className="text-gray-800 truncate">{row.item.name}</span>
+                              <span className="text-xs text-gray-400 flex-shrink-0">{row.item.sku}</span>
+                            </div>
+                            <span className="text-gray-500 font-medium flex-shrink-0 ml-3">
+                              {row.order_qty ?? '—'} {row.item.uom}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })
       )}
     </div>
   );
@@ -909,6 +1033,7 @@ export default function StockApp({ user, org }) {
   const [locations, setLocations] = useState([]);
   const [items, setItems] = useState([]);
   const [sites, setSites] = useState([]);
+  const [orderHistory, setOrderHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedLocationId, setSelectedLocationId] = useState(null);
 
@@ -918,14 +1043,16 @@ export default function StockApp({ user, org }) {
     if (!org?.id) return;
     setLoading(true);
     try {
-      const [locs, stockItems, itemSites] = await Promise.all([
+      const [locs, stockItems, itemSites, history] = await Promise.all([
         db.getLocations(org.id),
         db.getStockItems(org.id),
         db.getStockItemSites(org.id),
+        db.getStockOrderHistory(org.id),
       ]);
       setLocations(locs);
       setItems(stockItems);
       setSites(itemSites);
+      setOrderHistory(history);
       setSelectedLocationId(prev => prev && locs.some(l => l.id === prev) ? prev : (locs.find(l => l.active)?.id || locs[0]?.id || null));
     } catch (err) {
       toast.error('Failed to load stock data');
@@ -935,6 +1062,17 @@ export default function StockApp({ user, org }) {
   }
 
   const activeLocations = useMemo(() => locations.filter(l => l.active), [locations]);
+
+  // Most recent ordered_date per (item, location) — orderHistory is
+  // already sorted newest-first, so the first hit per key wins.
+  const lastOrderedByKey = useMemo(() => {
+    const map = {};
+    for (const row of orderHistory) {
+      const key = `${row.item_id}:${row.location_id}`;
+      if (!(key in map)) map[key] = row.ordered_date;
+    }
+    return map;
+  }, [orderHistory]);
 
   async function handleStatusUpdate(siteRowId, status) {
     setSites(prev => prev.map(s => s.id === siteRowId ? { ...s, current_status: status } : s));
@@ -973,6 +1111,7 @@ export default function StockApp({ user, org }) {
     { id: 'items',     label: 'Items',     Icon: Package },
     { id: 'stocktake', label: 'Stocktake', Icon: ClipboardList },
     { id: 'ordering',  label: 'Ordering',  Icon: ShoppingCart },
+    { id: 'history',   label: 'History',   Icon: History },
     { id: 'locations', label: 'Locations', Icon: MapPin },
   ];
 
@@ -1041,6 +1180,7 @@ export default function StockApp({ user, org }) {
           selectedLocationId={selectedLocationId}
           onSelectLocation={setSelectedLocationId}
           onUpdateStatus={handleStatusUpdate}
+          lastOrderedByKey={lastOrderedByKey}
         />
       )}
       {activeTab === 'ordering' && (
@@ -1052,6 +1192,15 @@ export default function StockApp({ user, org }) {
           onSelectLocation={setSelectedLocationId}
           onUpdateOrderQty={handleOrderQtyUpdate}
           onUpdateOrdered={handleOrderedUpdate}
+        />
+      )}
+      {activeTab === 'history' && (
+        <HistoryTab
+          items={items}
+          locations={activeLocations}
+          orderHistory={orderHistory}
+          selectedLocationId={selectedLocationId}
+          onSelectLocation={setSelectedLocationId}
         />
       )}
       {activeTab === 'locations' && (
