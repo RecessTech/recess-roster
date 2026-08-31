@@ -242,11 +242,87 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [siteRows]);
 
+  // Balance the two columns by total item count, not just alternating —
+  // a plain left/right split leaves a huge gap next to a short supplier
+  // when its row-partner (e.g. Bidfood) has way more items.
+  const [leftColumn, rightColumn] = useMemo(() => {
+    const left = [];
+    const right = [];
+    let leftCount = 0;
+    let rightCount = 0;
+    for (const entry of grouped) {
+      const rowCount = entry[1].length;
+      if (leftCount <= rightCount) { left.push(entry); leftCount += rowCount; }
+      else { right.push(entry); rightCount += rowCount; }
+    }
+    return [left, right];
+  }, [grouped]);
+
   const noStock  = siteRows.filter(r => r.current_status === 'no_stock').length;
   const lowStock = siteRows.filter(r => r.current_status === 'low_stock').length;
 
   if (locations.length === 0) {
     return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
+  }
+
+  function renderSupplierGroup([supplier, rows]) {
+    const isCollapsed = !!collapsed[supplier];
+    return (
+      <div key={supplier}>
+        <button
+          onClick={() => toggleSupplier(supplier)}
+          className="w-full flex items-center gap-1.5 mb-2 group"
+        >
+          <ChevronDown size={13} className={`text-gray-400 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+          <Truck size={12} className="text-gray-400" />
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider group-hover:text-gray-700 transition-colors">
+            {supplier}
+          </h3>
+          <span className="text-xs text-gray-400">· {rows.length} item{rows.length !== 1 ? 's' : ''}</span>
+        </button>
+        {!isCollapsed && (
+        <div className="card overflow-hidden">
+          <table className="w-full text-sm table-fixed">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50/80">
+                <th className="w-[46%] px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
+                <th className="w-[22%] px-3 py-2 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Qty</th>
+                <th className="w-[32%] px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => (
+                <tr key={row.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors">
+                  <td className="px-3 py-2">
+                    <div className="font-medium text-gray-900 truncate">{row.item.name}</div>
+                    <div className="text-xs text-gray-400 truncate">
+                      {row.item.sku} · {row.item.uom}
+                      {lastOrderedLabel(row, lastOrderedByKey) && ` · ${lastOrderedLabel(row, lastOrderedByKey)}`}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <div className="text-[10px] text-gray-400 leading-none mb-1">ref {row.reference_order_qty}</div>
+                    <EditableQty
+                      value={row.order_qty ?? row.reference_order_qty ?? 0}
+                      isSet={row.order_qty !== null && row.order_qty !== undefined}
+                      unit={row.item.uom}
+                      onCommit={val => onUpdateOrderQty(row.id, val)}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <StatusDropdown
+                      value={row.current_status}
+                      onChange={status => onUpdateStatus(row.id, status)}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -273,66 +349,9 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
       {siteRows.length === 0 ? (
         <EmptyState Icon={Package} title="No items assigned to this site yet" hint="Add or upload some in the Items tab." />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-          {grouped.map(([supplier, rows]) => {
-            const isCollapsed = !!collapsed[supplier];
-            return (
-            <div key={supplier}>
-              <button
-                onClick={() => toggleSupplier(supplier)}
-                className="w-full flex items-center gap-1.5 mb-2 group"
-              >
-                <ChevronDown size={13} className={`text-gray-400 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
-                <Truck size={12} className="text-gray-400" />
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider group-hover:text-gray-700 transition-colors">
-                  {supplier}
-                </h3>
-                <span className="text-xs text-gray-400">· {rows.length} item{rows.length !== 1 ? 's' : ''}</span>
-              </button>
-              {!isCollapsed && (
-              <div className="card overflow-hidden">
-                <table className="w-full text-sm table-fixed">
-                  <thead>
-                    <tr className="border-b border-gray-100 bg-gray-50/80">
-                      <th className="w-[46%] px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
-                      <th className="w-[22%] px-3 py-2 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Qty</th>
-                      <th className="w-[32%] px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map(row => (
-                      <tr key={row.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors">
-                        <td className="px-3 py-2">
-                          <div className="font-medium text-gray-900 truncate">{row.item.name}</div>
-                          <div className="text-xs text-gray-400 truncate">
-                            {row.item.sku} · {row.item.uom}
-                            {lastOrderedLabel(row, lastOrderedByKey) && ` · ${lastOrderedLabel(row, lastOrderedByKey)}`}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <div className="text-[10px] text-gray-400 leading-none mb-1">ref {row.reference_order_qty}</div>
-                          <EditableQty
-                            value={row.order_qty ?? row.reference_order_qty ?? 0}
-                            isSet={row.order_qty !== null && row.order_qty !== undefined}
-                            unit={row.item.uom}
-                            onCommit={val => onUpdateOrderQty(row.id, val)}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <StatusDropdown
-                            value={row.current_status}
-                            onChange={status => onUpdateStatus(row.id, status)}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              )}
-            </div>
-            );
-          })}
+        <div className="flex flex-col lg:flex-row gap-4 items-start">
+          <div className="flex-1 min-w-0 w-full space-y-4">{leftColumn.map(renderSupplierGroup)}</div>
+          <div className="flex-1 min-w-0 w-full space-y-4">{rightColumn.map(renderSupplierGroup)}</div>
         </div>
       )}
     </div>
