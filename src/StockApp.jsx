@@ -83,6 +83,52 @@ function LocationSwitcher({ locations, selectedLocationId, onSelectLocation }) {
   );
 }
 
+// Click-to-edit order qty — used on both Stocktake and Ordering, always
+// the same stock_item_sites.order_qty field, so editing it in either
+// place updates the same value. isSet distinguishes "explicitly set"
+// from "falling back to the reference qty" with a subtle highlight.
+function EditableQty({ value, isSet, unit, onCommit }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  function start() {
+    setDraft(String(value));
+    setEditing(true);
+  }
+
+  function commit() {
+    setEditing(false);
+    const parsed = parseFloat(draft);
+    if (isNaN(parsed) || parsed < 0) return;
+    if (parsed === value) return;
+    onCommit(parsed);
+  }
+
+  if (editing) {
+    return (
+      <input
+        type="number" min="0" step="any" autoFocus
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditing(false); }}
+        className="input-base w-20 text-center px-2 py-1"
+      />
+    );
+  }
+
+  return (
+    <button
+      onClick={start}
+      className={`w-20 inline-flex items-center justify-center px-2 py-1 rounded-lg font-semibold transition-colors hover:bg-gray-100 ${isSet ? 'text-gray-900' : 'text-gray-500'}`}
+      style={isSet ? { backgroundColor: 'color-mix(in srgb, var(--primary) 10%, white)' } : undefined}
+      title="Click to set how much to order"
+    >
+      {value} {unit}
+    </button>
+  );
+}
+
 // ── Modal ─────────────────────────────────────────────────────────────────────
 
 function Modal({ title, onClose, children, maxWidth = 'max-w-md' }) {
@@ -175,7 +221,7 @@ function StatusDropdown({ value, onChange }) {
 // Pure flagging — status only. Order qty and marking things as ordered
 // live in the Ordering tab, which works off whatever gets flagged here.
 
-function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, lastOrderedByKey }) {
+function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, onUpdateOrderQty, lastOrderedByKey }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
   const [collapsed, setCollapsed] = useState({});
   const toggleSupplier = supplier => setCollapsed(c => ({ ...c, [supplier]: !c[supplier] }));
@@ -247,10 +293,11 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
               <table className="w-full text-sm table-fixed">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/80">
-                    <th className="w-[38%] px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
-                    <th className="w-[19%] px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Reference Qty</th>
-                    <th className="w-[24%] px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="w-[19%] px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Ordered</th>
+                    <th className="w-[30%] px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
+                    <th className="w-[14%] px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Reference Qty</th>
+                    <th className="w-[14%] px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Order Qty</th>
+                    <th className="w-[22%] px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="w-[20%] px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Ordered</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -262,6 +309,14 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                       </td>
                       <td className="px-4 py-3 text-right text-gray-700">
                         {row.reference_order_qty} {row.item.uom}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <EditableQty
+                          value={row.order_qty ?? row.reference_order_qty ?? 0}
+                          isSet={row.order_qty !== null && row.order_qty !== undefined}
+                          unit={row.item.uom}
+                          onCommit={val => onUpdateOrderQty(row.id, val)}
+                        />
                       </td>
                       <td className="px-4 py-3">
                         <StatusDropdown
@@ -295,8 +350,6 @@ const NEEDS_ORDER_STATUSES = ['no_stock', 'low_stock', 'order_moq'];
 
 function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateOrderQty, onUpdateOrdered }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
-  const [editingRowId, setEditingRowId] = useState(null);
-  const [qtyDraft, setQtyDraft] = useState('');
 
   const siteRows = useMemo(() => {
     return sites
@@ -315,19 +368,6 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
   }, [siteRows]);
 
   const orderedCount = siteRows.filter(r => r.ordered).length;
-
-  function startQtyEdit(row) {
-    setEditingRowId(row.id);
-    setQtyDraft(String(row.order_qty ?? row.reference_order_qty ?? 0));
-  }
-
-  function commitQtyEdit(row) {
-    setEditingRowId(null);
-    const parsed = parseFloat(qtyDraft);
-    if (isNaN(parsed) || parsed < 0) return;
-    if ((row.order_qty ?? row.reference_order_qty ?? 0) === parsed) return;
-    onUpdateOrderQty(row.id, parsed);
-  }
 
   if (locations.length === 0) {
     return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
@@ -370,7 +410,6 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
                 </thead>
                 <tbody>
                   {rows.map(row => {
-                    const isEditing = editingRowId === row.id;
                     const qty = row.order_qty ?? row.reference_order_qty ?? 0;
                     const sc = STATUS_CONFIG[row.current_status];
                     return (
@@ -386,25 +425,12 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
                           </span>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          {isEditing ? (
-                            <input
-                              type="number" min="0" step="any" autoFocus
-                              value={qtyDraft}
-                              onChange={e => setQtyDraft(e.target.value)}
-                              onBlur={() => commitQtyEdit(row)}
-                              onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditingRowId(null); }}
-                              className="input-base w-20 text-center px-2 py-1"
-                            />
-                          ) : (
-                            <button
-                              onClick={() => startQtyEdit(row)}
-                              className={`w-20 inline-flex items-center justify-center px-2 py-1 rounded-lg font-semibold transition-colors hover:bg-gray-100 ${row.order_qty !== null && row.order_qty !== undefined ? 'text-gray-900' : 'text-gray-500'}`}
-                              style={row.order_qty !== null && row.order_qty !== undefined ? { backgroundColor: 'color-mix(in srgb, var(--primary) 10%, white)' } : undefined}
-                              title="Click to set how much to order"
-                            >
-                              {qty} {row.item.uom}
-                            </button>
-                          )}
+                          <EditableQty
+                            value={qty}
+                            isSet={row.order_qty !== null && row.order_qty !== undefined}
+                            unit={row.item.uom}
+                            onCommit={val => onUpdateOrderQty(row.id, val)}
+                          />
                         </td>
                         <td className="px-4 py-3 text-center">
                           <input
@@ -1194,6 +1220,7 @@ export default function StockApp({ user, org }) {
           selectedLocationId={selectedLocationId}
           onSelectLocation={setSelectedLocationId}
           onUpdateStatus={handleStatusUpdate}
+          onUpdateOrderQty={handleOrderQtyUpdate}
           lastOrderedByKey={lastOrderedByKey}
         />
       )}
