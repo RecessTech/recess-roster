@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
-  ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History, Box, ArrowLeftRight,
+  ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History, Box, ArrowLeftRight, Search,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -80,6 +80,29 @@ function LocationSwitcher({ locations, selectedLocationId, onSelectLocation }) {
           {loc.name}
         </button>
       ))}
+    </div>
+  );
+}
+
+function SearchInput({ value, onChange, placeholder = 'Search…' }) {
+  return (
+    <div className="relative w-full sm:w-64">
+      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+      <input
+        type="text"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="input-base pl-9"
+      />
+      {value && (
+        <button
+          onClick={() => onChange('')}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"
+        >
+          <X size={13} />
+        </button>
+      )}
     </div>
   );
 }
@@ -225,18 +248,21 @@ function StatusDropdown({ value, onChange }) {
 function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, onUpdateOrderQty, lastOrderedByKey, pinnedCategory }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
   const [collapsed, setCollapsed] = useState({});
+  const [search, setSearch] = useState('');
   const toggleSupplier = supplier => setCollapsed(c => ({ ...c, [supplier]: !c[supplier] }));
 
   // pinnedCategory scopes this same view to one category (e.g. the
   // Packaging tab) without needing a separate data model or component —
   // items still show up in the unfiltered Stocktake tab too.
   const siteRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
     return sites
       .filter(s => s.location_id === selectedLocationId)
       .map(s => ({ ...s, item: itemById.get(s.item_id) }))
       .filter(r => r.item)
-      .filter(r => !pinnedCategory || r.item.category === pinnedCategory);
-  }, [sites, selectedLocationId, itemById, pinnedCategory]);
+      .filter(r => !pinnedCategory || r.item.category === pinnedCategory)
+      .filter(r => !q || r.item.name.toLowerCase().includes(q) || (r.item.sku || '').toLowerCase().includes(q));
+  }, [sites, selectedLocationId, itemById, pinnedCategory, search]);
 
   const grouped = useMemo(() => {
     const groups = {};
@@ -332,7 +358,10 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
 
   return (
     <div className="space-y-4 animate-fade-in">
-      <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
+        <SearchInput value={search} onChange={setSearch} placeholder="Search items or SKU…" />
+      </div>
 
       {noStock > 0 && (
         <div className="flex items-center gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
@@ -353,9 +382,9 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
 
       {siteRows.length === 0 ? (
         <EmptyState
-          Icon={Package}
-          title={pinnedCategory ? `No ${pinnedCategory} items assigned to this site yet` : 'No items assigned to this site yet'}
-          hint="Add or upload some in the Items tab."
+          Icon={search ? Search : Package}
+          title={search ? `No items match "${search}"` : (pinnedCategory ? `No ${pinnedCategory} items assigned to this site yet` : 'No items assigned to this site yet')}
+          hint={search ? 'Try a different name or SKU.' : 'Add or upload some in the Items tab.'}
         />
       ) : (
         <div className="flex flex-col lg:flex-row gap-4 items-start">
@@ -865,6 +894,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
   const [form, setForm] = useState(BLANK_ITEM);
   const [siteAssignments, setSiteAssignments] = useState({}); // locationId -> { assigned, supplier, referenceOrderQty }
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
 
   const sitesByItem = useMemo(() => {
     const map = new Map();
@@ -874,6 +904,16 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
     });
     return map;
   }, [sites]);
+
+  const filteredItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(i =>
+      i.name.toLowerCase().includes(q) ||
+      (i.sku || '').toLowerCase().includes(q) ||
+      (i.category || '').toLowerCase().includes(q)
+    );
+  }, [items, search]);
 
   function blankAssignments() {
     const initial = {};
@@ -956,8 +996,14 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
 
   return (
     <div className="space-y-4 animate-fade-in">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <p className="text-sm text-gray-500">{items.length} item{items.length !== 1 ? 's' : ''}</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <p className="text-sm text-gray-500 whitespace-nowrap">
+            {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
+            {search && filteredItems.length !== items.length && <span className="text-gray-400"> of {items.length}</span>}
+          </p>
+          <SearchInput value={search} onChange={setSearch} placeholder="Search items, SKU, category…" />
+        </div>
         <div className="flex gap-2">
           <button
             onClick={() => setShowCsvImport(true)}
@@ -977,11 +1023,15 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
         </div>
       </div>
 
-      {items.length === 0 ? (
-        <EmptyState Icon={Package} title="No items yet" hint="Add one or bulk-upload a CSV." />
+      {filteredItems.length === 0 ? (
+        <EmptyState
+          Icon={search ? Search : Package}
+          title={search ? `No items match "${search}"` : 'No items yet'}
+          hint={search ? 'Try a different name, SKU, or category.' : 'Add one or bulk-upload a CSV.'}
+        />
       ) : (
         <div className="card overflow-hidden divide-y divide-gray-50">
-          {items.map(item => {
+          {filteredItems.map(item => {
             const itemSites = sitesByItem.get(item.id) || [];
             return (
               <div key={item.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/70 transition-colors">
