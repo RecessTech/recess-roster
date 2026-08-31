@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
-  ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History,
+  ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History, Box,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -221,17 +221,21 @@ function StatusDropdown({ value, onChange }) {
 // Pure flagging — status only. Order qty and marking things as ordered
 // live in the Ordering tab, which works off whatever gets flagged here.
 
-function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, onUpdateOrderQty, lastOrderedByKey }) {
+function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, onUpdateOrderQty, lastOrderedByKey, pinnedCategory }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
   const [collapsed, setCollapsed] = useState({});
   const toggleSupplier = supplier => setCollapsed(c => ({ ...c, [supplier]: !c[supplier] }));
 
+  // pinnedCategory scopes this same view to one category (e.g. the
+  // Packaging tab) without needing a separate data model or component —
+  // items still show up in the unfiltered Stocktake tab too.
   const siteRows = useMemo(() => {
     return sites
       .filter(s => s.location_id === selectedLocationId)
       .map(s => ({ ...s, item: itemById.get(s.item_id) }))
-      .filter(r => r.item);
-  }, [sites, selectedLocationId, itemById]);
+      .filter(r => r.item)
+      .filter(r => !pinnedCategory || r.item.category === pinnedCategory);
+  }, [sites, selectedLocationId, itemById, pinnedCategory]);
 
   const grouped = useMemo(() => {
     const groups = {};
@@ -347,7 +351,11 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
       )}
 
       {siteRows.length === 0 ? (
-        <EmptyState Icon={Package} title="No items assigned to this site yet" hint="Add or upload some in the Items tab." />
+        <EmptyState
+          Icon={Package}
+          title={pinnedCategory ? `No ${pinnedCategory} items assigned to this site yet` : 'No items assigned to this site yet'}
+          hint="Add or upload some in the Items tab."
+        />
       ) : (
         <div className="flex flex-col lg:flex-row gap-4 items-start">
           <div className="flex-1 min-w-0 w-full space-y-4">{leftColumn.map(renderSupplierGroup)}</div>
@@ -559,8 +567,19 @@ function HistoryTab({ items, locations, orderHistory, selectedLocationId, onSele
 
 // ── CSV Import Modal ───────────────────────────────────────────────────────────
 
-function CsvImportModal({ orgId, locations, onClose, onSave }) {
+// Known category codes — shown as suggestions, but any code can be typed;
+// new ones are just free text on the item, no schema change needed.
+const CATEGORY_SUGGESTIONS = [
+  { code: 'PCK', label: 'Packaging' },
+  { code: 'DAI', label: 'Dairy' },
+  { code: 'FZN', label: 'Frozen' },
+  { code: 'PHF', label: 'Fruit & Veg' },
+  { code: 'PTN', label: 'Protein' },
+];
+
+function CsvImportModal({ orgId, locations, onClose, onSave, defaultCategory = '' }) {
   const [locationId, setLocationId] = useState(locations[0]?.id || '');
+  const [categoryDefault, setCategoryDefault] = useState(defaultCategory);
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -580,6 +599,7 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
             reference_order_qty: parseFloat(keys['qty'] || keys['quantity'] || '0') || 0,
             uom:                 (keys['uom'] || keys['unit'] || 'units').toString().trim(),
             supplier:            (keys['supplier'] || '').toString().trim(),
+            category:            (keys['category'] || '').toString().trim(),
           };
         }).filter(r => r.name);
 
@@ -597,7 +617,8 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
     if (!preview || !locationId) return;
     setImporting(true);
     try {
-      await db.bulkImportStockItems(orgId, locationId, preview);
+      const rows = preview.map(r => ({ ...r, category: r.category || categoryDefault || null }));
+      await db.bulkImportStockItems(orgId, locationId, rows);
       toast.success(`Imported ${preview.length} items — matched to existing SKUs where names already exist`);
       onSave();
       onClose();
@@ -624,13 +645,29 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
           <p className="text-xs text-gray-400 mt-1.5">Every row is assigned to this site. If an item with the same name already exists (e.g. uploaded for another site), it's reused — not duplicated.</p>
         </div>
 
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Default Category (optional)</label>
+          <input
+            list="category-suggestions"
+            value={categoryDefault}
+            onChange={e => setCategoryDefault(e.target.value)}
+            placeholder="e.g. PCK — applied to rows with no Category column"
+            className="input-base"
+          />
+          <datalist id="category-suggestions">
+            {CATEGORY_SUGGESTIONS.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+          </datalist>
+          <p className="text-xs text-gray-400 mt-1.5">Used for any row that doesn't have its own Category column — handy for uploading a whole single-category list at once.</p>
+        </div>
+
         <div className="rounded-xl p-3 text-xs space-y-1 border" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 6%, white)', borderColor: 'color-mix(in srgb, var(--primary) 18%, white)', color: 'var(--primary-dk)' }}>
           <p className="font-semibold">Expected columns:</p>
           <p>
             <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Item</code>{', '}
             <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Qty</code>{', '}
             <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>uOm</code>{', '}
-            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Supplier</code>
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Supplier</code>{', '}
+            <code className="px-1 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 14%, white)' }}>Category</code> <span className="opacity-70">(optional)</span>
           </p>
           <p className="opacity-80">SKU is assigned automatically — any SKU column in the file is ignored.</p>
         </div>
@@ -659,6 +696,7 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
                     <th className="text-left px-3 py-2 text-gray-500">Qty</th>
                     <th className="text-left px-3 py-2 text-gray-500">uOm</th>
                     <th className="text-left px-3 py-2 text-gray-500">Supplier</th>
+                    <th className="text-left px-3 py-2 text-gray-500">Category</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -668,6 +706,7 @@ function CsvImportModal({ orgId, locations, onClose, onSave }) {
                       <td className="px-3 py-1.5 text-gray-600">{r.reference_order_qty}</td>
                       <td className="px-3 py-1.5 text-gray-600">{r.uom}</td>
                       <td className="px-3 py-1.5 text-gray-500">{r.supplier || '—'}</td>
+                      <td className="px-3 py-1.5 text-gray-500">{r.category || categoryDefault || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1167,6 +1206,7 @@ export default function StockApp({ user, org }) {
   const TABS = [
     { id: 'items',     label: 'Items',     Icon: Package },
     { id: 'stocktake', label: 'Stocktake', Icon: ClipboardList },
+    { id: 'packaging', label: 'Packaging', Icon: Box },
     { id: 'ordering',  label: 'Ordering',  Icon: ShoppingCart },
     { id: 'history',   label: 'History',   Icon: History },
     { id: 'locations', label: 'Locations', Icon: MapPin },
@@ -1239,6 +1279,19 @@ export default function StockApp({ user, org }) {
           onUpdateStatus={handleStatusUpdate}
           onUpdateOrderQty={handleOrderQtyUpdate}
           lastOrderedByKey={lastOrderedByKey}
+        />
+      )}
+      {activeTab === 'packaging' && (
+        <StocktakeTab
+          items={items}
+          sites={sites}
+          locations={activeLocations}
+          selectedLocationId={selectedLocationId}
+          onSelectLocation={setSelectedLocationId}
+          onUpdateStatus={handleStatusUpdate}
+          onUpdateOrderQty={handleOrderQtyUpdate}
+          lastOrderedByKey={lastOrderedByKey}
+          pinnedCategory="PCK"
         />
       )}
       {activeTab === 'ordering' && (
