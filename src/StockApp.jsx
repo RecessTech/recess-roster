@@ -177,6 +177,8 @@ function StatusDropdown({ value, onChange }) {
 
 function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, lastOrderedByKey }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+  const [collapsed, setCollapsed] = useState({});
+  const toggleSupplier = supplier => setCollapsed(c => ({ ...c, [supplier]: !c[supplier] }));
 
   const siteRows = useMemo(() => {
     return sites
@@ -225,12 +227,22 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
       {siteRows.length === 0 ? (
         <EmptyState Icon={Package} title="No items assigned to this site yet" hint="Add or upload some in the Items tab." />
       ) : (
-        grouped.map(([supplier, rows]) => (
+        grouped.map(([supplier, rows]) => {
+          const isCollapsed = !!collapsed[supplier];
+          return (
           <div key={supplier}>
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <button
+              onClick={() => toggleSupplier(supplier)}
+              className="w-full flex items-center gap-1.5 mb-2 group"
+            >
+              <ChevronDown size={13} className={`text-gray-400 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
               <Truck size={12} className="text-gray-400" />
-              {supplier}
-            </h3>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider group-hover:text-gray-700 transition-colors">
+                {supplier}
+              </h3>
+              <span className="text-xs text-gray-400">· {rows.length} item{rows.length !== 1 ? 's' : ''}</span>
+            </button>
+            {!isCollapsed && (
             <div className="card overflow-hidden">
               <table className="w-full text-sm table-fixed">
                 <thead>
@@ -265,8 +277,10 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                 </tbody>
               </table>
             </div>
+            )}
           </div>
-        ))
+          );
+        })
       )}
     </div>
   );
