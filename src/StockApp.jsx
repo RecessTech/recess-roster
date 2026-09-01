@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
   ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History, Box, ArrowLeftRight, Search,
+  TrendingUp, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -36,14 +37,29 @@ function relativeDayLabel(days) {
 
 // Prefers a still-live "ordered today, not yet archived" flag over the
 // archived history, since the archive won't have today's entry until the
-// midnight job runs.
-function lastOrderedLabel(row, lastOrderedByKey) {
+// midnight job runs. Returns { label, days, never } so callers can both
+// display and color-code by staleness (used on Stocktake and Insights).
+function lastOrderedInfo(row, lastOrderedByKey) {
   if (row.ordered && row.ordered_at) {
-    return `Ordered ${relativeDayLabel(daysAgo(row.ordered_at))}`;
+    const days = daysAgo(row.ordered_at);
+    return { label: `Ordered ${relativeDayLabel(days)}`, days, never: false };
   }
   const lastDate = lastOrderedByKey[`${row.item_id}:${row.location_id}`];
-  if (!lastDate) return null;
-  return `Last ordered ${relativeDayLabel(daysAgo(lastDate))}`;
+  if (!lastDate) return { label: 'Never ordered', days: null, never: true };
+  const days = daysAgo(lastDate);
+  return { label: `Last ordered ${relativeDayLabel(days)}`, days, never: false };
+}
+
+const LAST_ORDERED_TONE_CLASSES = {
+  fresh: 'bg-gray-100 text-gray-500',
+  warn:  'bg-amber-50 text-amber-600',
+  stale: 'bg-red-50 text-red-600',
+};
+
+function lastOrderedTone(info) {
+  if (info.never || info.days >= 14) return 'stale';
+  if (info.days >= 7) return 'warn';
+  return 'fresh';
 }
 
 function formatHistoryDate(dateStr) {
@@ -322,14 +338,17 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => (
+              {rows.map(row => {
+                const info = lastOrderedInfo(row, lastOrderedByKey);
+                const tone = lastOrderedTone(info);
+                return (
                 <tr key={row.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors">
                   <td className="px-3 py-2">
                     <div className="font-medium text-gray-900 truncate">{row.item.name}</div>
-                    <div className="text-xs text-gray-400 truncate">
-                      {row.item.sku} · {row.item.uom}
-                      {lastOrderedLabel(row, lastOrderedByKey) && ` · ${lastOrderedLabel(row, lastOrderedByKey)}`}
-                    </div>
+                    <div className="text-xs text-gray-400 truncate mb-1">{row.item.sku} · {row.item.uom}</div>
+                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${LAST_ORDERED_TONE_CLASSES[tone]}`}>
+                      {info.label}
+                    </span>
                   </td>
                   <td className="px-3 py-2 text-center">
                     <div className="text-[10px] text-gray-400 leading-none mb-1">ref {row.reference_order_qty}</div>
@@ -347,7 +366,8 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                     />
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -699,6 +719,188 @@ function HistoryTab({ items, locations, orderHistory, selectedLocationId, onSele
           );
         })
       )}
+    </div>
+  );
+}
+
+// ── Insights Tab ─────────────────────────────────────────────────────────────
+// Two views built purely from stock_order_history (no new schema): which
+// items haven't been ordered in a while, and per-SKU volumes for a given
+// week — both scoped to the selected site, matching how ordering itself
+// is site-scoped.
+
+function getWeekStart(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0 Sun .. 6 Sat
+  const diff = (day === 0 ? -6 : 1) - day; // back to Monday
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+function toISODate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+function formatWeekRange(start) {
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  const opts = { day: 'numeric', month: 'short' };
+  return `${start.toLocaleDateString('en-AU', opts)} – ${end.toLocaleDateString('en-AU', opts)}`;
+}
+
+function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId, onSelectLocation, lastOrderedByKey }) {
+  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+  const [weekOffset, setWeekOffset] = useState(0);
+
+  const siteRows = useMemo(() => {
+    return sites
+      .filter(s => s.location_id === selectedLocationId)
+      .map(s => ({ ...s, item: itemById.get(s.item_id) }))
+      .filter(r => r.item);
+  }, [sites, selectedLocationId, itemById]);
+
+  const staleRows = useMemo(() => {
+    return siteRows
+      .map(row => ({ row, info: lastOrderedInfo(row, lastOrderedByKey) }))
+      .filter(({ info }) => info.never || info.days >= 7)
+      .sort((a, b) => {
+        if (a.info.never !== b.info.never) return a.info.never ? -1 : 1;
+        return (b.info.days ?? 0) - (a.info.days ?? 0);
+      })
+      .slice(0, 20);
+  }, [siteRows, lastOrderedByKey]);
+
+  const weekStart = useMemo(() => {
+    const start = getWeekStart(new Date());
+    start.setDate(start.getDate() + weekOffset * 7);
+    return start;
+  }, [weekOffset]);
+
+  const weekEnd = useMemo(() => {
+    const end = new Date(weekStart);
+    end.setDate(end.getDate() + 6);
+    return end;
+  }, [weekStart]);
+
+  const weekVolumes = useMemo(() => {
+    const startISO = toISODate(weekStart);
+    const endISO = toISODate(weekEnd);
+    const rows = orderHistory.filter(h =>
+      h.location_id === selectedLocationId && h.ordered_date >= startISO && h.ordered_date <= endISO
+    );
+    const byItem = new Map();
+    for (const row of rows) {
+      const entry = byItem.get(row.item_id) || { qty: 0, times: 0, supplier: row.supplier };
+      entry.qty += row.order_qty || 0;
+      entry.times += 1;
+      entry.supplier = row.supplier || entry.supplier;
+      byItem.set(row.item_id, entry);
+    }
+    return [...byItem.entries()]
+      .map(([itemId, entry]) => ({ item: itemById.get(itemId), ...entry }))
+      .filter(r => r.item)
+      .sort((a, b) => b.qty - a.qty);
+  }, [orderHistory, selectedLocationId, weekStart, weekEnd, itemById]);
+
+  const isCurrentWeek = weekOffset === 0;
+
+  if (locations.length === 0) {
+    return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
+  }
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
+
+      <div>
+        <h3 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+          <AlertTriangle size={14} className="text-amber-500" />
+          Needs Attention
+          <span className="text-xs font-normal text-gray-400">· ordered 7+ days ago, or never</span>
+        </h3>
+        {staleRows.length === 0 ? (
+          <div className="card px-4 py-6 text-center text-sm text-gray-400">Everything at this site has been ordered recently. Nice.</div>
+        ) : (
+          <div className="card overflow-hidden divide-y divide-gray-50">
+            {staleRows.map(({ row, info }) => {
+              const tone = lastOrderedTone(info);
+              return (
+                <div key={row.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-gray-900 truncate">{row.item.name}</div>
+                    <div className="text-xs text-gray-400">{row.item.sku} · {row.supplier || 'No Supplier'}</div>
+                  </div>
+                  <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone]}`}>
+                    {info.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+          <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+            <TrendingUp size={14} className="text-gray-400" />
+            Weekly Volumes
+          </h3>
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => setWeekOffset(o => o - 1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">
+              <ChevronLeft size={15} />
+            </button>
+            <span className="text-xs font-medium text-gray-600 min-w-[150px] text-center">
+              {formatWeekRange(weekStart)}{isCurrentWeek && ' (this week)'}
+            </span>
+            <button
+              onClick={() => setWeekOffset(o => Math.min(0, o + 1))}
+              disabled={isCurrentWeek}
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        </div>
+
+        {weekVolumes.length === 0 ? (
+          <EmptyState Icon={TrendingUp} title="Nothing ordered this week" hint="Volumes fill in each night as orders get archived." />
+        ) : (
+          <div className="card overflow-hidden">
+            <table className="w-full text-sm table-fixed">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/80">
+                  <th className="w-2/5 px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
+                  <th className="w-1/4 px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Supplier</th>
+                  <th className="w-[17.5%] px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Times</th>
+                  <th className="w-[17.5%] px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weekVolumes.map(r => (
+                  <tr key={r.item.id} className="border-b border-gray-50 last:border-b-0">
+                    <td className="px-4 py-2.5">
+                      <div className="font-medium text-gray-900 truncate">{r.item.name}</div>
+                      <div className="text-xs text-gray-400">{r.item.sku}</div>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-500 truncate">{r.supplier || 'No Supplier'}</td>
+                    <td className="px-4 py-2.5 text-center text-gray-500">{r.times}</td>
+                    <td className="px-4 py-2.5 text-center font-semibold text-gray-900">{r.qty} <span className="font-normal text-gray-400">{r.item.uom}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-gray-100 bg-gray-50/50">
+                  <td className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider" colSpan={4}>
+                    {weekVolumes.length} SKU{weekVolumes.length !== 1 ? 's' : ''} ordered this week
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1418,6 +1620,7 @@ export default function StockApp({ user, org }) {
     { id: 'ordering',  label: 'Ordering',  Icon: ShoppingCart },
     { id: 'transfers', label: 'Transfers', Icon: ArrowLeftRight },
     { id: 'history',   label: 'History',   Icon: History },
+    { id: 'insights',  label: 'Insights',  Icon: TrendingUp },
     { id: 'locations', label: 'Locations', Icon: MapPin },
   ];
 
@@ -1530,6 +1733,17 @@ export default function StockApp({ user, org }) {
           orderHistory={orderHistory}
           selectedLocationId={selectedLocationId}
           onSelectLocation={setSelectedLocationId}
+        />
+      )}
+      {activeTab === 'insights' && (
+        <InsightsTab
+          items={items}
+          sites={sites}
+          locations={activeLocations}
+          orderHistory={orderHistory}
+          selectedLocationId={selectedLocationId}
+          onSelectLocation={setSelectedLocationId}
+          lastOrderedByKey={lastOrderedByKey}
         />
       )}
       {activeTab === 'locations' && (
