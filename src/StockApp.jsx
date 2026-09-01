@@ -129,17 +129,96 @@ function GroupBySwitcher({ value, onChange }) {
   );
 }
 
-function CategoryFilterSelect({ value, onChange, categories }) {
+// Multi-select category filter — a checkbox list in a portal-positioned
+// dropdown (same escape-overflow pattern as StatusDropdown) rather than a
+// native <select multiple>, which needs ctrl/cmd-click and is a poor fit
+// for a handful of short codes.
+function CategoryFilterMultiSelect({ value, onChange, categories }) {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState(null);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e) {
+      if (btnRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    }
+    function handleDismiss() { setOpen(false); }
+    document.addEventListener('mousedown', handleClick);
+    window.addEventListener('scroll', handleDismiss, true);
+    window.addEventListener('resize', handleDismiss);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      window.removeEventListener('scroll', handleDismiss, true);
+      window.removeEventListener('resize', handleDismiss);
+    };
+  }, [open]);
+
   if (categories.length === 0) return null;
+
+  function toggle() {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setCoords({ top: rect.bottom + 6, left: rect.left });
+    }
+    setOpen(o => !o);
+  }
+
+  function toggleCategory(c) {
+    onChange(value.includes(c) ? value.filter(x => x !== c) : [...value, c]);
+  }
+
+  const label = value.length === 0 ? 'All categories' : value.length === 1 ? value[0] : `${value.length} categories`;
+
   return (
-    <select
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      className="input-base bg-white w-auto py-1.5 text-sm"
-    >
-      <option value="">All categories</option>
-      {categories.map(c => <option key={c} value={c}>{c}</option>)}
-    </select>
+    <>
+      <button
+        ref={btnRef}
+        onClick={toggle}
+        className={`input-base bg-white w-auto py-1.5 text-sm flex items-center gap-1.5 ${value.length > 0 ? 'font-medium' : 'text-gray-500'}`}
+        style={value.length > 0 ? { borderColor: 'color-mix(in srgb, var(--primary) 40%, white)', color: 'var(--primary-dk)' } : undefined}
+      >
+        {label}
+        <ChevronDown size={13} className="opacity-60" />
+      </button>
+      {open && coords && createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: 'fixed', top: coords.top, left: coords.left }}
+          className="bg-white rounded-xl shadow-elevated border border-gray-100 z-50 overflow-hidden min-w-[180px] animate-fade-in"
+        >
+          <div className="max-h-64 overflow-y-auto py-1">
+            {categories.map(c => (
+              <label
+                key={c}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={value.includes(c)}
+                  onChange={() => toggleCategory(c)}
+                  className="w-3.5 h-3.5 rounded border-gray-300"
+                  style={{ accentColor: 'var(--primary)' }}
+                />
+                {c}
+              </label>
+            ))}
+          </div>
+          {value.length > 0 && (
+            <button
+              onClick={() => onChange([])}
+              className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:text-gray-600 border-t border-gray-100"
+            >
+              Clear
+            </button>
+          )}
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
 
@@ -309,7 +388,7 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
   const [collapsed, setCollapsed] = useState({});
   const [search, setSearch] = useState('');
   const [groupBy, setGroupBy] = useState('supplier');
-  const [categoryFilter, setCategoryFilter] = useState('');
+  const [categoryFilters, setCategoryFilters] = useState([]);
   const toggleGroup = key => setCollapsed(c => ({ ...c, [key]: !c[key] }));
 
   const availableCategories = useMemo(
@@ -319,8 +398,9 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
 
   // pinnedCategory scopes this same view to one category (e.g. the
   // Packaging tab) without needing a separate data model or component —
-  // items still show up in the unfiltered Stocktake tab too. categoryFilter
-  // is the user-facing version of the same idea for the general tab.
+  // items still show up in the unfiltered Stocktake tab too. categoryFilters
+  // is the user-facing version of the same idea for the general tab, and
+  // can select several categories at once.
   const siteRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return sites
@@ -328,9 +408,9 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
       .map(s => ({ ...s, item: itemById.get(s.item_id) }))
       .filter(r => r.item)
       .filter(r => !pinnedCategory || r.item.category === pinnedCategory)
-      .filter(r => !categoryFilter || r.item.category === categoryFilter)
+      .filter(r => categoryFilters.length === 0 || categoryFilters.includes(r.item.category))
       .filter(r => !q || r.item.name.toLowerCase().includes(q) || (r.item.sku || '').toLowerCase().includes(q));
-  }, [sites, selectedLocationId, itemById, pinnedCategory, categoryFilter, search]);
+  }, [sites, selectedLocationId, itemById, pinnedCategory, categoryFilters, search]);
 
   const grouped = useMemo(() => {
     const groups = {};
@@ -435,7 +515,7 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
         <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
         <div className="flex items-center gap-2 flex-wrap">
           {!pinnedCategory && (
-            <CategoryFilterSelect value={categoryFilter} onChange={setCategoryFilter} categories={availableCategories} />
+            <CategoryFilterMultiSelect value={categoryFilters} onChange={setCategoryFilters} categories={availableCategories} />
           )}
           <GroupBySwitcher value={groupBy} onChange={setGroupBy} />
           <SearchInput value={search} onChange={setSearch} placeholder="Search items or SKU…" />
@@ -464,11 +544,11 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
           Icon={search ? Search : Package}
           title={
             search ? `No items match "${search}"`
-            : categoryFilter ? `No ${categoryFilter} items assigned to this site`
+            : categoryFilters.length > 0 ? `No items in ${categoryFilters.join(', ')} assigned to this site`
             : pinnedCategory ? `No ${pinnedCategory} items assigned to this site yet`
             : 'No items assigned to this site yet'
           }
-          hint={search || categoryFilter ? 'Try a different filter.' : 'Add or upload some in the Items tab.'}
+          hint={search || categoryFilters.length > 0 ? 'Try a different filter.' : 'Add or upload some in the Items tab.'}
         />
       ) : (
         <div className="flex flex-col lg:flex-row gap-4 items-start">
@@ -490,7 +570,7 @@ const NEEDS_ORDER_STATUSES = ['no_stock', 'low_stock', 'order_moq'];
 function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateOrderQty, onUpdateOrdered }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
   const [groupBy, setGroupBy] = useState('supplier');
-  const [categoryFilter, setCategoryFilter] = useState('');
+  const [categoryFilters, setCategoryFilters] = useState([]);
 
   const availableCategories = useMemo(
     () => [...new Set(items.map(i => i.category).filter(Boolean))].sort(),
@@ -502,8 +582,8 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
       .filter(s => s.location_id === selectedLocationId && NEEDS_ORDER_STATUSES.includes(s.current_status))
       .map(s => ({ ...s, item: itemById.get(s.item_id) }))
       .filter(r => r.item)
-      .filter(r => !categoryFilter || r.item.category === categoryFilter);
-  }, [sites, selectedLocationId, itemById, categoryFilter]);
+      .filter(r => categoryFilters.length === 0 || categoryFilters.includes(r.item.category));
+  }, [sites, selectedLocationId, itemById, categoryFilters]);
 
   const grouped = useMemo(() => {
     const groups = {};
@@ -525,7 +605,7 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
       <div className="flex items-center justify-between flex-wrap gap-3">
         <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
         <div className="flex items-center gap-2 flex-wrap">
-          <CategoryFilterSelect value={categoryFilter} onChange={setCategoryFilter} categories={availableCategories} />
+          <CategoryFilterMultiSelect value={categoryFilters} onChange={setCategoryFilters} categories={availableCategories} />
           <GroupBySwitcher value={groupBy} onChange={setGroupBy} />
         </div>
       </div>
@@ -545,7 +625,7 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
       {siteRows.length === 0 ? (
         <EmptyState
           Icon={ShoppingCart}
-          title={categoryFilter ? `Nothing in ${categoryFilter} needs ordering right now` : 'Nothing needs ordering at this site right now'}
+          title={categoryFilters.length > 0 ? `Nothing in ${categoryFilters.join(', ')} needs ordering right now` : 'Nothing needs ordering at this site right now'}
           hint="Flag items as low or out of stock in the Stocktake tab and they'll show up here."
         />
       ) : (
