@@ -9,7 +9,7 @@ import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
 import Papa from 'papaparse';
 import {
-  ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 
 const BRAND = '#E85018';
@@ -1005,16 +1005,25 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
       .sort((a, b) => b.qty - a.qty);
   }, [orderHistory, selectedLocationId, weekStart, weekEnd, itemById]);
 
-  // Top 10 by qty for the bar chart — same unit-mixing caveat as any
-  // qty comparison across SKUs, but useful as a rough "what moved most"
-  // read since it's all one week's snapshot, not summed over time.
-  const topVolumes = useMemo(() => (
-    weekVolumes.slice(0, 10).map(r => ({
-      name: r.item.name,
-      qty: r.qty,
-      tooltipLabel: `${r.qty} ${r.item.uom} · ${r.times} order${r.times !== 1 ? 's' : ''}`,
-    }))
-  ), [weekVolumes]);
+  // Grouped by UoM so each item's bar is only ever scaled against other
+  // items measured the same way — 12 tins of Tuna and 3kg of Roast Beef
+  // aren't comparable numbers, so they never share a bar's 0-100% scale.
+  // Groups are ordered by their own total qty, items within a group by
+  // their own qty, both descending.
+  const weekVolumesByUom = useMemo(() => {
+    const groups = {};
+    for (const r of weekVolumes) {
+      (groups[r.item.uom] = groups[r.item.uom] || []).push(r);
+    }
+    return Object.entries(groups)
+      .map(([uom, rows]) => ({
+        uom,
+        rows: [...rows].sort((a, b) => b.qty - a.qty),
+        maxQty: Math.max(...rows.map(r => r.qty)),
+        totalQty: rows.reduce((sum, r) => sum + r.qty, 0),
+      }))
+      .sort((a, b) => b.totalQty - a.totalQty);
+  }, [weekVolumes]);
 
   const isCurrentWeek = weekOffset === 0;
 
@@ -1099,50 +1108,32 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
         {weekVolumes.length === 0 ? (
           <EmptyState Icon={TrendingUp} title="Nothing ordered this week" hint="Volumes fill in each night as orders get archived." />
         ) : (
-          <div className="space-y-3">
-          <div className="card p-4">
-            <ResponsiveContainer width="100%" height={Math.max(160, topVolumes.length * 32)}>
-              <BarChart data={topVolumes} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-                <XAxis type="number" allowDecimals={false} tick={CHART_TICK_STYLE} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={CHART_TICK_STYLE} axisLine={false} tickLine={false} width={140} />
-                <Tooltip content={<InsightsTooltip />} cursor={{ fill: '#f8fafc' }} />
-                <Bar dataKey="qty" fill={BRAND} radius={[0, 4, 4, 0]} maxBarSize={18} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="card overflow-hidden">
-            <table className="w-full text-sm table-fixed">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/80">
-                  <th className="w-2/5 px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
-                  <th className="w-1/4 px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Supplier</th>
-                  <th className="w-[17.5%] px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Times</th>
-                  <th className="w-[17.5%] px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Qty</th>
-                </tr>
-              </thead>
-              <tbody>
-                {weekVolumes.map(r => (
-                  <tr key={r.item.id} className="border-b border-gray-50 last:border-b-0">
-                    <td className="px-4 py-2.5">
-                      <div className="font-medium text-gray-900 truncate">{r.item.name}</div>
-                      <div className="text-xs text-gray-400">{r.item.sku}</div>
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-500 truncate">{r.supplier || 'No Supplier'}</td>
-                    <td className="px-4 py-2.5 text-center text-gray-500">{r.times}</td>
-                    <td className="px-4 py-2.5 text-center font-semibold text-gray-900">{r.qty} <span className="font-normal text-gray-400">{r.item.uom}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t border-gray-100 bg-gray-50/50">
-                  <td className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider" colSpan={4}>
-                    {weekVolumes.length} SKU{weekVolumes.length !== 1 ? 's' : ''} ordered this week
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          <div className="card overflow-hidden divide-y divide-gray-50">
+            {weekVolumesByUom.map(({ uom, rows, maxQty }) => (
+              <div key={uom} className="px-4 py-3">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{uom}</p>
+                <div className="space-y-1.5">
+                  {rows.map(r => {
+                    const pct = maxQty > 0 ? (r.qty / maxQty) * 100 : 0;
+                    return (
+                      <div key={r.item.id} className="flex items-center gap-3">
+                        <div className="w-36 sm:w-44 flex-shrink-0 min-w-0">
+                          <div className="text-sm font-medium text-gray-900 truncate">{r.item.name}</div>
+                          <div className="text-[10px] text-gray-400 truncate">{r.item.sku} · {r.supplier || 'No Supplier'}</div>
+                        </div>
+                        <div className="flex-1 h-4 bg-gray-100 rounded-md overflow-hidden">
+                          <div className="h-full rounded-md" style={{ width: `${pct}%`, backgroundColor: BRAND }} />
+                        </div>
+                        <div className="w-20 flex-shrink-0 text-right text-sm font-semibold text-gray-900">
+                          {r.qty} <span className="font-normal text-gray-400 text-xs">{uom}</span>
+                        </div>
+                        <div className="w-10 flex-shrink-0 text-right text-xs text-gray-400">{r.times}×</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
