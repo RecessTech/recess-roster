@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
   ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History, Box, ArrowLeftRight, Search,
-  TrendingUp, ChevronLeft, ChevronRight,
+  TrendingUp, ChevronLeft, ChevronRight, Tag,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -108,6 +108,38 @@ function LocationSwitcher({ locations, selectedLocationId, onSelectLocation }) {
         </button>
       ))}
     </div>
+  );
+}
+
+// Supplier (default) vs Category grouping — shared by Stocktake and
+// Ordering, which both group their worklist the same two ways.
+function GroupBySwitcher({ value, onChange }) {
+  return (
+    <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+      {[['supplier', 'Supplier'], ['category', 'Category']].map(([key, label]) => (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${value === key ? 'tab-active' : 'tab-inactive'}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CategoryFilterSelect({ value, onChange, categories }) {
+  if (categories.length === 0) return null;
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="input-base bg-white w-auto py-1.5 text-sm"
+    >
+      <option value="">All categories</option>
+      {categories.map(c => <option key={c} value={c}>{c}</option>)}
+    </select>
   );
 }
 
@@ -276,11 +308,19 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
   const [collapsed, setCollapsed] = useState({});
   const [search, setSearch] = useState('');
-  const toggleSupplier = supplier => setCollapsed(c => ({ ...c, [supplier]: !c[supplier] }));
+  const [groupBy, setGroupBy] = useState('supplier');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const toggleGroup = key => setCollapsed(c => ({ ...c, [key]: !c[key] }));
+
+  const availableCategories = useMemo(
+    () => [...new Set(items.map(i => i.category).filter(Boolean))].sort(),
+    [items]
+  );
 
   // pinnedCategory scopes this same view to one category (e.g. the
   // Packaging tab) without needing a separate data model or component —
-  // items still show up in the unfiltered Stocktake tab too.
+  // items still show up in the unfiltered Stocktake tab too. categoryFilter
+  // is the user-facing version of the same idea for the general tab.
   const siteRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return sites
@@ -288,17 +328,18 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
       .map(s => ({ ...s, item: itemById.get(s.item_id) }))
       .filter(r => r.item)
       .filter(r => !pinnedCategory || r.item.category === pinnedCategory)
+      .filter(r => !categoryFilter || r.item.category === categoryFilter)
       .filter(r => !q || r.item.name.toLowerCase().includes(q) || (r.item.sku || '').toLowerCase().includes(q));
-  }, [sites, selectedLocationId, itemById, pinnedCategory, search]);
+  }, [sites, selectedLocationId, itemById, pinnedCategory, categoryFilter, search]);
 
   const grouped = useMemo(() => {
     const groups = {};
     for (const row of siteRows) {
-      const supplier = row.supplier || 'No Supplier';
-      (groups[supplier] = groups[supplier] || []).push(row);
+      const key = groupBy === 'category' ? (row.item.category || 'Uncategorized') : (row.supplier || 'No Supplier');
+      (groups[key] = groups[key] || []).push(row);
     }
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
-  }, [siteRows]);
+  }, [siteRows, groupBy]);
 
   // Balance the two columns by total item count, not just alternating —
   // a plain left/right split leaves a huge gap next to a short supplier
@@ -323,18 +364,19 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
     return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
   }
 
-  function renderSupplierGroup([supplier, rows]) {
-    const isCollapsed = !!collapsed[supplier];
+  function renderGroup([groupKey, rows]) {
+    const isCollapsed = !!collapsed[groupKey];
+    const GroupIcon = groupBy === 'category' ? Tag : Truck;
     return (
-      <div key={supplier}>
+      <div key={groupKey}>
         <button
-          onClick={() => toggleSupplier(supplier)}
+          onClick={() => toggleGroup(groupKey)}
           className="w-full flex items-center gap-1.5 mb-2 group"
         >
           <ChevronDown size={13} className={`text-gray-400 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
-          <Truck size={12} className="text-gray-400" />
+          <GroupIcon size={12} className="text-gray-400" />
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider group-hover:text-gray-700 transition-colors">
-            {supplier}
+            {groupKey}
           </h3>
           <span className="text-xs text-gray-400">· {rows.length} item{rows.length !== 1 ? 's' : ''}</span>
         </button>
@@ -391,7 +433,13 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
-        <SearchInput value={search} onChange={setSearch} placeholder="Search items or SKU…" />
+        <div className="flex items-center gap-2 flex-wrap">
+          {!pinnedCategory && (
+            <CategoryFilterSelect value={categoryFilter} onChange={setCategoryFilter} categories={availableCategories} />
+          )}
+          <GroupBySwitcher value={groupBy} onChange={setGroupBy} />
+          <SearchInput value={search} onChange={setSearch} placeholder="Search items or SKU…" />
+        </div>
       </div>
 
       {noStock > 0 && (
@@ -414,13 +462,18 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
       {siteRows.length === 0 ? (
         <EmptyState
           Icon={search ? Search : Package}
-          title={search ? `No items match "${search}"` : (pinnedCategory ? `No ${pinnedCategory} items assigned to this site yet` : 'No items assigned to this site yet')}
-          hint={search ? 'Try a different name or SKU.' : 'Add or upload some in the Items tab.'}
+          title={
+            search ? `No items match "${search}"`
+            : categoryFilter ? `No ${categoryFilter} items assigned to this site`
+            : pinnedCategory ? `No ${pinnedCategory} items assigned to this site yet`
+            : 'No items assigned to this site yet'
+          }
+          hint={search || categoryFilter ? 'Try a different filter.' : 'Add or upload some in the Items tab.'}
         />
       ) : (
         <div className="flex flex-col lg:flex-row gap-4 items-start">
-          <div className="flex-1 min-w-0 w-full space-y-4">{leftColumn.map(renderSupplierGroup)}</div>
-          <div className="flex-1 min-w-0 w-full space-y-4">{rightColumn.map(renderSupplierGroup)}</div>
+          <div className="flex-1 min-w-0 w-full space-y-4">{leftColumn.map(renderGroup)}</div>
+          <div className="flex-1 min-w-0 w-full space-y-4">{rightColumn.map(renderGroup)}</div>
         </div>
       )}
     </div>
@@ -436,22 +489,30 @@ const NEEDS_ORDER_STATUSES = ['no_stock', 'low_stock', 'order_moq'];
 
 function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateOrderQty, onUpdateOrdered }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+  const [groupBy, setGroupBy] = useState('supplier');
+  const [categoryFilter, setCategoryFilter] = useState('');
+
+  const availableCategories = useMemo(
+    () => [...new Set(items.map(i => i.category).filter(Boolean))].sort(),
+    [items]
+  );
 
   const siteRows = useMemo(() => {
     return sites
       .filter(s => s.location_id === selectedLocationId && NEEDS_ORDER_STATUSES.includes(s.current_status))
       .map(s => ({ ...s, item: itemById.get(s.item_id) }))
-      .filter(r => r.item);
-  }, [sites, selectedLocationId, itemById]);
+      .filter(r => r.item)
+      .filter(r => !categoryFilter || r.item.category === categoryFilter);
+  }, [sites, selectedLocationId, itemById, categoryFilter]);
 
   const grouped = useMemo(() => {
     const groups = {};
     for (const row of siteRows) {
-      const supplier = row.supplier || 'No Supplier';
-      (groups[supplier] = groups[supplier] || []).push(row);
+      const key = groupBy === 'category' ? (row.item.category || 'Uncategorized') : (row.supplier || 'No Supplier');
+      (groups[key] = groups[key] || []).push(row);
     }
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
-  }, [siteRows]);
+  }, [siteRows, groupBy]);
 
   const orderedCount = siteRows.filter(r => r.ordered).length;
 
@@ -461,7 +522,13 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
 
   return (
     <div className="space-y-4 animate-fade-in">
-      <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <CategoryFilterSelect value={categoryFilter} onChange={setCategoryFilter} categories={availableCategories} />
+          <GroupBySwitcher value={groupBy} onChange={setGroupBy} />
+        </div>
+      </div>
 
       {siteRows.length > 0 && (
         <div className="flex items-center gap-2.5 rounded-xl px-4 py-3 border" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 8%, white)', borderColor: 'color-mix(in srgb, var(--primary) 20%, white)' }}>
@@ -476,13 +543,17 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
       )}
 
       {siteRows.length === 0 ? (
-        <EmptyState Icon={ShoppingCart} title="Nothing needs ordering at this site right now" hint="Flag items as low or out of stock in the Stocktake tab and they'll show up here." />
+        <EmptyState
+          Icon={ShoppingCart}
+          title={categoryFilter ? `Nothing in ${categoryFilter} needs ordering right now` : 'Nothing needs ordering at this site right now'}
+          hint="Flag items as low or out of stock in the Stocktake tab and they'll show up here."
+        />
       ) : (
-        grouped.map(([supplier, rows]) => (
-          <div key={supplier}>
+        grouped.map(([groupKey, rows]) => (
+          <div key={groupKey}>
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-              <Truck size={12} className="text-gray-400" />
-              {supplier}
+              {groupBy === 'category' ? <Tag size={12} className="text-gray-400" /> : <Truck size={12} className="text-gray-400" />}
+              {groupKey}
             </h3>
             <div className="card overflow-hidden">
               <table className="w-full text-sm table-fixed">
