@@ -8,6 +8,12 @@ import {
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
 import Papa from 'papaparse';
+import {
+  ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+} from 'recharts';
+
+const BRAND = '#E85018';
+const CHART_TICK_STYLE = { fontSize: 11, fill: '#94a3b8' };
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -45,19 +51,24 @@ function lastOrderedInfo(row, lastOrderedByKey) {
     return { label: `Ordered ${relativeDayLabel(days)}`, days, never: false };
   }
   const lastDate = lastOrderedByKey[`${row.item_id}:${row.location_id}`];
-  if (!lastDate) return { label: 'Never ordered', days: null, never: true };
+  // Not "never" as in a red flag -- just an item that hasn't been through
+  // an R-Stock order cycle yet (e.g. newly added, or from before this
+  // module existed). Nothing to act on, so it's shown neutral, not stale.
+  if (!lastDate) return { label: 'N/A', days: null, never: true };
   const days = daysAgo(lastDate);
   return { label: `Last ordered ${relativeDayLabel(days)}`, days, never: false };
 }
 
 const LAST_ORDERED_TONE_CLASSES = {
-  fresh: 'bg-gray-100 text-gray-500',
-  warn:  'bg-amber-50 text-amber-600',
-  stale: 'bg-red-50 text-red-600',
+  fresh:   'bg-gray-100 text-gray-500',
+  warn:    'bg-amber-50 text-amber-600',
+  stale:   'bg-red-50 text-red-600',
+  neutral: 'bg-gray-50 text-gray-400',
 };
 
 function lastOrderedTone(info) {
-  if (info.never || info.days >= 14) return 'stale';
+  if (info.never) return 'neutral';
+  if (info.days >= 14) return 'stale';
   if (info.days >= 7) return 'warn';
   return 'fresh';
 }
@@ -749,6 +760,20 @@ function formatWeekRange(start) {
   return `${start.toLocaleDateString('en-AU', opts)} – ${end.toLocaleDateString('en-AU', opts)}`;
 }
 
+// Simple dark tooltip shared by both charts below — matches the pattern
+// used in BusinessDashboard.jsx (ChartTooltip) but scoped to this file
+// since these charts are single-series and need less machinery.
+function InsightsTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0].payload;
+  return (
+    <div className="bg-gray-800 text-white text-xs rounded-lg px-3 py-2 shadow-elevated">
+      <p className="font-medium mb-0.5">{label}</p>
+      <p className="text-gray-300">{p.tooltipLabel}</p>
+    </div>
+  );
+}
+
 function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId, onSelectLocation, lastOrderedByKey }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -760,16 +785,42 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
       .filter(r => r.item);
   }, [sites, selectedLocationId, itemById]);
 
+  // "N/A" items (never been through an R-Stock order cycle) aren't a
+  // staleness signal — nothing to act on — so they're excluded here,
+  // not just recolored.
   const staleRows = useMemo(() => {
     return siteRows
       .map(row => ({ row, info: lastOrderedInfo(row, lastOrderedByKey) }))
-      .filter(({ info }) => info.never || info.days >= 7)
-      .sort((a, b) => {
-        if (a.info.never !== b.info.never) return a.info.never ? -1 : 1;
-        return (b.info.days ?? 0) - (a.info.days ?? 0);
-      })
+      .filter(({ info }) => !info.never && info.days >= 7)
+      .sort((a, b) => b.info.days - a.info.days)
       .slice(0, 20);
   }, [siteRows, lastOrderedByKey]);
+
+  // Trailing 8 weeks of ordering activity at this site — a count of order
+  // lines rather than summed qty, since qty mixes incompatible units
+  // (kg, L, units) across different SKUs and a summed total would be
+  // meaningless.
+  const trendWeeks = useMemo(() => {
+    const thisWeekStart = getWeekStart(new Date());
+    const weeks = [];
+    for (let i = 7; i >= 0; i--) {
+      const start = new Date(thisWeekStart);
+      start.setDate(start.getDate() - i * 7);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      const startISO = toISODate(start);
+      const endISO = toISODate(end);
+      const count = orderHistory.filter(h =>
+        h.location_id === selectedLocationId && h.ordered_date >= startISO && h.ordered_date <= endISO
+      ).length;
+      weeks.push({
+        label: start.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
+        count,
+        tooltipLabel: `${count} item${count !== 1 ? 's' : ''} ordered`,
+      });
+    }
+    return weeks;
+  }, [orderHistory, selectedLocationId]);
 
   const weekStart = useMemo(() => {
     const start = getWeekStart(new Date());
@@ -803,6 +854,17 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
       .sort((a, b) => b.qty - a.qty);
   }, [orderHistory, selectedLocationId, weekStart, weekEnd, itemById]);
 
+  // Top 10 by qty for the bar chart — same unit-mixing caveat as any
+  // qty comparison across SKUs, but useful as a rough "what moved most"
+  // read since it's all one week's snapshot, not summed over time.
+  const topVolumes = useMemo(() => (
+    weekVolumes.slice(0, 10).map(r => ({
+      name: r.item.name,
+      qty: r.qty,
+      tooltipLabel: `${r.qty} ${r.item.uom} · ${r.times} order${r.times !== 1 ? 's' : ''}`,
+    }))
+  ), [weekVolumes]);
+
   const isCurrentWeek = weekOffset === 0;
 
   if (locations.length === 0) {
@@ -817,7 +879,7 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
         <h3 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
           <AlertTriangle size={14} className="text-amber-500" />
           Needs Attention
-          <span className="text-xs font-normal text-gray-400">· ordered 7+ days ago, or never</span>
+          <span className="text-xs font-normal text-gray-400">· ordered 7+ days ago</span>
         </h3>
         {staleRows.length === 0 ? (
           <div className="card px-4 py-6 text-center text-sm text-gray-400">Everything at this site has been ordered recently. Nice.</div>
@@ -839,6 +901,25 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
             })}
           </div>
         )}
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+          <TrendingUp size={14} className="text-gray-400" />
+          Order Activity Trend
+          <span className="text-xs font-normal text-gray-400">· items ordered per week, last 8 weeks</span>
+        </h3>
+        <div className="card p-4">
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={trendWeeks} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+              <XAxis dataKey="label" tick={CHART_TICK_STYLE} axisLine={false} tickLine={false} />
+              <YAxis allowDecimals={false} tick={CHART_TICK_STYLE} axisLine={false} tickLine={false} width={28} />
+              <Tooltip content={<InsightsTooltip />} />
+              <Line type="monotone" dataKey="count" stroke={BRAND} strokeWidth={2.5} dot={{ r: 3, fill: BRAND, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       <div>
@@ -867,6 +948,18 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
         {weekVolumes.length === 0 ? (
           <EmptyState Icon={TrendingUp} title="Nothing ordered this week" hint="Volumes fill in each night as orders get archived." />
         ) : (
+          <div className="space-y-3">
+          <div className="card p-4">
+            <ResponsiveContainer width="100%" height={Math.max(160, topVolumes.length * 32)}>
+              <BarChart data={topVolumes} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
+                <XAxis type="number" allowDecimals={false} tick={CHART_TICK_STYLE} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={CHART_TICK_STYLE} axisLine={false} tickLine={false} width={140} />
+                <Tooltip content={<InsightsTooltip />} cursor={{ fill: '#f8fafc' }} />
+                <Bar dataKey="qty" fill={BRAND} radius={[0, 4, 4, 0]} maxBarSize={18} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
           <div className="card overflow-hidden">
             <table className="w-full text-sm table-fixed">
               <thead>
@@ -898,6 +991,7 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
                 </tr>
               </tfoot>
             </table>
+          </div>
           </div>
         )}
       </div>
