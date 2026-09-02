@@ -41,6 +41,20 @@ function relativeDayLabel(days) {
   return `${days}d ago`;
 }
 
+// Pack-style units carry their own count (e.g. "12-pack") -- without a
+// separator, "2 12-pack" reads as one ambiguous number. An "x" makes it
+// "2 x 12-pack": two of the 12-packs. Weight/volume/simple units (kg, g,
+// L, units, carton, box, bunch...) don't start with a digit and are left
+// exactly as they were.
+function isPackUnit(unit) {
+  return !!unit && /^\d/.test(unit.trim());
+}
+
+function formatQty(value, unit) {
+  if (!unit) return String(value);
+  return isPackUnit(unit) ? `${value} x ${unit}` : `${value} ${unit}`;
+}
+
 // Prefers a still-live "ordered today, not yet archived" flag over the
 // archived history, since the archive won't have today's entry until the
 // midnight job runs. Returns { label, days, never } so callers can both
@@ -286,7 +300,7 @@ function EditableQty({ value, isSet, unit, onCommit }) {
       style={isSet ? { backgroundColor: 'color-mix(in srgb, var(--primary) 10%, white)' } : undefined}
       title="Click to set how much to order"
     >
-      {value} {unit}
+      {formatQty(value, unit)}
     </button>
   );
 }
@@ -868,7 +882,7 @@ function HistoryTab({ items, locations, orderHistory, selectedLocationId, onSele
                               <span className="text-xs text-gray-400 flex-shrink-0">{row.item.sku}</span>
                             </div>
                             <span className="text-gray-500 font-medium flex-shrink-0 ml-3">
-                              {row.order_qty ?? '—'} {row.item.uom}
+                              {row.order_qty != null ? formatQty(row.order_qty, row.item.uom) : `— ${row.item.uom}`}
                             </span>
                           </div>
                         );
@@ -1125,7 +1139,7 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
                           <div className="h-full rounded-md" style={{ width: `${pct}%`, backgroundColor: BRAND }} />
                         </div>
                         <div className="w-20 flex-shrink-0 text-right text-sm font-semibold text-gray-900">
-                          {r.qty} <span className="font-normal text-gray-400 text-xs">{uom}</span>
+                          {r.qty}{isPackUnit(uom) ? ' x' : ''} <span className="font-normal text-gray-400 text-xs">{uom}</span>
                         </div>
                         <div className="w-10 flex-shrink-0 text-right text-xs text-gray-400">{r.times}×</div>
                       </div>
