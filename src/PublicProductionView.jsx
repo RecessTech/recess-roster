@@ -152,6 +152,7 @@ export default function PublicProductionView({ token }) {
 
   const activeSite = data.sites.find(s => s.id === activeSiteId);
   const noSetup = data.sites.length === 0 || data.items.length === 0;
+  const activeLock = (data.locks || []).find(l => l.site_id === activeSiteId);
 
   return (
     <div style={{ minHeight: '100vh', background: '#F1F5F9', padding: '24px 16px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -202,6 +203,17 @@ export default function PublicProductionView({ token }) {
                       {s.name}
                     </button>
                   ))}
+                </div>
+              )}
+
+              {activeLock && (
+                <div style={{ padding: '10px 16px 0' }}>
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700,
+                    padding: '4px 10px', borderRadius: 999, background: '#DCFCE7', color: GREEN,
+                  }}>
+                    ✓ Finalized
+                  </span>
                 </div>
               )}
 
