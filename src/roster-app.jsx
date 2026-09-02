@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck, Link2, Package } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck, Link2, Package, ChefHat } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db, supabase } from './supabaseClient';
 import StockApp from './StockApp';
+import ProductionApp from './ProductionApp';
 import toast, { Toaster } from 'react-hot-toast';
 
 // Returns a Set<'YYYY-MM-DD'> of public holidays for a given year and AU state
@@ -91,7 +92,7 @@ const RosterApp = () => {
   });
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', activeApp === 'stock' ? 'stock' : 'blue');
+    document.documentElement.setAttribute('data-theme', activeApp === 'stock' ? 'stock' : activeApp === 'production' ? 'production' : 'blue');
     try { localStorage.setItem('rshift_active_app', activeApp); } catch {}
   }, [activeApp]);
 
@@ -6470,8 +6471,9 @@ Key things to verify after rebuild:
         {/* App switcher — R-Shift ⇄ R-Stock */}
         <div className="flex flex-col gap-0.5 w-full px-2 mb-1">
           {[
-            { app: 'shift', icon: <CalendarDays size={18} />, label: 'R-Shift' },
-            { app: 'stock', icon: <Package size={18} />,      label: 'R-Stock' },
+            { app: 'shift',      icon: <CalendarDays size={18} />, label: 'R-Shift' },
+            { app: 'stock',      icon: <Package size={18} />,      label: 'R-Stock' },
+            { app: 'production', icon: <ChefHat size={18} />,      label: 'R-Prod'  },
           ].map(({ app, icon, label }) => (
             <button key={app} onClick={() => setActiveApp(app)}
               className={`sb-btn group w-full flex justify-center ${activeApp === app ? 'active' : ''}`}
@@ -6522,6 +6524,14 @@ Key things to verify after rebuild:
                   <h1 className="text-base font-bold text-gray-900 tracking-tight">{businessSettings.businessName || org?.name}</h1>
                   <span className="text-gray-300">|</span>
                   <span className="text-sm text-gray-400">R-Stock</span>
+                </div>
+              </div>
+            ) : activeApp === 'production' ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-base font-bold text-gray-900 tracking-tight">{businessSettings.businessName || org?.name}</h1>
+                  <span className="text-gray-300">|</span>
+                  <span className="text-sm text-gray-400">R-Prod</span>
                 </div>
               </div>
             ) : (
@@ -6670,6 +6680,8 @@ Key things to verify after rebuild:
       <div className="flex-1 overflow-hidden view-transition">
       {activeApp === 'stock' ? (
         <div className="h-full overflow-auto"><StockApp org={org} user={user} /></div>
+      ) : activeApp === 'production' ? (
+        <div className="h-full overflow-hidden"><ProductionApp org={org} user={user} /></div>
       ) : activeView === 'analytics' ? (
         <div className="h-full overflow-auto"><AnalyticsView /></div>
       ) : activeView === 'timesheet' ? (

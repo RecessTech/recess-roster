@@ -88,6 +88,28 @@ body {
   --top-border:     #F3DCC9;
 }
 
+/* Production theme — R-Prod's colourway, a distinct green so it
+   reads apart from R-Shift's blue and R-Stock's orange */
+[data-theme="production"] {
+  --sb-bg:          #15803D;
+  --sb-icon:        rgba(240, 253, 244, 0.75);
+  --sb-icon-active: #F0FDF4;
+  --sb-active:      rgba(240, 253, 244, 0.2);
+  --sb-hover:       rgba(240, 253, 244, 0.1);
+  --sb-logo-bg:     rgba(240, 253, 244, 0.15);
+  --sb-logo-fg:     #F0FDF4;
+  --sb-tooltip-bg:  #14532D;
+  --sb-tooltip-bd:  rgba(240,253,244,0.15);
+
+  --primary:        #15803D;
+  --primary-dk:     #14532D;
+  --primary-fg:     white;
+
+  --app-bg:         #F3FBF6;
+  --top-bg:         white;
+  --top-border:     #DCF3E4;
+}
+
 /* Dark theme (logo 3) */
 [data-theme="dark"] {
   --sb-bg:          #171717;
