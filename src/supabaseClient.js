@@ -1204,6 +1204,46 @@ export const db = {
 
   // ── Production Planning (R-Prod) ────────────────────────────────────────────
 
+  async getProductionSites(orgId) {
+    const { data, error } = await supabase
+      .from('production_sites')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createProductionSite(orgId, name) {
+    const { data, error } = await supabase
+      .from('production_sites')
+      .insert([{ org_id: orgId, name }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateProductionSite(siteId, updates) {
+    const { data, error } = await supabase
+      .from('production_sites')
+      .update(updates)
+      .eq('id', siteId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteProductionSite(siteId) {
+    const { error } = await supabase
+      .from('production_sites')
+      .delete()
+      .eq('id', siteId);
+    if (error) throw error;
+  },
+
   async getProductionChannels(orgId) {
     const { data, error } = await supabase
       .from('production_channels')
@@ -1215,10 +1255,10 @@ export const db = {
     return data || [];
   },
 
-  async createProductionChannel(orgId, name) {
+  async createProductionChannel(orgId, siteId, name) {
     const { data, error } = await supabase
       .from('production_channels')
-      .insert([{ org_id: orgId, name }])
+      .insert([{ org_id: orgId, site_id: siteId, name }])
       .select()
       .single();
     if (error) throw error;
