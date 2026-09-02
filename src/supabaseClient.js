@@ -1201,4 +1201,117 @@ export const db = {
       .eq('supplier', supplier);
     if (error) throw error;
   },
+
+  // ── Production Planning (R-Prod) ────────────────────────────────────────────
+
+  async getProductionChannels(orgId) {
+    const { data, error } = await supabase
+      .from('production_channels')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createProductionChannel(orgId, name) {
+    const { data, error } = await supabase
+      .from('production_channels')
+      .insert([{ org_id: orgId, name }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateProductionChannel(channelId, updates) {
+    const { data, error } = await supabase
+      .from('production_channels')
+      .update(updates)
+      .eq('id', channelId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteProductionChannel(channelId) {
+    const { error } = await supabase
+      .from('production_channels')
+      .delete()
+      .eq('id', channelId);
+    if (error) throw error;
+  },
+
+  async getProductionItems(orgId) {
+    const { data, error } = await supabase
+      .from('production_items')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createProductionItem(orgId, item) {
+    const { data, error } = await supabase
+      .from('production_items')
+      .insert([{ ...item, org_id: orgId }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateProductionItem(itemId, updates) {
+    const { data, error } = await supabase
+      .from('production_items')
+      .update(updates)
+      .eq('id', itemId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteProductionItem(itemId) {
+    const { error } = await supabase
+      .from('production_items')
+      .delete()
+      .eq('id', itemId);
+    if (error) throw error;
+  },
+
+  async getProductionPlan(orgId, date) {
+    const { data, error } = await supabase
+      .from('production_plan_entries')
+      .select('*')
+      .eq('org_id', orgId)
+      .eq('plan_date', date);
+    if (error) throw error;
+    return data || [];
+  },
+
+  async setProductionPlanQty(orgId, userId, { itemId, channelId, date, qty }) {
+    const { data, error } = await supabase
+      .from('production_plan_entries')
+      .upsert(
+        [{
+          org_id: orgId,
+          item_id: itemId,
+          channel_id: channelId,
+          plan_date: date,
+          qty,
+          updated_by: userId,
+          updated_at: new Date().toISOString(),
+        }],
+        { onConflict: 'item_id,channel_id,plan_date' }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
 };
