@@ -540,6 +540,16 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
       const key = groupBy === 'category' ? (row.item.category || 'Uncategorized') : (row.supplier || 'No Supplier');
       (groups[key] = groups[key] || []).push(row);
     }
+    // Within each group, sort by category then name -- a no-op on the
+    // category itself when grouped by category, but on the default
+    // supplier grouping this keeps same-category items clustered
+    // together before falling back to alphabetical.
+    for (const rows of Object.values(groups)) {
+      rows.sort((a, b) =>
+        (a.item.category || '').localeCompare(b.item.category || '') ||
+        a.item.name.localeCompare(b.item.name)
+      );
+    }
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [siteRows, groupBy]);
 
@@ -599,7 +609,12 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                 return (
                 <tr key={row.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors">
                   <td className="px-3 py-2">
-                    <div className="font-medium text-gray-900 truncate">{row.item.name}</div>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-medium text-gray-900 truncate">{row.item.name}</span>
+                      {row.item.category && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 flex-shrink-0">{row.item.category}</span>
+                      )}
+                    </div>
                     <div className="text-xs text-gray-400 truncate mb-1">{row.item.sku} · {row.item.uom}</div>
                     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${LAST_ORDERED_TONE_CLASSES[tone].bg} ${LAST_ORDERED_TONE_CLASSES[tone].text}`}>
                       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone].dot}`} />
