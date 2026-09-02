@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  Plus, Trash2, Edit2, X, Settings, ChevronLeft, ChevronRight, Minus,
+  Plus, Trash2, Edit2, X, Settings, ChevronLeft, ChevronRight,
   ClipboardList, Loader2, ChevronUp, ChevronDown, ChefHat, Link2, CheckCircle,
 } from 'lucide-react';
 import { db } from './supabaseClient';
@@ -72,9 +72,9 @@ async function reorder(list, idx, dir, updateFn, onDone) {
   }
 }
 
-// ── Item row (per-channel edit mode, or read-only totals mode) ────────────────
+// ── Editable quantity cell (tap to type; read-only pill when locked) ─────────
 
-function ItemRow({ item, qty, mode, breakdown, onChange, locked }) {
+function EditableCell({ qty, onChange, locked }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(qty));
 
@@ -87,67 +87,70 @@ function ItemRow({ item, qty, mode, breakdown, onChange, locked }) {
   }
 
   const hasQty = qty > 0;
-  const readOnly = mode === 'totals' || locked;
+
+  if (locked) {
+    return hasQty ? (
+      <span className="inline-flex items-center justify-center min-w-[2.25rem] px-2 py-1 rounded-full text-sm font-extrabold tabular-nums" style={{ background: '#DCFCE7', color: 'var(--primary)' }}>
+        {qty}
+      </span>
+    ) : (
+      <span className="text-sm font-semibold tabular-nums text-gray-300">0</span>
+    );
+  }
+
+  return editing ? (
+    <input
+      autoFocus
+      type="number"
+      inputMode="numeric"
+      min="0"
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onFocus={e => e.target.select()}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
+      className="w-14 text-center text-sm font-bold border border-blue-300 rounded-lg py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
+    />
+  ) : (
+    <button
+      onClick={() => setEditing(true)}
+      className={`min-w-[2.5rem] px-2 py-1.5 text-center text-sm font-extrabold tabular-nums rounded-full transition-colors ${hasQty ? '' : 'text-gray-300 hover:bg-gray-100'}`}
+      style={hasQty ? { background: '#DCFCE7', color: 'var(--primary)' } : {}}
+    >
+      {qty}
+    </button>
+  );
+}
+
+// ── One item's row across every channel column, plus a Total column ─────────
+
+function ItemTableRow({ item, channels, getQty, total, locked, onChange }) {
+  const hasQty = total > 0;
+  const rowBg = hasQty ? '#F0FDF4' : 'white';
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5 transition-colors" style={{ background: hasQty ? 'rgba(21,128,61,0.06)' : 'transparent' }}>
-      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm truncate ${hasQty ? 'font-semibold text-gray-900' : 'font-medium text-gray-500'}`}>{item.name}</p>
-        {breakdown && breakdown.length > 0 && (
-          <p className="text-xs text-gray-400 truncate">{breakdown.map(b => `${b.name} ${b.qty}`).join(' · ')}</p>
-        )}
-      </div>
-      {readOnly ? (
-        hasQty ? (
-          <span
-            className="shrink-0 inline-flex items-center justify-center min-w-[2.5rem] px-2.5 py-1 rounded-full text-base font-extrabold tabular-nums"
-            style={{ background: '#DCFCE7', color: 'var(--primary)' }}
-          >
-            {qty}
+    <tr>
+      <td className="px-3 py-2 sticky left-0 border-b border-gray-50" style={{ background: rowBg }}>
+        <div className="flex items-center gap-2 min-w-[130px]">
+          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
+          <span className={`text-sm truncate ${hasQty ? 'font-semibold text-gray-900' : 'font-medium text-gray-500'}`}>{item.name}</span>
+        </div>
+      </td>
+      {channels.map(ch => (
+        <td key={ch.id} className="px-2 py-2 text-center whitespace-nowrap border-b border-gray-50" style={{ background: rowBg }}>
+          <EditableCell qty={getQty(item.id, ch.id)} locked={locked} onChange={q => onChange(item.id, ch.id, q)} />
+        </td>
+      ))}
+      <td className="px-3 py-2 text-center whitespace-nowrap border-b border-gray-50" style={{ background: rowBg }}>
+        {hasQty ? (
+          <span className="inline-flex items-center justify-center min-w-[2.5rem] px-2.5 py-1 rounded-full text-base font-extrabold tabular-nums" style={{ background: '#DCFCE7', color: 'var(--primary)' }}>
+            {total}
           </span>
         ) : (
-          <span className="shrink-0 text-sm font-semibold tabular-nums text-gray-300">0</span>
-        )
-      ) : (
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            onClick={() => onChange(Math.max(0, qty - 1))}
-            className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 active:scale-90 transition-transform"
-          >
-            <Minus size={15} />
-          </button>
-          {editing ? (
-            <input
-              autoFocus
-              type="number"
-              inputMode="numeric"
-              min="0"
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              onFocus={e => e.target.select()}
-              onBlur={commit}
-              onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
-              className="w-14 text-center text-base font-bold border border-blue-300 rounded-lg py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
-            />
-          ) : (
-            <button
-              onClick={() => setEditing(true)}
-              className={`w-14 text-center text-base font-extrabold tabular-nums py-1.5 rounded-full transition-colors ${hasQty ? '' : 'text-gray-300 hover:bg-gray-100'}`}
-              style={hasQty ? { background: '#DCFCE7', color: 'var(--primary)' } : {}}
-            >
-              {qty}
-            </button>
-          )}
-          <button
-            onClick={() => onChange(qty + 1)}
-            className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 active:scale-90 transition-transform"
-          >
-            <Plus size={15} />
-          </button>
-        </div>
-      )}
-    </div>
+          <span className="text-sm font-semibold tabular-nums text-gray-300">0</span>
+        )}
+      </td>
+    </tr>
   );
 }
 
@@ -679,7 +682,6 @@ export default function ProductionApp({ org, user }) {
   const [loadingPlan, setLoadingPlan] = useState(true);
   const [date, setDate] = useState(todayStr());
   const [activeSiteId, setActiveSiteId] = useState(null);
-  const [activeTab, setActiveTab] = useState('totals'); // channel id, or 'totals'
   const [hideZero, setHideZero] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showShare, setShowShare] = useState(false);
@@ -765,11 +767,6 @@ export default function ProductionApp({ org, user }) {
 
   const channelsForSite = useMemo(() => channels.filter(c => c.site_id === activeSiteId), [channels, activeSiteId]);
 
-  // Keep the channel/totals tab valid whenever the active site or channel list changes.
-  useEffect(() => {
-    setActiveTab(prev => (prev === 'totals' || channelsForSite.some(c => c.id === prev)) ? prev : (channelsForSite[0]?.id ?? 'totals'));
-  }, [channelsForSite]);
-
   const qtyMap = useMemo(() => {
     const m = new Map();
     entries.forEach(e => m.set(`${e.item_id}:${e.channel_id}`, Number(e.qty) || 0));
@@ -810,9 +807,8 @@ export default function ProductionApp({ org, user }) {
   const activeItems = useMemo(() => {
     let list = items.filter(i => i.active !== false);
     if (!hideZero) return list;
-    if (activeTab === 'totals') return list.filter(i => (totalsByItemForSite.get(i.id) || 0) > 0);
-    return list.filter(i => getQty(i.id, activeTab) > 0);
-  }, [items, activeTab, hideZero, totalsByItemForSite, getQty]);
+    return list.filter(i => (totalsByItemForSite.get(i.id) || 0) > 0);
+  }, [items, hideZero, totalsByItemForSite]);
 
   const grouped = useMemo(() => {
     const groups = new Map();
@@ -896,33 +892,8 @@ export default function ProductionApp({ org, user }) {
             <NoChannelsForSite siteName={activeSite?.name ?? 'this site'} onOpenSettings={() => setShowSettings(true)} />
           ) : (
             <>
-              {/* Channel + Totals tabs */}
-              <div className="shrink-0 border-b bg-white overflow-x-auto" style={{ borderColor: 'var(--top-border)' }}>
-                <div className="flex gap-1 px-2 sm:px-3 py-2 min-w-max">
-                  {channelsForSite.map(ch => (
-                    <button
-                      key={ch.id}
-                      onClick={() => setActiveTab(ch.id)}
-                      className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap ${activeTab === ch.id ? 'text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-                      style={activeTab === ch.id ? { background: 'var(--primary)' } : {}}
-                    >
-                      {ch.name}
-                      <span className={`ml-1.5 text-xs font-bold ${activeTab === ch.id ? 'opacity-90' : (totalForChannel(ch) > 0 ? 'text-gray-700' : 'text-gray-300')}`}>{totalForChannel(ch)}</span>
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => setActiveTab('totals')}
-                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap ${activeTab === 'totals' ? 'text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-                    style={activeTab === 'totals' ? { background: 'var(--primary)' } : {}}
-                  >
-                    Totals
-                    <span className={`ml-1.5 text-xs font-bold ${activeTab === 'totals' ? 'opacity-90' : (siteTotal > 0 ? 'text-gray-700' : 'text-gray-300')}`}>{siteTotal}</span>
-                  </button>
-                </div>
-              </div>
-
               {/* Toolbar */}
-              <div className="shrink-0 px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
+              <div className="shrink-0 px-4 py-2 flex items-center justify-between gap-3 flex-wrap border-b" style={{ borderColor: 'var(--top-border)' }}>
                 <p className="text-xs text-gray-400">{activeItems.length} item{activeItems.length !== 1 ? 's' : ''}</p>
                 <div className="flex items-center gap-3">
                   {dayLock ? (
@@ -951,8 +922,8 @@ export default function ProductionApp({ org, user }) {
                 </div>
               </div>
 
-              {/* List */}
-              <div className="flex-1 overflow-y-auto px-3 pb-8">
+              {/* Table: rows = items, columns = every channel for this site + a Total column */}
+              <div className="flex-1 overflow-auto">
                 {loadingPlan ? (
                   <div className="flex items-center justify-center py-16">
                     <Loader2 size={18} className="animate-spin text-gray-400" />
@@ -963,26 +934,56 @@ export default function ProductionApp({ org, user }) {
                     <p className="text-sm">Nothing to show{hideZero ? ' — try turning off "Hide zero"' : ''}.</p>
                   </div>
                 ) : (
-                  <div className="space-y-5 max-w-2xl mx-auto">
-                    {grouped.map(([cat, its]) => (
-                      <div key={cat}>
-                        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1 mb-1.5">{cat}</h3>
-                        <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-50 overflow-hidden">
+                  <table className="text-sm border-collapse">
+                    <thead>
+                      <tr>
+                        <th className="sticky top-0 left-0 z-20 bg-gray-50 text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-100">Item</th>
+                        {channelsForSite.map(ch => (
+                          <th key={ch.id} className="sticky top-0 z-10 bg-gray-50 text-center px-2 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-100 whitespace-nowrap">
+                            {ch.name}
+                          </th>
+                        ))}
+                        <th className="sticky top-0 z-10 text-center px-3 py-2 text-xs font-bold uppercase tracking-wide border-b border-gray-100 whitespace-nowrap" style={{ background: '#F0FDF4', color: 'var(--primary)' }}>
+                          Total
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {grouped.map(([cat, its]) => (
+                        <React.Fragment key={cat}>
+                          <tr>
+                            <td colSpan={channelsForSite.length + 2} className="px-3 pt-3 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wide bg-white sticky left-0">
+                              {cat}
+                            </td>
+                          </tr>
                           {its.map(item => (
-                            <ItemRow
+                            <ItemTableRow
                               key={item.id}
                               item={item}
-                              mode={activeTab === 'totals' ? 'totals' : 'edit'}
+                              channels={channelsForSite}
+                              getQty={getQty}
+                              total={totalsByItemForSite.get(item.id) || 0}
                               locked={!!dayLock}
-                              qty={activeTab === 'totals' ? (totalsByItemForSite.get(item.id) || 0) : getQty(item.id, activeTab)}
-                              breakdown={activeTab === 'totals' ? channelsForSite.map(ch => ({ name: ch.name, qty: getQty(item.id, ch.id) })).filter(b => b.qty > 0) : null}
-                              onChange={activeTab === 'totals' ? null : (q => handleQtyChange(item.id, activeTab, q))}
+                              onChange={handleQtyChange}
                             />
                           ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td className="sticky left-0 bg-white px-3 py-2.5 text-xs font-bold text-gray-500 uppercase tracking-wide border-t-2 border-gray-100">Total</td>
+                        {channelsForSite.map(ch => (
+                          <td key={ch.id} className="bg-white text-center px-2 py-2.5 text-sm font-extrabold tabular-nums text-gray-700 border-t-2 border-gray-100 whitespace-nowrap">
+                            {totalForChannel(ch)}
+                          </td>
+                        ))}
+                        <td className="text-center px-3 py-2.5 text-base font-extrabold tabular-nums border-t-2 border-gray-100 whitespace-nowrap" style={{ background: '#F0FDF4', color: 'var(--primary)' }}>
+                          {siteTotal}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 )}
               </div>
             </>
