@@ -90,11 +90,11 @@ function EditableCell({ qty, onChange, locked }) {
 
   if (locked) {
     return hasQty ? (
-      <span className="inline-flex items-center justify-center min-w-[2.25rem] px-2 py-1 rounded-full text-sm font-extrabold tabular-nums" style={{ background: '#DCFCE7', color: 'var(--primary)' }}>
+      <span className="inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 rounded-full text-xs sm:text-sm sm:min-w-[2.25rem] sm:px-2 sm:py-1 font-extrabold tabular-nums" style={{ background: '#DCFCE7', color: 'var(--primary)' }}>
         {qty}
       </span>
     ) : (
-      <span className="text-sm font-semibold tabular-nums text-gray-300">0</span>
+      <span className="text-xs sm:text-sm font-semibold tabular-nums text-gray-300">0</span>
     );
   }
 
@@ -109,12 +109,12 @@ function EditableCell({ qty, onChange, locked }) {
       onFocus={e => e.target.select()}
       onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
-      className="w-14 text-center text-sm font-bold border border-blue-300 rounded-lg py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
+      className="w-10 sm:w-14 text-center text-xs sm:text-sm font-bold border border-blue-300 rounded-lg py-1 sm:py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
     />
   ) : (
     <button
       onClick={() => setEditing(true)}
-      className={`min-w-[2.5rem] px-2 py-1.5 text-center text-sm font-extrabold tabular-nums rounded-full transition-colors ${hasQty ? '' : 'text-gray-300 hover:bg-gray-100'}`}
+      className={`min-w-[1.75rem] px-1.5 py-1 text-center text-xs sm:text-sm sm:min-w-[2.5rem] sm:px-2 sm:py-1.5 font-extrabold tabular-nums rounded-full transition-colors ${hasQty ? '' : 'text-gray-300 hover:bg-gray-100'}`}
       style={hasQty ? { background: '#DCFCE7', color: 'var(--primary)' } : {}}
     >
       {qty}
@@ -130,24 +130,24 @@ function ItemTableRow({ item, channels, getQty, total, locked, onChange }) {
 
   return (
     <tr>
-      <td className="px-3 py-2 sticky left-0 border-b border-gray-50" style={{ background: rowBg }}>
-        <div className="flex items-center gap-2 min-w-[130px]">
+      <td className="px-2 py-1.5 sm:px-3 sm:py-2 sticky left-0 border-b border-gray-50" style={{ background: rowBg }}>
+        <div className="flex items-center gap-1.5 min-w-[80px] sm:min-w-[130px]">
           <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
-          <span className={`text-sm truncate ${hasQty ? 'font-semibold text-gray-900' : 'font-medium text-gray-500'}`}>{item.name}</span>
+          <span className={`text-xs sm:text-sm truncate ${hasQty ? 'font-semibold text-gray-900' : 'font-medium text-gray-500'}`}>{item.name}</span>
         </div>
       </td>
       {channels.map(ch => (
-        <td key={ch.id} className="px-2 py-2 text-center whitespace-nowrap border-b border-gray-50" style={{ background: rowBg }}>
+        <td key={ch.id} className="px-1 py-1.5 sm:px-2 sm:py-2 text-center whitespace-nowrap border-b border-gray-50" style={{ background: rowBg }}>
           <EditableCell qty={getQty(item.id, ch.id)} locked={locked} onChange={q => onChange(item.id, ch.id, q)} />
         </td>
       ))}
-      <td className="px-3 py-2 text-center whitespace-nowrap border-b border-gray-50" style={{ background: rowBg }}>
+      <td className="px-2 py-1.5 sm:px-3 sm:py-2 text-center whitespace-nowrap border-b border-gray-50" style={{ background: rowBg }}>
         {hasQty ? (
-          <span className="inline-flex items-center justify-center min-w-[2.5rem] px-2.5 py-1 rounded-full text-base font-extrabold tabular-nums" style={{ background: '#DCFCE7', color: 'var(--primary)' }}>
+          <span className="inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 rounded-full text-xs sm:text-base sm:min-w-[2.5rem] sm:px-2.5 sm:py-1 font-extrabold tabular-nums" style={{ background: '#DCFCE7', color: 'var(--primary)' }}>
             {total}
           </span>
         ) : (
-          <span className="text-sm font-semibold tabular-nums text-gray-300">0</span>
+          <span className="text-xs sm:text-sm font-semibold tabular-nums text-gray-300">0</span>
         )}
       </td>
     </tr>
@@ -923,7 +923,7 @@ export default function ProductionApp({ org, user }) {
               </div>
 
               {/* Table: rows = items, columns = every channel for this site + a Total column */}
-              <div className="flex-1 overflow-auto px-3 sm:px-4 py-2">
+              <div className="flex-1 overflow-auto px-2 sm:px-4 py-2">
                 {loadingPlan ? (
                   <div className="flex items-center justify-center py-16">
                     <Loader2 size={18} className="animate-spin text-gray-400" />
@@ -937,13 +937,13 @@ export default function ProductionApp({ org, user }) {
                   <table className="mx-auto text-sm border-collapse">
                     <thead>
                       <tr>
-                        <th className="sticky top-0 left-0 z-20 bg-gray-50 text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-100">Item</th>
+                        <th className="sticky top-0 left-0 z-20 bg-gray-50 text-left px-2 py-1.5 sm:px-3 sm:py-2 text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-100">Item</th>
                         {channelsForSite.map(ch => (
-                          <th key={ch.id} className="sticky top-0 z-10 bg-gray-50 text-center px-2 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-100 whitespace-nowrap">
+                          <th key={ch.id} className="sticky top-0 z-10 bg-gray-50 text-center px-1.5 py-1.5 sm:px-2 sm:py-2 text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-100 whitespace-nowrap">
                             {ch.name}
                           </th>
                         ))}
-                        <th className="sticky top-0 z-10 text-center px-3 py-2 text-xs font-bold uppercase tracking-wide border-b border-gray-100 whitespace-nowrap" style={{ background: '#F0FDF4', color: 'var(--primary)' }}>
+                        <th className="sticky top-0 z-10 text-center px-2 py-1.5 sm:px-3 sm:py-2 text-[10px] sm:text-xs font-bold uppercase tracking-wide border-b border-gray-100 whitespace-nowrap" style={{ background: '#F0FDF4', color: 'var(--primary)' }}>
                           Total
                         </th>
                       </tr>
@@ -952,7 +952,7 @@ export default function ProductionApp({ org, user }) {
                       {grouped.map(([cat, its]) => (
                         <React.Fragment key={cat}>
                           <tr>
-                            <td colSpan={channelsForSite.length + 2} className="px-3 pt-3 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wide bg-white sticky left-0">
+                            <td colSpan={channelsForSite.length + 2} className="px-2 pt-2 pb-1 sm:px-3 sm:pt-3 text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide bg-white sticky left-0">
                               {cat}
                             </td>
                           </tr>
@@ -972,13 +972,13 @@ export default function ProductionApp({ org, user }) {
                     </tbody>
                     <tfoot>
                       <tr>
-                        <td className="sticky left-0 bg-white px-3 py-2.5 text-xs font-bold text-gray-500 uppercase tracking-wide border-t-2 border-gray-100">Total</td>
+                        <td className="sticky left-0 bg-white px-2 py-2 sm:px-3 sm:py-2.5 text-[10px] sm:text-xs font-bold text-gray-500 uppercase tracking-wide border-t-2 border-gray-100">Total</td>
                         {channelsForSite.map(ch => (
-                          <td key={ch.id} className="bg-white text-center px-2 py-2.5 text-sm font-extrabold tabular-nums text-gray-700 border-t-2 border-gray-100 whitespace-nowrap">
+                          <td key={ch.id} className="bg-white text-center px-1.5 py-2 sm:px-2 sm:py-2.5 text-xs sm:text-sm font-extrabold tabular-nums text-gray-700 border-t-2 border-gray-100 whitespace-nowrap">
                             {totalForChannel(ch)}
                           </td>
                         ))}
-                        <td className="text-center px-3 py-2.5 text-base font-extrabold tabular-nums border-t-2 border-gray-100 whitespace-nowrap" style={{ background: '#F0FDF4', color: 'var(--primary)' }}>
+                        <td className="text-center px-2 py-2 sm:px-3 sm:py-2.5 text-sm sm:text-base font-extrabold tabular-nums border-t-2 border-gray-100 whitespace-nowrap" style={{ background: '#F0FDF4', color: 'var(--primary)' }}>
                           {siteTotal}
                         </td>
                       </tr>
