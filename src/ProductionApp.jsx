@@ -136,7 +136,7 @@ function ItemRow({ item, qty, mode, breakdown, onChange }) {
   );
 }
 
-// ── Empty state ──────────────────────────────────────────────────────────────
+// ── Empty states ─────────────────────────────────────────────────────────────
 
 function EmptySetup({ onOpenSettings }) {
   return (
@@ -146,7 +146,7 @@ function EmptySetup({ onOpenSettings }) {
           <ChefHat size={22} style={{ color: 'var(--primary)' }} />
         </div>
         <h3 className="text-base font-semibold text-gray-900 mb-1.5">Set up production planning</h3>
-        <p className="text-sm text-gray-500 mb-5">Add your channels (e.g. Bus Stop, Shop, Vending) and your menu items to start planning daily production.</p>
+        <p className="text-sm text-gray-500 mb-5">Add your sites (e.g. Crown St, Bourke St), the channels each one produces for, and your menu items to start planning daily production.</p>
         <button onClick={onOpenSettings} className="text-white rounded-xl px-4 py-2.5 text-sm font-semibold" style={{ background: 'var(--primary)' }}>
           Open Setup
         </button>
@@ -155,9 +155,23 @@ function EmptySetup({ onOpenSettings }) {
   );
 }
 
-// ── Settings: Channels ───────────────────────────────────────────────────────
+function NoChannelsForSite({ siteName, onOpenSettings }) {
+  return (
+    <div className="flex-1 flex items-center justify-center p-6">
+      <div className="text-center max-w-sm">
+        <ClipboardList size={28} className="mx-auto mb-3 text-gray-300" />
+        <p className="text-sm text-gray-500 mb-4">No channels set up for <span className="font-semibold text-gray-700">{siteName}</span> yet.</p>
+        <button onClick={onOpenSettings} className="text-white rounded-xl px-4 py-2 text-sm font-semibold" style={{ background: 'var(--primary)' }}>
+          Add a Channel
+        </button>
+      </div>
+    </div>
+  );
+}
 
-function ChannelsSettings({ orgId, channels, onRefresh }) {
+// ── Settings: Sites ──────────────────────────────────────────────────────────
+
+function SitesSettings({ orgId, sites, onRefresh }) {
   const [name, setName] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState('');
@@ -167,7 +181,123 @@ function ChannelsSettings({ orgId, channels, onRefresh }) {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await db.createProductionChannel(orgId, name.trim());
+      await db.createProductionSite(orgId, name.trim());
+      setName('');
+      onRefresh();
+      toast.success('Site added');
+    } catch {
+      toast.error('Failed to add site');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRename(site) {
+    if (!editDraft.trim()) { setEditingId(null); return; }
+    try {
+      await db.updateProductionSite(site.id, { name: editDraft.trim() });
+      setEditingId(null);
+      onRefresh();
+    } catch {
+      toast.error('Failed to rename site');
+    }
+  }
+
+  async function handleDelete(site) {
+    if (!window.confirm(`Delete "${site.name}"? Its channels and any planned quantities will be removed too.`)) return;
+    try {
+      await db.deleteProductionSite(site.id);
+      onRefresh();
+      toast.success('Site deleted');
+    } catch {
+      toast.error('Failed to delete site');
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <input
+          value={name}
+          onChange={e => setName(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleAdd()}
+          placeholder="e.g. Crown St"
+          className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+        />
+        <button
+          onClick={handleAdd}
+          disabled={saving || !name.trim()}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-40"
+          style={{ background: 'var(--primary)' }}
+        >
+          <Plus size={14} /> Add
+        </button>
+      </div>
+
+      {sites.length === 0 ? (
+        <p className="text-sm text-gray-400 text-center py-6">No sites yet.</p>
+      ) : (
+        <div className="bg-gray-50 rounded-2xl border border-gray-100 divide-y divide-gray-100 overflow-hidden">
+          {sites.map((site, idx) => (
+            <div key={site.id} className="flex items-center gap-2 px-3 py-2.5">
+              <div className="flex flex-col -my-1">
+                <button disabled={idx === 0} onClick={() => reorder(sites, idx, -1, db.updateProductionSite, onRefresh)} className="text-gray-300 hover:text-gray-600 disabled:opacity-30">
+                  <ChevronUp size={13} />
+                </button>
+                <button disabled={idx === sites.length - 1} onClick={() => reorder(sites, idx, 1, db.updateProductionSite, onRefresh)} className="text-gray-300 hover:text-gray-600 disabled:opacity-30">
+                  <ChevronDown size={13} />
+                </button>
+              </div>
+              {editingId === site.id ? (
+                <input
+                  autoFocus
+                  value={editDraft}
+                  onChange={e => setEditDraft(e.target.value)}
+                  onBlur={() => handleRename(site)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleRename(site); if (e.key === 'Escape') setEditingId(null); }}
+                  className="flex-1 border border-blue-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                />
+              ) : (
+                <span className="flex-1 text-sm font-medium text-gray-900">{site.name}</span>
+              )}
+              <button onClick={() => { setEditingId(site.id); setEditDraft(site.name); }} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                <Edit2 size={13} />
+              </button>
+              <button onClick={() => handleDelete(site)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Settings: Channels (nested under a site) ─────────────────────────────────
+
+function ChannelsSettings({ orgId, sites, channels, onRefresh }) {
+  const [filterSiteId, setFilterSiteId] = useState(sites[0]?.id ?? null);
+  useEffect(() => {
+    if (!sites.some(s => s.id === filterSiteId)) setFilterSiteId(sites[0]?.id ?? null);
+  }, [sites, filterSiteId]);
+
+  const [name, setName] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editDraft, setEditDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  if (sites.length === 0) {
+    return <p className="text-sm text-gray-400 text-center py-6">Add a site first — channels belong to a site.</p>;
+  }
+
+  const list = channels.filter(c => c.site_id === filterSiteId);
+
+  async function handleAdd() {
+    if (!name.trim() || !filterSiteId) return;
+    setSaving(true);
+    try {
+      await db.createProductionChannel(orgId, filterSiteId, name.trim());
       setName('');
       onRefresh();
       toast.success('Channel added');
@@ -202,12 +332,25 @@ function ChannelsSettings({ orgId, channels, onRefresh }) {
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap gap-1.5">
+        {sites.map(s => (
+          <button
+            key={s.id}
+            onClick={() => setFilterSiteId(s.id)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${filterSiteId === s.id ? 'text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+            style={filterSiteId === s.id ? { background: 'var(--primary)' } : {}}
+          >
+            {s.name}
+          </button>
+        ))}
+      </div>
+
       <div className="flex gap-2">
         <input
           value={name}
           onChange={e => setName(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleAdd()}
-          placeholder="e.g. Bus Stop"
+          placeholder="e.g. Transfer to Crown"
           className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
         />
         <button
@@ -220,17 +363,17 @@ function ChannelsSettings({ orgId, channels, onRefresh }) {
         </button>
       </div>
 
-      {channels.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-6">No channels yet.</p>
+      {list.length === 0 ? (
+        <p className="text-sm text-gray-400 text-center py-6">No channels for this site yet.</p>
       ) : (
         <div className="bg-gray-50 rounded-2xl border border-gray-100 divide-y divide-gray-100 overflow-hidden">
-          {channels.map((ch, idx) => (
+          {list.map((ch, idx) => (
             <div key={ch.id} className="flex items-center gap-2 px-3 py-2.5">
               <div className="flex flex-col -my-1">
-                <button disabled={idx === 0} onClick={() => reorder(channels, idx, -1, db.updateProductionChannel, onRefresh)} className="text-gray-300 hover:text-gray-600 disabled:opacity-30">
+                <button disabled={idx === 0} onClick={() => reorder(list, idx, -1, db.updateProductionChannel, onRefresh)} className="text-gray-300 hover:text-gray-600 disabled:opacity-30">
                   <ChevronUp size={13} />
                 </button>
-                <button disabled={idx === channels.length - 1} onClick={() => reorder(channels, idx, 1, db.updateProductionChannel, onRefresh)} className="text-gray-300 hover:text-gray-600 disabled:opacity-30">
+                <button disabled={idx === list.length - 1} onClick={() => reorder(list, idx, 1, db.updateProductionChannel, onRefresh)} className="text-gray-300 hover:text-gray-600 disabled:opacity-30">
                   <ChevronDown size={13} />
                 </button>
               </div>
@@ -408,7 +551,7 @@ function ItemsSettings({ orgId, items, onRefresh }) {
   );
 }
 
-function SettingsModal({ orgId, channels, items, onClose, onRefresh }) {
+function SettingsModal({ orgId, sites, channels, items, onClose, onRefresh }) {
   const [subTab, setSubTab] = useState('items');
   return (
     <Modal title="Production Setup" onClose={onClose} maxWidth="max-w-lg">
@@ -421,6 +564,12 @@ function SettingsModal({ orgId, channels, items, onClose, onRefresh }) {
             Menu Items
           </button>
           <button
+            onClick={() => setSubTab('sites')}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${subTab === 'sites' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Sites
+          </button>
+          <button
             onClick={() => setSubTab('channels')}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${subTab === 'channels' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
           >
@@ -429,8 +578,10 @@ function SettingsModal({ orgId, channels, items, onClose, onRefresh }) {
         </div>
         {subTab === 'items' ? (
           <ItemsSettings orgId={orgId} items={items} onRefresh={onRefresh} />
+        ) : subTab === 'sites' ? (
+          <SitesSettings orgId={orgId} sites={sites} onRefresh={onRefresh} />
         ) : (
-          <ChannelsSettings orgId={orgId} channels={channels} onRefresh={onRefresh} />
+          <ChannelsSettings orgId={orgId} sites={sites} channels={channels} onRefresh={onRefresh} />
         )}
       </div>
     </Modal>
@@ -441,12 +592,14 @@ function SettingsModal({ orgId, channels, items, onClose, onRefresh }) {
 
 export default function ProductionApp({ org, user }) {
   const orgId = org?.id;
+  const [sites, setSites] = useState([]);
   const [channels, setChannels] = useState([]);
   const [items, setItems] = useState([]);
   const [entries, setEntries] = useState([]);
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [loadingPlan, setLoadingPlan] = useState(true);
   const [date, setDate] = useState(todayStr());
+  const [activeSiteId, setActiveSiteId] = useState(null);
   const [activeTab, setActiveTab] = useState('totals'); // channel id, or 'totals'
   const [hideZero, setHideZero] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -454,10 +607,15 @@ export default function ProductionApp({ org, user }) {
   const loadCatalog = useCallback(async () => {
     if (!orgId) return;
     try {
-      const [chs, its] = await Promise.all([db.getProductionChannels(orgId), db.getProductionItems(orgId)]);
+      const [sts, chs, its] = await Promise.all([
+        db.getProductionSites(orgId),
+        db.getProductionChannels(orgId),
+        db.getProductionItems(orgId),
+      ]);
+      setSites(sts);
       setChannels(chs);
       setItems(its);
-      setActiveTab(prev => (prev === 'totals' || chs.some(c => c.id === prev)) ? prev : (chs[0]?.id ?? 'totals'));
+      setActiveSiteId(prev => (prev && sts.some(s => s.id === prev)) ? prev : (sts[0]?.id ?? null));
     } catch {
       toast.error('Failed to load production setup');
     } finally {
@@ -481,6 +639,13 @@ export default function ProductionApp({ org, user }) {
   useEffect(() => { loadCatalog(); }, [loadCatalog]);
   useEffect(() => { loadPlan(); }, [loadPlan]);
 
+  const channelsForSite = useMemo(() => channels.filter(c => c.site_id === activeSiteId), [channels, activeSiteId]);
+
+  // Keep the channel/totals tab valid whenever the active site or channel list changes.
+  useEffect(() => {
+    setActiveTab(prev => (prev === 'totals' || channelsForSite.some(c => c.id === prev)) ? prev : (channelsForSite[0]?.id ?? 'totals'));
+  }, [channelsForSite]);
+
   const qtyMap = useMemo(() => {
     const m = new Map();
     entries.forEach(e => m.set(`${e.item_id}:${e.channel_id}`, Number(e.qty) || 0));
@@ -503,22 +668,26 @@ export default function ProductionApp({ org, user }) {
     }
   }
 
-  const totalsByItem = useMemo(() => {
+  const totalForChannel = useCallback(ch => items.reduce((sum, it) => sum + getQty(it.id, ch.id), 0), [items, getQty]);
+  const siteTotal = useMemo(() => channelsForSite.reduce((sum, ch) => sum + totalForChannel(ch), 0), [channelsForSite, totalForChannel]);
+
+  const totalsByItemForSite = useMemo(() => {
     const m = new Map();
     items.forEach(it => m.set(it.id, 0));
-    entries.forEach(e => m.set(e.item_id, (m.get(e.item_id) || 0) + (Number(e.qty) || 0)));
+    const siteChannelIds = new Set(channelsForSite.map(c => c.id));
+    entries.forEach(e => {
+      if (!siteChannelIds.has(e.channel_id)) return;
+      m.set(e.item_id, (m.get(e.item_id) || 0) + (Number(e.qty) || 0));
+    });
     return m;
-  }, [items, entries]);
-
-  const totalForChannel = useCallback(ch => items.reduce((sum, it) => sum + getQty(it.id, ch.id), 0), [items, getQty]);
-  const grandTotal = useMemo(() => items.reduce((sum, it) => sum + (totalsByItem.get(it.id) || 0), 0), [items, totalsByItem]);
+  }, [items, entries, channelsForSite]);
 
   const activeItems = useMemo(() => {
     let list = items.filter(i => i.active !== false);
     if (!hideZero) return list;
-    if (activeTab === 'totals') return list.filter(i => (totalsByItem.get(i.id) || 0) > 0);
+    if (activeTab === 'totals') return list.filter(i => (totalsByItemForSite.get(i.id) || 0) > 0);
     return list.filter(i => getQty(i.id, activeTab) > 0);
-  }, [items, activeTab, hideZero, totalsByItem, getQty]);
+  }, [items, activeTab, hideZero, totalsByItemForSite, getQty]);
 
   const grouped = useMemo(() => {
     const groups = new Map();
@@ -538,7 +707,8 @@ export default function ProductionApp({ org, user }) {
     );
   }
 
-  const noSetup = channels.length === 0 || items.length === 0;
+  const noSetup = sites.length === 0 || items.length === 0;
+  const activeSite = sites.find(s => s.id === activeSiteId);
 
   return (
     <div className="h-full flex flex-col" style={{ background: 'var(--app-bg)' }}>
@@ -568,7 +738,7 @@ export default function ProductionApp({ org, user }) {
             onChange={e => setDate(e.target.value)}
             className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-500"
           />
-          <button onClick={() => setShowSettings(true)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Manage items & channels">
+          <button onClick={() => setShowSettings(true)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Manage sites, channels & items">
             <Settings size={18} />
           </button>
         </div>
@@ -578,78 +748,100 @@ export default function ProductionApp({ org, user }) {
         <EmptySetup onOpenSettings={() => setShowSettings(true)} />
       ) : (
         <>
-          {/* Tabs */}
+          {/* Site tabs */}
           <div className="shrink-0 border-b bg-white overflow-x-auto" style={{ borderColor: 'var(--top-border)' }}>
-            <div className="flex gap-1 px-2 sm:px-3 py-2 min-w-max">
-              {channels.map(ch => (
+            <div className="flex gap-1.5 px-2 sm:px-3 py-2 min-w-max">
+              {sites.map(s => (
                 <button
-                  key={ch.id}
-                  onClick={() => setActiveTab(ch.id)}
-                  className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap ${activeTab === ch.id ? 'text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-                  style={activeTab === ch.id ? { background: 'var(--primary)' } : {}}
+                  key={s.id}
+                  onClick={() => setActiveSiteId(s.id)}
+                  className={`px-4 py-1.5 rounded-full text-sm font-bold transition-colors whitespace-nowrap border ${activeSiteId === s.id ? 'text-white border-transparent' : 'text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                  style={activeSiteId === s.id ? { background: 'var(--primary)' } : {}}
                 >
-                  {ch.name}
-                  <span className={`ml-1.5 text-xs ${activeTab === ch.id ? 'opacity-80' : 'text-gray-400'}`}>{totalForChannel(ch)}</span>
+                  {s.name}
                 </button>
               ))}
-              <button
-                onClick={() => setActiveTab('totals')}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap ${activeTab === 'totals' ? 'text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-                style={activeTab === 'totals' ? { background: 'var(--primary)' } : {}}
-              >
-                Totals
-                <span className={`ml-1.5 text-xs ${activeTab === 'totals' ? 'opacity-80' : 'text-gray-400'}`}>{grandTotal}</span>
-              </button>
             </div>
           </div>
 
-          {/* Toolbar */}
-          <div className="shrink-0 px-4 py-2 flex items-center justify-between">
-            <p className="text-xs text-gray-400">{activeItems.length} item{activeItems.length !== 1 ? 's' : ''}</p>
-            <label className="flex items-center gap-1.5 text-xs text-gray-500 select-none cursor-pointer">
-              <input type="checkbox" checked={hideZero} onChange={e => setHideZero(e.target.checked)} className="rounded" />
-              Hide zero
-            </label>
-          </div>
+          {channelsForSite.length === 0 ? (
+            <NoChannelsForSite siteName={activeSite?.name ?? 'this site'} onOpenSettings={() => setShowSettings(true)} />
+          ) : (
+            <>
+              {/* Channel + Totals tabs */}
+              <div className="shrink-0 border-b bg-white overflow-x-auto" style={{ borderColor: 'var(--top-border)' }}>
+                <div className="flex gap-1 px-2 sm:px-3 py-2 min-w-max">
+                  {channelsForSite.map(ch => (
+                    <button
+                      key={ch.id}
+                      onClick={() => setActiveTab(ch.id)}
+                      className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap ${activeTab === ch.id ? 'text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                      style={activeTab === ch.id ? { background: 'var(--primary)' } : {}}
+                    >
+                      {ch.name}
+                      <span className={`ml-1.5 text-xs ${activeTab === ch.id ? 'opacity-80' : 'text-gray-400'}`}>{totalForChannel(ch)}</span>
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setActiveTab('totals')}
+                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap ${activeTab === 'totals' ? 'text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                    style={activeTab === 'totals' ? { background: 'var(--primary)' } : {}}
+                  >
+                    Totals
+                    <span className={`ml-1.5 text-xs ${activeTab === 'totals' ? 'opacity-80' : 'text-gray-400'}`}>{siteTotal}</span>
+                  </button>
+                </div>
+              </div>
 
-          {/* List */}
-          <div className="flex-1 overflow-y-auto px-3 pb-8">
-            {loadingPlan ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 size={18} className="animate-spin text-gray-400" />
+              {/* Toolbar */}
+              <div className="shrink-0 px-4 py-2 flex items-center justify-between">
+                <p className="text-xs text-gray-400">{activeItems.length} item{activeItems.length !== 1 ? 's' : ''}</p>
+                <label className="flex items-center gap-1.5 text-xs text-gray-500 select-none cursor-pointer">
+                  <input type="checkbox" checked={hideZero} onChange={e => setHideZero(e.target.checked)} className="rounded" />
+                  Hide zero
+                </label>
               </div>
-            ) : activeItems.length === 0 ? (
-              <div className="text-center py-16 text-gray-400">
-                <ClipboardList size={32} className="mx-auto mb-2 opacity-40" />
-                <p className="text-sm">Nothing to show{hideZero ? ' — try turning off "Hide zero"' : ''}.</p>
-              </div>
-            ) : (
-              <div className="space-y-5 max-w-2xl mx-auto">
-                {grouped.map(([cat, its]) => (
-                  <div key={cat}>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1 mb-1.5">{cat}</h3>
-                    <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-50 overflow-hidden">
-                      {its.map(item => (
-                        <ItemRow
-                          key={item.id}
-                          item={item}
-                          mode={activeTab === 'totals' ? 'totals' : 'edit'}
-                          qty={activeTab === 'totals' ? (totalsByItem.get(item.id) || 0) : getQty(item.id, activeTab)}
-                          breakdown={activeTab === 'totals' ? channels.map(ch => ({ name: ch.name, qty: getQty(item.id, ch.id) })).filter(b => b.qty > 0) : null}
-                          onChange={activeTab === 'totals' ? null : (q => handleQtyChange(item.id, activeTab, q))}
-                        />
-                      ))}
-                    </div>
+
+              {/* List */}
+              <div className="flex-1 overflow-y-auto px-3 pb-8">
+                {loadingPlan ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 size={18} className="animate-spin text-gray-400" />
                   </div>
-                ))}
+                ) : activeItems.length === 0 ? (
+                  <div className="text-center py-16 text-gray-400">
+                    <ClipboardList size={32} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">Nothing to show{hideZero ? ' — try turning off "Hide zero"' : ''}.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-5 max-w-2xl mx-auto">
+                    {grouped.map(([cat, its]) => (
+                      <div key={cat}>
+                        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1 mb-1.5">{cat}</h3>
+                        <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-50 overflow-hidden">
+                          {its.map(item => (
+                            <ItemRow
+                              key={item.id}
+                              item={item}
+                              mode={activeTab === 'totals' ? 'totals' : 'edit'}
+                              qty={activeTab === 'totals' ? (totalsByItemForSite.get(item.id) || 0) : getQty(item.id, activeTab)}
+                              breakdown={activeTab === 'totals' ? channelsForSite.map(ch => ({ name: ch.name, qty: getQty(item.id, ch.id) })).filter(b => b.qty > 0) : null}
+                              onChange={activeTab === 'totals' ? null : (q => handleQtyChange(item.id, activeTab, q))}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </>
+          )}
         </>
       )}
 
       {showSettings && (
-        <SettingsModal orgId={orgId} channels={channels} items={items} onClose={() => setShowSettings(false)} onRefresh={loadCatalog} />
+        <SettingsModal orgId={orgId} sites={sites} channels={channels} items={items} onClose={() => setShowSettings(false)} onRefresh={loadCatalog} />
       )}
     </div>
   );
