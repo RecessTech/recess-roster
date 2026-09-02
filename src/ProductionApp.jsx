@@ -26,6 +26,8 @@ function fmtDateShort(dateStr) {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
+const CATEGORY_OPTIONS = ['Sandwiches', 'Toasties', 'Salads'];
+
 const COLOR_PALETTE = [
   { name: 'Amber',  hex: '#F59E0B' },
   { name: 'Green',  hex: '#22C55E' },
@@ -446,13 +448,15 @@ function ItemFormModal({ item, onClose, onSave, orgId }) {
           />
         </div>
         <div>
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Category (optional)</label>
-          <input
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Category</label>
+          <select
             value={category}
             onChange={e => setCategory(e.target.value)}
-            placeholder="e.g. Sandwiches"
-            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-          />
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+          >
+            <option value="">— Select —</option>
+            {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
         <div>
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Colour</label>
