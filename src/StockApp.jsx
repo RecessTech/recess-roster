@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
   ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History, Box, ArrowLeftRight, Search,
-  TrendingUp, ChevronLeft, ChevronRight, Tag,
+  TrendingUp, ChevronLeft, ChevronRight, Tag, User, Settings,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -242,6 +242,105 @@ function CategoryFilterMultiSelect({ value, onChange, categories }) {
   );
 }
 
+// "My Suppliers" — a convenience filter, not access control. Toggles
+// whether the current tab's supplier groups are narrowed down to just
+// the ones assigned (via SupplierAssignmentsModal) to the logged-in
+// user. Disabled with a hint when they have no assignments yet.
+function MySuppliersToggle({ active, onToggle, hasAssignments, onManage }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        onClick={onToggle}
+        disabled={!hasAssignments}
+        title={hasAssignments ? 'Show only the suppliers assigned to you' : 'No suppliers assigned to you yet — click the gear to set that up'}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed ${active ? 'tab-active' : 'bg-gray-100 tab-inactive'}`}
+      >
+        <User size={13} />
+        My Suppliers
+      </button>
+      <button
+        onClick={onManage}
+        title="Assign suppliers to team members"
+        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+      >
+        <Settings size={14} />
+      </button>
+    </div>
+  );
+}
+
+function SupplierAssignmentsModal({ suppliers, assignments, orgMembers, orgId, onClose, onSaved }) {
+  const [draft, setDraft] = useState(() => {
+    const initial = {};
+    for (const a of assignments) initial[a.supplier] = a.user_id;
+    return initial;
+  });
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const original = {};
+      for (const a of assignments) original[a.supplier] = a.user_id;
+
+      await Promise.all(suppliers.map(supplier => {
+        const was = original[supplier] || null;
+        const now = draft[supplier] || null;
+        if (was === now) return null;
+        return now
+          ? db.setSupplierAssignment(orgId, supplier, now)
+          : db.removeSupplierAssignment(orgId, supplier);
+      }));
+
+      toast.success('Supplier assignments saved');
+      onSaved();
+      onClose();
+    } catch (err) {
+      toast.error('Failed to save assignments');
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="Supplier Assignments" onClose={onClose} maxWidth="max-w-md">
+      <div className="space-y-4">
+        <p className="text-xs text-gray-500">
+          Assign each supplier to whoever orders it. Anyone can still see every supplier — this just powers the "My Suppliers" filter.
+        </p>
+        {suppliers.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">No suppliers in the catalog yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {suppliers.map(supplier => (
+              <div key={supplier} className="flex items-center justify-between gap-3">
+                <span className="text-sm font-medium text-gray-800 truncate">{supplier}</span>
+                <select
+                  value={draft[supplier] || ''}
+                  onChange={e => setDraft(d => ({ ...d, [supplier]: e.target.value || null }))}
+                  className="input-base bg-white w-auto py-1.5 text-sm flex-shrink-0"
+                >
+                  <option value="">Unassigned</option>
+                  {orgMembers.map(m => (
+                    <option key={m.user_id} value={m.user_id}>{m.email}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2 pt-2">
+          <button onClick={save} disabled={saving || suppliers.length === 0} className="btn-primary flex-1">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button onClick={onClose} className="btn-secondary">Cancel</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function SearchInput({ value, onChange, placeholder = 'Search…' }) {
   return (
     <div className="relative w-full sm:w-64">
@@ -403,12 +502,13 @@ function StatusDropdown({ value, onChange }) {
 // Pure flagging — status only. Order qty and marking things as ordered
 // live in the Ordering tab, which works off whatever gets flagged here.
 
-function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, onUpdateOrderQty, lastOrderedByKey, pinnedCategory }) {
+function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, onUpdateOrderQty, lastOrderedByKey, pinnedCategory, mySuppliers, onManageSuppliers }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
   const [collapsed, setCollapsed] = useState({});
   const [search, setSearch] = useState('');
   const [groupBy, setGroupBy] = useState('supplier');
   const [categoryFilters, setCategoryFilters] = useState([]);
+  const [myOnly, setMyOnly] = useState(false);
   const toggleGroup = key => setCollapsed(c => ({ ...c, [key]: !c[key] }));
 
   const availableCategories = useMemo(
@@ -420,7 +520,8 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
   // Packaging tab) without needing a separate data model or component —
   // items still show up in the unfiltered Stocktake tab too. categoryFilters
   // is the user-facing version of the same idea for the general tab, and
-  // can select several categories at once.
+  // can select several categories at once. myOnly is the same idea again,
+  // for "just the suppliers assigned to me".
   const siteRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return sites
@@ -429,8 +530,9 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
       .filter(r => r.item)
       .filter(r => !pinnedCategory || r.item.category === pinnedCategory)
       .filter(r => categoryFilters.length === 0 || categoryFilters.includes(r.item.category))
+      .filter(r => !myOnly || mySuppliers.includes(r.supplier))
       .filter(r => !q || r.item.name.toLowerCase().includes(q) || (r.item.sku || '').toLowerCase().includes(q));
-  }, [sites, selectedLocationId, itemById, pinnedCategory, categoryFilters, search]);
+  }, [sites, selectedLocationId, itemById, pinnedCategory, categoryFilters, myOnly, mySuppliers, search]);
 
   const grouped = useMemo(() => {
     const groups = {};
@@ -539,6 +641,7 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
             <CategoryFilterMultiSelect value={categoryFilters} onChange={setCategoryFilters} categories={availableCategories} />
           )}
           <GroupBySwitcher value={groupBy} onChange={setGroupBy} />
+          <MySuppliersToggle active={myOnly} onToggle={() => setMyOnly(o => !o)} hasAssignments={mySuppliers.length > 0} onManage={onManageSuppliers} />
           <SearchInput value={search} onChange={setSearch} placeholder="Search items or SKU…" />
         </div>
       </div>
@@ -565,11 +668,12 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
           Icon={search ? Search : Package}
           title={
             search ? `No items match "${search}"`
+            : myOnly ? 'None of your assigned suppliers have items at this site'
             : categoryFilters.length > 0 ? `No items in ${categoryFilters.join(', ')} assigned to this site`
             : pinnedCategory ? `No ${pinnedCategory} items assigned to this site yet`
             : 'No items assigned to this site yet'
           }
-          hint={search || categoryFilters.length > 0 ? 'Try a different filter.' : 'Add or upload some in the Items tab.'}
+          hint={search || categoryFilters.length > 0 || myOnly ? 'Try a different filter.' : 'Add or upload some in the Items tab.'}
         />
       ) : (
         <div className="flex flex-col lg:flex-row gap-4 items-start">
@@ -588,10 +692,11 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
 
 const NEEDS_ORDER_STATUSES = ['no_stock', 'low_stock', 'order_moq'];
 
-function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateOrderQty, onUpdateOrdered }) {
+function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateOrderQty, onUpdateOrdered, mySuppliers, onManageSuppliers }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
   const [groupBy, setGroupBy] = useState('supplier');
   const [categoryFilters, setCategoryFilters] = useState([]);
+  const [myOnly, setMyOnly] = useState(false);
 
   const availableCategories = useMemo(
     () => [...new Set(items.map(i => i.category).filter(Boolean))].sort(),
@@ -603,8 +708,9 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
       .filter(s => s.location_id === selectedLocationId && NEEDS_ORDER_STATUSES.includes(s.current_status))
       .map(s => ({ ...s, item: itemById.get(s.item_id) }))
       .filter(r => r.item)
-      .filter(r => categoryFilters.length === 0 || categoryFilters.includes(r.item.category));
-  }, [sites, selectedLocationId, itemById, categoryFilters]);
+      .filter(r => categoryFilters.length === 0 || categoryFilters.includes(r.item.category))
+      .filter(r => !myOnly || mySuppliers.includes(r.supplier));
+  }, [sites, selectedLocationId, itemById, categoryFilters, myOnly, mySuppliers]);
 
   const grouped = useMemo(() => {
     const groups = {};
@@ -628,6 +734,7 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
         <div className="flex items-center gap-2 flex-wrap">
           <CategoryFilterMultiSelect value={categoryFilters} onChange={setCategoryFilters} categories={availableCategories} />
           <GroupBySwitcher value={groupBy} onChange={setGroupBy} />
+          <MySuppliersToggle active={myOnly} onToggle={() => setMyOnly(o => !o)} hasAssignments={mySuppliers.length > 0} onManage={onManageSuppliers} />
         </div>
       </div>
 
@@ -646,7 +753,11 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
       {siteRows.length === 0 ? (
         <EmptyState
           Icon={ShoppingCart}
-          title={categoryFilters.length > 0 ? `Nothing in ${categoryFilters.join(', ')} needs ordering right now` : 'Nothing needs ordering at this site right now'}
+          title={
+            myOnly ? 'Nothing from your assigned suppliers needs ordering right now'
+            : categoryFilters.length > 0 ? `Nothing in ${categoryFilters.join(', ')} needs ordering right now`
+            : 'Nothing needs ordering at this site right now'
+          }
           hint="Flag items as low or out of stock in the Stocktake tab and they'll show up here."
         />
       ) : (
@@ -1812,6 +1923,9 @@ export default function StockApp({ user, org }) {
   const [items, setItems] = useState([]);
   const [sites, setSites] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
+  const [supplierAssignments, setSupplierAssignments] = useState([]);
+  const [orgMembers, setOrgMembers] = useState([]);
+  const [showAssignmentsModal, setShowAssignmentsModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedLocationId, setSelectedLocationId] = useState(null);
 
@@ -1821,16 +1935,20 @@ export default function StockApp({ user, org }) {
     if (!org?.id) return;
     setLoading(true);
     try {
-      const [locs, stockItems, itemSites, history] = await Promise.all([
+      const [locs, stockItems, itemSites, history, assignments, members] = await Promise.all([
         db.getLocations(org.id),
         db.getStockItems(org.id),
         db.getStockItemSites(org.id),
         db.getStockOrderHistory(org.id),
+        db.getSupplierAssignments(org.id),
+        db.getOrgMembersWithEmail(org.id),
       ]);
       setLocations(locs);
       setItems(stockItems);
       setSites(itemSites);
       setOrderHistory(history);
+      setSupplierAssignments(assignments);
+      setOrgMembers(members);
       setSelectedLocationId(prev => prev && locs.some(l => l.id === prev) ? prev : (locs.find(l => l.active)?.id || locs[0]?.id || null));
     } catch (err) {
       toast.error('Failed to load stock data');
@@ -1838,6 +1956,18 @@ export default function StockApp({ user, org }) {
     }
     setLoading(false);
   }
+
+  // Suppliers assigned to whoever's logged in — the "My Suppliers" filter
+  // narrows to these. Distinct suppliers across all sites, for the
+  // assignment modal's list.
+  const mySuppliers = useMemo(
+    () => supplierAssignments.filter(a => a.user_id === user?.id).map(a => a.supplier),
+    [supplierAssignments, user?.id]
+  );
+  const allSuppliers = useMemo(
+    () => [...new Set(sites.map(s => s.supplier).filter(Boolean))].sort(),
+    [sites]
+  );
 
   const activeLocations = useMemo(() => locations.filter(l => l.active), [locations]);
 
@@ -1906,6 +2036,7 @@ export default function StockApp({ user, org }) {
   }
 
   return (
+    <>
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
@@ -1963,6 +2094,8 @@ export default function StockApp({ user, org }) {
           onUpdateStatus={handleStatusUpdate}
           onUpdateOrderQty={handleOrderQtyUpdate}
           lastOrderedByKey={lastOrderedByKey}
+          mySuppliers={mySuppliers}
+          onManageSuppliers={() => setShowAssignmentsModal(true)}
         />
       )}
       {activeTab === 'packaging' && (
@@ -1976,6 +2109,8 @@ export default function StockApp({ user, org }) {
           onUpdateOrderQty={handleOrderQtyUpdate}
           lastOrderedByKey={lastOrderedByKey}
           pinnedCategory="PCK"
+          mySuppliers={mySuppliers}
+          onManageSuppliers={() => setShowAssignmentsModal(true)}
         />
       )}
       {activeTab === 'ordering' && (
@@ -1987,6 +2122,8 @@ export default function StockApp({ user, org }) {
           onSelectLocation={setSelectedLocationId}
           onUpdateOrderQty={handleOrderQtyUpdate}
           onUpdateOrdered={handleOrderedUpdate}
+          mySuppliers={mySuppliers}
+          onManageSuppliers={() => setShowAssignmentsModal(true)}
         />
       )}
       {activeTab === 'transfers' && (
@@ -2026,5 +2163,16 @@ export default function StockApp({ user, org }) {
         />
       )}
     </div>
+    {showAssignmentsModal && (
+      <SupplierAssignmentsModal
+        suppliers={allSuppliers}
+        assignments={supplierAssignments}
+        orgMembers={orgMembers}
+        orgId={org.id}
+        onClose={() => setShowAssignmentsModal(false)}
+        onSaved={loadData}
+      />
+    )}
+    </>
   );
 }
