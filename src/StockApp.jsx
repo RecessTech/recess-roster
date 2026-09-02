@@ -73,11 +73,17 @@ function lastOrderedInfo(row, lastOrderedByKey) {
   return { label: `Last ordered ${relativeDayLabel(days)}`, days, never: false };
 }
 
+// Traffic-light scheme matching STATUS_CONFIG's bg/text/dot convention,
+// so the same at-a-glance scanning works for "when was this last
+// ordered" as already works for stock status. "fresh" is genuinely
+// green (a real positive signal) rather than gray, which used to make
+// it indistinguishable from "N/A" -- both just blended into the rest
+// of the row's gray text.
 const LAST_ORDERED_TONE_CLASSES = {
-  fresh:   'bg-gray-100 text-gray-500',
-  warn:    'bg-amber-50 text-amber-600',
-  stale:   'bg-red-50 text-red-600',
-  neutral: 'bg-gray-50 text-gray-400',
+  fresh:   { bg: 'bg-green-50', text: 'text-green-600', dot: 'bg-green-500' },
+  warn:    { bg: 'bg-amber-50', text: 'text-amber-600', dot: 'bg-amber-500' },
+  stale:   { bg: 'bg-red-50',   text: 'text-red-600',   dot: 'bg-red-500'   },
+  neutral: { bg: 'bg-gray-50',  text: 'text-gray-400',  dot: 'bg-gray-300'  },
 };
 
 function lastOrderedTone(info) {
@@ -493,7 +499,8 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                   <td className="px-3 py-2">
                     <div className="font-medium text-gray-900 truncate">{row.item.name}</div>
                     <div className="text-xs text-gray-400 truncate mb-1">{row.item.sku} · {row.item.uom}</div>
-                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${LAST_ORDERED_TONE_CLASSES[tone]}`}>
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${LAST_ORDERED_TONE_CLASSES[tone].bg} ${LAST_ORDERED_TONE_CLASSES[tone].text}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone].dot}`} />
                       {info.label}
                     </span>
                   </td>
@@ -1067,7 +1074,8 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
                     <div className="text-sm font-medium text-gray-900 truncate">{row.item.name}</div>
                     <div className="text-xs text-gray-400">{row.item.sku} · {row.supplier || 'No Supplier'}</div>
                   </div>
-                  <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone]}`}>
+                  <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone].bg} ${LAST_ORDERED_TONE_CLASSES[tone].text}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone].dot}`} />
                     {info.label}
                   </span>
                 </div>
