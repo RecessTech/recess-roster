@@ -47,11 +47,12 @@ serve(async (req) => {
       .eq('org_id', org.id)
       .single();
 
-    const [{ data: sites }, { data: channels }, { data: items }, { data: entries }] = await Promise.all([
+    const [{ data: sites }, { data: channels }, { data: items }, { data: entries }, { data: locks }] = await Promise.all([
       supabase.from('production_sites').select('id, name, sort_order').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
       supabase.from('production_channels').select('id, name, site_id, sort_order').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
       supabase.from('production_items').select('id, name, category, color, sort_order').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
       supabase.from('production_plan_entries').select('item_id, channel_id, qty').eq('org_id', org.id).eq('plan_date', planDate),
+      supabase.from('production_day_locks').select('site_id, locked_at').eq('org_id', org.id).eq('plan_date', planDate),
     ]);
 
     return new Response(JSON.stringify({
@@ -61,6 +62,7 @@ serve(async (req) => {
       channels: channels || [],
       items: items || [],
       entries: entries || [],
+      locks: locks || [],
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -1366,4 +1366,38 @@ export const db = {
     if (error) throw error;
     return data;
   },
+
+  async getProductionDayLock(orgId, siteId, date) {
+    const { data, error } = await supabase
+      .from('production_day_locks')
+      .select('*')
+      .eq('org_id', orgId)
+      .eq('site_id', siteId)
+      .eq('plan_date', date)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  },
+
+  async setProductionDayLock(orgId, userId, siteId, date) {
+    const { data, error } = await supabase
+      .from('production_day_locks')
+      .upsert(
+        [{ org_id: orgId, site_id: siteId, plan_date: date, locked_by: userId, locked_at: new Date().toISOString() }],
+        { onConflict: 'site_id,plan_date' }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async clearProductionDayLock(siteId, date) {
+    const { error } = await supabase
+      .from('production_day_locks')
+      .delete()
+      .eq('site_id', siteId)
+      .eq('plan_date', date);
+    if (error) throw error;
+  },
 };

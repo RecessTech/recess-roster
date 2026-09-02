@@ -74,7 +74,7 @@ async function reorder(list, idx, dir, updateFn, onDone) {
 
 // ── Item row (per-channel edit mode, or read-only totals mode) ────────────────
 
-function ItemRow({ item, qty, mode, breakdown, onChange }) {
+function ItemRow({ item, qty, mode, breakdown, onChange, locked }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(qty));
 
@@ -87,6 +87,7 @@ function ItemRow({ item, qty, mode, breakdown, onChange }) {
   }
 
   const hasQty = qty > 0;
+  const readOnly = mode === 'totals' || locked;
 
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 transition-colors" style={{ background: hasQty ? 'rgba(21,128,61,0.06)' : 'transparent' }}>
@@ -97,7 +98,7 @@ function ItemRow({ item, qty, mode, breakdown, onChange }) {
           <p className="text-xs text-gray-400 truncate">{breakdown.map(b => `${b.name} ${b.qty}`).join(' · ')}</p>
         )}
       </div>
-      {mode === 'totals' ? (
+      {readOnly ? (
         hasQty ? (
           <span
             className="shrink-0 inline-flex items-center justify-center min-w-[2.5rem] px-2.5 py-1 rounded-full text-base font-extrabold tabular-nums"
@@ -683,6 +684,8 @@ export default function ProductionApp({ org, user }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [productionToken, setProductionToken] = useState(org?.production_public_token ?? null);
+  const [dayLock, setDayLock] = useState(null);
+  const [finalizing, setFinalizing] = useState(false);
 
   useEffect(() => { setProductionToken(org?.production_public_token ?? null); }, [org?.production_public_token]);
 
@@ -718,8 +721,47 @@ export default function ProductionApp({ org, user }) {
     }
   }, [orgId, date]);
 
+  const loadLock = useCallback(async () => {
+    if (!orgId || !activeSiteId) { setDayLock(null); return; }
+    try {
+      const row = await db.getProductionDayLock(orgId, activeSiteId, date);
+      setDayLock(row);
+    } catch (err) {
+      toast.error('Failed to check finalize status: ' + (err.message || 'unknown error'));
+    }
+  }, [orgId, activeSiteId, date]);
+
   useEffect(() => { loadCatalog(); }, [loadCatalog]);
   useEffect(() => { loadPlan(); }, [loadPlan]);
+  useEffect(() => { loadLock(); }, [loadLock]);
+
+  async function handleFinalize() {
+    if (!activeSiteId) return;
+    setFinalizing(true);
+    try {
+      const row = await db.setProductionDayLock(orgId, user.id, activeSiteId, date);
+      setDayLock(row);
+      toast.success('Day finalized');
+    } catch (err) {
+      toast.error('Failed to finalize: ' + (err.message || 'unknown error'));
+    } finally {
+      setFinalizing(false);
+    }
+  }
+
+  async function handleUnlock() {
+    if (!activeSiteId) return;
+    if (!window.confirm('Unlock this day so quantities can be edited again?')) return;
+    setFinalizing(true);
+    try {
+      await db.clearProductionDayLock(activeSiteId, date);
+      setDayLock(null);
+    } catch (err) {
+      toast.error('Failed to unlock: ' + (err.message || 'unknown error'));
+    } finally {
+      setFinalizing(false);
+    }
+  }
 
   const channelsForSite = useMemo(() => channels.filter(c => c.site_id === activeSiteId), [channels, activeSiteId]);
 
@@ -737,6 +779,7 @@ export default function ProductionApp({ org, user }) {
   const getQty = useCallback((itemId, channelId) => qtyMap.get(`${itemId}:${channelId}`) || 0, [qtyMap]);
 
   async function handleQtyChange(itemId, channelId, qty) {
+    if (dayLock) { toast.error('This day is finalized — unlock it first.'); return; }
     setEntries(prev => {
       const exists = prev.find(e => e.item_id === itemId && e.channel_id === channelId);
       if (exists) return prev.map(e => e === exists ? { ...e, qty } : e);
@@ -879,12 +922,33 @@ export default function ProductionApp({ org, user }) {
               </div>
 
               {/* Toolbar */}
-              <div className="shrink-0 px-4 py-2 flex items-center justify-between">
+              <div className="shrink-0 px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
                 <p className="text-xs text-gray-400">{activeItems.length} item{activeItems.length !== 1 ? 's' : ''}</p>
-                <label className="flex items-center gap-1.5 text-xs text-gray-500 select-none cursor-pointer">
-                  <input type="checkbox" checked={hideZero} onChange={e => setHideZero(e.target.checked)} className="rounded" />
-                  Hide zero
-                </label>
+                <div className="flex items-center gap-3">
+                  {dayLock ? (
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: '#DCFCE7', color: 'var(--primary)' }}>
+                        <CheckCircle size={13} /> Finalized
+                      </span>
+                      <button onClick={handleUnlock} disabled={finalizing} className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-50 transition-colors">
+                        {finalizing ? 'Unlocking…' : 'Unlock'}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleFinalize}
+                      disabled={finalizing}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50 transition-colors"
+                      style={{ background: 'var(--primary)' }}
+                    >
+                      {finalizing ? 'Finalizing…' : 'Submit Final Numbers'}
+                    </button>
+                  )}
+                  <label className="flex items-center gap-1.5 text-xs text-gray-500 select-none cursor-pointer">
+                    <input type="checkbox" checked={hideZero} onChange={e => setHideZero(e.target.checked)} className="rounded" />
+                    Hide zero
+                  </label>
+                </div>
               </div>
 
               {/* List */}
@@ -909,6 +973,7 @@ export default function ProductionApp({ org, user }) {
                               key={item.id}
                               item={item}
                               mode={activeTab === 'totals' ? 'totals' : 'edit'}
+                              locked={!!dayLock}
                               qty={activeTab === 'totals' ? (totalsByItemForSite.get(item.id) || 0) : getQty(item.id, activeTab)}
                               breakdown={activeTab === 'totals' ? channelsForSite.map(ch => ({ name: ch.name, qty: getQty(item.id, ch.id) })).filter(b => b.qty > 0) : null}
                               onChange={activeTab === 'totals' ? null : (q => handleQtyChange(item.id, activeTab, q))}
