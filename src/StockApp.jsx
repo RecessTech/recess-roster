@@ -62,7 +62,7 @@ function formatQty(value, unit) {
 function lastOrderedInfo(row, lastOrderedByKey) {
   if (row.ordered && row.ordered_at) {
     const days = daysAgo(row.ordered_at);
-    return { label: `Ordered ${relativeDayLabel(days)}`, days, never: false };
+    return { label: `Last ordered ${relativeDayLabel(days)}`, days, never: false };
   }
   const lastDate = lastOrderedByKey[`${row.item_id}:${row.location_id}`];
   // Not "never" as in a red flag -- just an item that hasn't been through
