@@ -1343,6 +1343,15 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
     return map;
   }, [sites]);
 
+  // Suggestions for the Supplier field, drawn from what's already in use —
+  // free text stays flexible, but autocomplete steers toward the existing
+  // name instead of a near-duplicate typo (e.g. "PNP" vs "Premier North
+  // Pak" needing a manual fix later).
+  const knownSuppliers = useMemo(
+    () => [...new Set(sites.map(s => s.supplier).filter(Boolean))].sort(),
+    [sites]
+  );
+
   const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return items;
@@ -1568,6 +1577,10 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
               </div>
             </div>
 
+            <datalist id="supplier-suggestions">
+              {knownSuppliers.map(s => <option key={s} value={s} />)}
+            </datalist>
+
             {locations.length === 0 ? (
               <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
                 No sites yet — add one in the Locations tab, then come back to assign this item.
@@ -1602,6 +1615,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                                 type="text" value={a.supplier}
                                 onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, supplier: e.target.value } }))}
                                 placeholder="Optional"
+                                list="supplier-suggestions"
                                 className="input-base py-1.5"
                               />
                             </div>
