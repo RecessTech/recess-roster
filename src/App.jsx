@@ -3,14 +3,19 @@ import { useAuth, Auth } from './Auth';
 import RosterApp from './roster-app';
 import PublicScheduleView from './PublicScheduleView';
 import PublicRosterView from './PublicRosterView';
+import PublicProductionView from './PublicProductionView';
 
-// Resolve public routes before auth: /s/<token> (one staff member's shifts)
-// and /r/<token> (the whole roster, read-only)
+// Resolve public routes before auth: /s/<token> (one staff member's shifts),
+// /r/<token> (the whole roster, read-only), and /prod/<token> (the daily
+// production plan, read-only)
 const publicMatch = window.location.pathname.match(/^\/s\/([^/]+)/);
 const PUBLIC_TOKEN = publicMatch ? publicMatch[1] : null;
 
 const publicRosterMatch = window.location.pathname.match(/^\/r\/([^/]+)/);
 const PUBLIC_ROSTER_TOKEN = publicRosterMatch ? publicRosterMatch[1] : null;
+
+const publicProductionMatch = window.location.pathname.match(/^\/prod\/([^/]+)/);
+const PUBLIC_PRODUCTION_TOKEN = publicProductionMatch ? publicProductionMatch[1] : null;
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -71,6 +76,9 @@ function AuthenticatedApp() {
 function App() {
   if (PUBLIC_ROSTER_TOKEN) {
     return <PublicRosterView token={PUBLIC_ROSTER_TOKEN} />;
+  }
+  if (PUBLIC_PRODUCTION_TOKEN) {
+    return <PublicProductionView token={PUBLIC_PRODUCTION_TOKEN} />;
   }
   if (PUBLIC_TOKEN) {
     return <PublicScheduleView token={PUBLIC_TOKEN} />;

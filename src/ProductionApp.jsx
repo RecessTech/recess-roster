@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, Trash2, Edit2, X, Settings, ChevronLeft, ChevronRight, Minus,
-  ClipboardList, Loader2, ChevronUp, ChevronDown, ChefHat,
+  ClipboardList, Loader2, ChevronUp, ChevronDown, ChefHat, Link2, CheckCircle,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -86,17 +86,28 @@ function ItemRow({ item, qty, mode, breakdown, onChange }) {
     setEditing(false);
   }
 
+  const hasQty = qty > 0;
+
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5">
+    <div className="flex items-center gap-3 px-3 py-2.5 transition-colors" style={{ background: hasQty ? 'rgba(21,128,61,0.06)' : 'transparent' }}>
       <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
+        <p className={`text-sm truncate ${hasQty ? 'font-semibold text-gray-900' : 'font-medium text-gray-500'}`}>{item.name}</p>
         {breakdown && breakdown.length > 0 && (
           <p className="text-xs text-gray-400 truncate">{breakdown.map(b => `${b.name} ${b.qty}`).join(' · ')}</p>
         )}
       </div>
       {mode === 'totals' ? (
-        <span className={`text-lg font-bold tabular-nums shrink-0 ${qty > 0 ? 'text-gray-900' : 'text-gray-300'}`}>{qty}</span>
+        hasQty ? (
+          <span
+            className="shrink-0 inline-flex items-center justify-center min-w-[2.5rem] px-2.5 py-1 rounded-full text-base font-extrabold tabular-nums"
+            style={{ background: '#DCFCE7', color: 'var(--primary)' }}
+          >
+            {qty}
+          </span>
+        ) : (
+          <span className="shrink-0 text-sm font-semibold tabular-nums text-gray-300">0</span>
+        )
       ) : (
         <div className="flex items-center gap-1.5 shrink-0">
           <button
@@ -121,7 +132,8 @@ function ItemRow({ item, qty, mode, breakdown, onChange }) {
           ) : (
             <button
               onClick={() => setEditing(true)}
-              className="w-14 text-center text-base font-bold tabular-nums text-gray-900 py-1.5 rounded-lg hover:bg-gray-50"
+              className={`w-14 text-center text-base font-extrabold tabular-nums py-1.5 rounded-full transition-colors ${hasQty ? '' : 'text-gray-300 hover:bg-gray-100'}`}
+              style={hasQty ? { background: '#DCFCE7', color: 'var(--primary)' } : {}}
             >
               {qty}
             </button>
@@ -144,7 +156,7 @@ function EmptySetup({ onOpenSettings }) {
   return (
     <div className="flex-1 flex items-center justify-center p-6">
       <div className="text-center max-w-sm">
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4" style={{ background: 'var(--sb-active, #DCFCE7)' }}>
+        <div className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4" style={{ background: '#DCFCE7' }}>
           <ChefHat size={22} style={{ color: 'var(--primary)' }} />
         </div>
         <h3 className="text-base font-semibold text-gray-900 mb-1.5">Set up production planning</h3>
@@ -592,6 +604,68 @@ function SettingsModal({ orgId, sites, channels, items, onClose, onRefresh }) {
   );
 }
 
+// ── Share modal (read-only public link, no login required) ───────────────────
+
+function ShareModal({ token, orgId, onClose, onTokenChange }) {
+  const [copied, setCopied] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const shareUrl = token ? `${window.location.origin}/prod/${token}` : null;
+
+  function copyLink() {
+    if (!shareUrl) return;
+    navigator.clipboard.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function regenerate() {
+    setRegenerating(true);
+    try {
+      const updated = await db.regenerateOrgProductionPublicToken(orgId);
+      onTokenChange(updated.production_public_token);
+      setCopied(false);
+    } catch (err) {
+      toast.error('Could not regenerate link: ' + (err.message || 'unknown error'));
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
+  return (
+    <Modal title="Share Production Plan" onClose={onClose} maxWidth="max-w-md">
+      <div className="space-y-3">
+        <p className="text-xs text-gray-500">
+          Anyone with this link can view the production plan for any day — no login required, and it's read-only (they can't change quantities). Good for sharing with a supplier, driver, or another site.
+        </p>
+        <div className="flex items-center gap-2">
+          <input
+            readOnly
+            value={shareUrl || 'Generating link…'}
+            onFocus={e => e.target.select()}
+            className="flex-1 text-xs font-mono bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700"
+          />
+          <button
+            onClick={copyLink}
+            disabled={!shareUrl}
+            className="text-white text-xs py-2 px-3 rounded-lg flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+            style={{ background: 'var(--primary)' }}
+          >
+            {copied ? <CheckCircle size={14} /> : <Link2 size={14} />}
+            <span>{copied ? 'Copied' : 'Copy'}</span>
+          </button>
+        </div>
+        <button
+          onClick={regenerate}
+          disabled={regenerating}
+          className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-50"
+        >
+          {regenerating ? 'Regenerating…' : 'Regenerate link (invalidates the old one)'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Main ProductionApp ───────────────────────────────────────────────────────
 
 export default function ProductionApp({ org, user }) {
@@ -607,6 +681,10 @@ export default function ProductionApp({ org, user }) {
   const [activeTab, setActiveTab] = useState('totals'); // channel id, or 'totals'
   const [hideZero, setHideZero] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [productionToken, setProductionToken] = useState(org?.production_public_token ?? null);
+
+  useEffect(() => { setProductionToken(org?.production_public_token ?? null); }, [org?.production_public_token]);
 
   const loadCatalog = useCallback(async () => {
     if (!orgId) return;
@@ -742,6 +820,9 @@ export default function ProductionApp({ org, user }) {
             onChange={e => setDate(e.target.value)}
             className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-500"
           />
+          <button onClick={() => setShowShare(true)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Share a read-only link">
+            <Link2 size={18} />
+          </button>
           <button onClick={() => setShowSettings(true)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Manage sites, channels & items">
             <Settings size={18} />
           </button>
@@ -783,7 +864,7 @@ export default function ProductionApp({ org, user }) {
                       style={activeTab === ch.id ? { background: 'var(--primary)' } : {}}
                     >
                       {ch.name}
-                      <span className={`ml-1.5 text-xs ${activeTab === ch.id ? 'opacity-80' : 'text-gray-400'}`}>{totalForChannel(ch)}</span>
+                      <span className={`ml-1.5 text-xs font-bold ${activeTab === ch.id ? 'opacity-90' : (totalForChannel(ch) > 0 ? 'text-gray-700' : 'text-gray-300')}`}>{totalForChannel(ch)}</span>
                     </button>
                   ))}
                   <button
@@ -792,7 +873,7 @@ export default function ProductionApp({ org, user }) {
                     style={activeTab === 'totals' ? { background: 'var(--primary)' } : {}}
                   >
                     Totals
-                    <span className={`ml-1.5 text-xs ${activeTab === 'totals' ? 'opacity-80' : 'text-gray-400'}`}>{siteTotal}</span>
+                    <span className={`ml-1.5 text-xs font-bold ${activeTab === 'totals' ? 'opacity-90' : (siteTotal > 0 ? 'text-gray-700' : 'text-gray-300')}`}>{siteTotal}</span>
                   </button>
                 </div>
               </div>
@@ -846,6 +927,10 @@ export default function ProductionApp({ org, user }) {
 
       {showSettings && (
         <SettingsModal orgId={orgId} sites={sites} channels={channels} items={items} onClose={() => setShowSettings(false)} onRefresh={loadCatalog} />
+      )}
+
+      {showShare && (
+        <ShareModal token={productionToken} orgId={orgId} onClose={() => setShowShare(false)} onTokenChange={setProductionToken} />
       )}
     </div>
   );
