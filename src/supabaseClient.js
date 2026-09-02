@@ -1162,4 +1162,43 @@ export const db = {
 
     return assignments || [];
   },
+
+  // ── Stock: Supplier assignments ─────────────────────────────────────────────
+  // Which org member orders each supplier -- powers the "My Suppliers"
+  // filter. A convenience view, not access control: everyone can still see
+  // everything, RLS is the same is_org_member policy as every other table.
+
+  async getOrgMembersWithEmail(orgId) {
+    const { data, error } = await supabase.rpc('get_org_members_with_email', { target_org_id: orgId });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getSupplierAssignments(orgId) {
+    const { data, error } = await supabase
+      .from('supplier_assignments')
+      .select('*')
+      .eq('org_id', orgId);
+    if (error) throw error;
+    return data || [];
+  },
+
+  async setSupplierAssignment(orgId, supplier, userId) {
+    const { data, error } = await supabase
+      .from('supplier_assignments')
+      .upsert([{ org_id: orgId, supplier, user_id: userId, updated_at: new Date().toISOString() }], { onConflict: 'org_id,supplier' })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async removeSupplierAssignment(orgId, supplier) {
+    const { error } = await supabase
+      .from('supplier_assignments')
+      .delete()
+      .eq('org_id', orgId)
+      .eq('supplier', supplier);
+    if (error) throw error;
+  },
 };
