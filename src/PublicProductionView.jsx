@@ -25,14 +25,14 @@ function QtyBadge({ qty }) {
     return (
       <span style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        minWidth: 22, padding: '2px 6px', borderRadius: 999,
-        background: '#DCFCE7', color: GREEN, fontWeight: 800, fontSize: 13,
+        minWidth: 18, padding: '1px 4px', borderRadius: 999,
+        background: '#DCFCE7', color: GREEN, fontWeight: 800, fontSize: 12,
       }}>
         {qty}
       </span>
     );
   }
-  return <span style={{ color: '#D1D5DB', fontWeight: 600, fontSize: 12 }}>0</span>;
+  return <span style={{ color: '#D1D5DB', fontWeight: 600, fontSize: 11 }}>0</span>;
 }
 
 export default function PublicProductionView({ token }) {
@@ -150,7 +150,7 @@ export default function PublicProductionView({ token }) {
   const activeLock = (data.locks || []).find(l => l.site_id === activeSiteId);
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F1F5F9', padding: '20px 8px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#F1F5F9', padding: '14px 4px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <div style={{ maxWidth: 560, margin: '0 auto' }}>
 
@@ -221,20 +221,20 @@ export default function PublicProductionView({ token }) {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                       <tr>
-                        <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 9.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', background: '#FAFBFC', whiteSpace: 'nowrap' }}>Item</th>
+                        <th style={{ textAlign: 'left', padding: '5px 4px', fontSize: 8.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', background: '#FAFBFC', whiteSpace: 'nowrap' }}>Item</th>
                         {channelsForSite.map(ch => (
-                          <th key={ch.id} style={{ textAlign: 'center', padding: '6px 5px', fontSize: 9.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', background: '#FAFBFC', whiteSpace: 'nowrap' }}>
+                          <th key={ch.id} style={{ textAlign: 'center', padding: '5px 2px', fontSize: 8.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', background: '#FAFBFC', whiteSpace: 'nowrap' }}>
                             {ch.name}
                           </th>
                         ))}
-                        <th style={{ textAlign: 'center', padding: '6px 6px', fontSize: 9.5, fontWeight: 700, color: GREEN, textTransform: 'uppercase', letterSpacing: '0.05em', background: '#F0FDF4', whiteSpace: 'nowrap' }}>Total</th>
+                        <th style={{ textAlign: 'center', padding: '5px 3px', fontSize: 8.5, fontWeight: 700, color: GREEN, textTransform: 'uppercase', letterSpacing: '0.05em', background: '#F0FDF4', whiteSpace: 'nowrap' }}>Total</th>
                       </tr>
                     </thead>
                     <tbody>
                       {grouped.map(([cat, its]) => (
                         <React.Fragment key={cat}>
                           <tr>
-                            <td colSpan={channelsForSite.length + 2} style={{ padding: '8px 8px 2px', fontSize: 9.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            <td colSpan={channelsForSite.length + 2} style={{ padding: '6px 4px 2px', fontSize: 8.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                               {cat}
                             </td>
                           </tr>
@@ -243,18 +243,18 @@ export default function PublicProductionView({ token }) {
                             const rowBg = total > 0 ? '#F8FDF9' : 'white';
                             return (
                               <tr key={item.id} style={{ background: rowBg, borderBottom: '1px solid #F8FAFC' }}>
-                                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
-                                    <span style={{ fontSize: 12, fontWeight: total > 0 ? 600 : 500, color: total > 0 ? '#1E293B' : '#94A3B8' }}>{item.name}</span>
+                                <td style={{ padding: '5px 4px', whiteSpace: 'nowrap' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
+                                    <span style={{ fontSize: 11, fontWeight: total > 0 ? 600 : 500, color: total > 0 ? '#1E293B' : '#94A3B8', maxWidth: 92, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
                                   </div>
                                 </td>
                                 {channelsForSite.map(ch => (
-                                  <td key={ch.id} style={{ padding: '4px 3px', textAlign: 'center' }}>
+                                  <td key={ch.id} style={{ padding: '3px 1px', textAlign: 'center' }}>
                                     <QtyBadge qty={getQty(item.id, ch.id)} />
                                   </td>
                                 ))}
-                                <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                                <td style={{ padding: '3px 2px', textAlign: 'center' }}>
                                   <QtyBadge qty={total} />
                                 </td>
                               </tr>
@@ -265,13 +265,13 @@ export default function PublicProductionView({ token }) {
                     </tbody>
                     <tfoot>
                       <tr>
-                        <td style={{ padding: '8px 8px', fontSize: 10, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', borderTop: '2px solid #F1F5F9', whiteSpace: 'nowrap' }}>Total</td>
+                        <td style={{ padding: '6px 4px', fontSize: 9, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', borderTop: '2px solid #F1F5F9', whiteSpace: 'nowrap' }}>Total</td>
                         {channelsForSite.map(ch => (
-                          <td key={ch.id} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 12, fontWeight: 800, color: '#334155', borderTop: '2px solid #F1F5F9', whiteSpace: 'nowrap' }}>
+                          <td key={ch.id} style={{ padding: '6px 2px', textAlign: 'center', fontSize: 11, fontWeight: 800, color: '#334155', borderTop: '2px solid #F1F5F9', whiteSpace: 'nowrap' }}>
                             {totalForChannel(ch)}
                           </td>
                         ))}
-                        <td style={{ padding: '8px 8px', textAlign: 'center', fontSize: 13, fontWeight: 800, color: GREEN, background: '#F0FDF4', borderTop: '2px solid #F1F5F9', whiteSpace: 'nowrap' }}>
+                        <td style={{ padding: '6px 4px', textAlign: 'center', fontSize: 12, fontWeight: 800, color: GREEN, background: '#F0FDF4', borderTop: '2px solid #F1F5F9', whiteSpace: 'nowrap' }}>
                           {siteTotal}
                         </td>
                       </tr>
