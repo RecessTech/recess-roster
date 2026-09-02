@@ -65,8 +65,8 @@ async function reorder(list, idx, dir, updateFn, onDone) {
   try {
     await Promise.all(next.map((row, i) => updateFn(row.id, { sort_order: i })));
     onDone();
-  } catch {
-    toast.error('Failed to reorder');
+  } catch (err) {
+    toast.error('Failed to reorder: ' + (err.message || 'unknown error'));
   }
 }
 
@@ -185,8 +185,8 @@ function SitesSettings({ orgId, sites, onRefresh }) {
       setName('');
       onRefresh();
       toast.success('Site added');
-    } catch {
-      toast.error('Failed to add site');
+    } catch (err) {
+      toast.error('Failed to add site: ' + (err.message || 'unknown error'));
     } finally {
       setSaving(false);
     }
@@ -198,8 +198,8 @@ function SitesSettings({ orgId, sites, onRefresh }) {
       await db.updateProductionSite(site.id, { name: editDraft.trim() });
       setEditingId(null);
       onRefresh();
-    } catch {
-      toast.error('Failed to rename site');
+    } catch (err) {
+      toast.error('Failed to rename site: ' + (err.message || 'unknown error'));
     }
   }
 
@@ -209,8 +209,8 @@ function SitesSettings({ orgId, sites, onRefresh }) {
       await db.deleteProductionSite(site.id);
       onRefresh();
       toast.success('Site deleted');
-    } catch {
-      toast.error('Failed to delete site');
+    } catch (err) {
+      toast.error('Failed to delete site: ' + (err.message || 'unknown error'));
     }
   }
 
@@ -301,8 +301,8 @@ function ChannelsSettings({ orgId, sites, channels, onRefresh }) {
       setName('');
       onRefresh();
       toast.success('Channel added');
-    } catch {
-      toast.error('Failed to add channel');
+    } catch (err) {
+      toast.error('Failed to add channel: ' + (err.message || 'unknown error'));
     } finally {
       setSaving(false);
     }
@@ -314,8 +314,8 @@ function ChannelsSettings({ orgId, sites, channels, onRefresh }) {
       await db.updateProductionChannel(ch.id, { name: editDraft.trim() });
       setEditingId(null);
       onRefresh();
-    } catch {
-      toast.error('Failed to rename channel');
+    } catch (err) {
+      toast.error('Failed to rename channel: ' + (err.message || 'unknown error'));
     }
   }
 
@@ -325,8 +325,8 @@ function ChannelsSettings({ orgId, sites, channels, onRefresh }) {
       await db.deleteProductionChannel(ch.id);
       onRefresh();
       toast.success('Channel deleted');
-    } catch {
-      toast.error('Failed to delete channel');
+    } catch (err) {
+      toast.error('Failed to delete channel: ' + (err.message || 'unknown error'));
     }
   }
 
@@ -425,8 +425,8 @@ function ItemFormModal({ item, onClose, onSave, orgId }) {
       }
       onSave();
       onClose();
-    } catch {
-      toast.error('Failed to save item');
+    } catch (err) {
+      toast.error('Failed to save item: ' + (err.message || 'unknown error'));
     } finally {
       setSaving(false);
     }
@@ -491,8 +491,8 @@ function ItemsSettings({ orgId, items, onRefresh }) {
       await db.deleteProductionItem(item.id);
       onRefresh();
       toast.success('Item deleted');
-    } catch {
-      toast.error('Failed to delete item');
+    } catch (err) {
+      toast.error('Failed to delete item: ' + (err.message || 'unknown error'));
     }
   }
 
@@ -616,8 +616,8 @@ export default function ProductionApp({ org, user }) {
       setChannels(chs);
       setItems(its);
       setActiveSiteId(prev => (prev && sts.some(s => s.id === prev)) ? prev : (sts[0]?.id ?? null));
-    } catch {
-      toast.error('Failed to load production setup');
+    } catch (err) {
+      toast.error('Failed to load production setup: ' + (err.message || 'unknown error'));
     } finally {
       setLoadingCatalog(false);
     }
@@ -629,8 +629,8 @@ export default function ProductionApp({ org, user }) {
     try {
       const rows = await db.getProductionPlan(orgId, date);
       setEntries(rows);
-    } catch {
-      toast.error('Failed to load this day\'s plan');
+    } catch (err) {
+      toast.error('Failed to load this day\'s plan: ' + (err.message || 'unknown error'));
     } finally {
       setLoadingPlan(false);
     }
@@ -662,8 +662,8 @@ export default function ProductionApp({ org, user }) {
     });
     try {
       await db.setProductionPlanQty(orgId, user.id, { itemId, channelId, date, qty });
-    } catch {
-      toast.error('Failed to save — reloading');
+    } catch (err) {
+      toast.error('Failed to save — reloading: ' + (err.message || 'unknown error'));
       loadPlan();
     }
   }
