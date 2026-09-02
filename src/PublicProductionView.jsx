@@ -44,7 +44,6 @@ export default function PublicProductionView({ token }) {
     return params.get('d') || todayStr();
   });
   const [activeSiteId, setActiveSiteId] = useState(null);
-  const [activeTab, setActiveTab] = useState('totals');
 
   const load = useCallback(async (d) => {
     setLoading(true);
@@ -80,10 +79,6 @@ export default function PublicProductionView({ token }) {
     if (!data) return [];
     return data.channels.filter(c => c.site_id === activeSiteId);
   }, [data, activeSiteId]);
-
-  useEffect(() => {
-    setActiveTab(prev => (prev === 'totals' || channelsForSite.some(c => c.id === prev)) ? prev : (channelsForSite[0]?.id ?? 'totals'));
-  }, [channelsForSite]);
 
   const getQty = useCallback((itemId, channelId) => {
     if (!data) return 0;
@@ -222,71 +217,67 @@ export default function PublicProductionView({ token }) {
                   No channels set up for {activeSite?.name ?? 'this site'} yet.
                 </div>
               ) : (
-                <>
-                  {/* Channel + Totals tabs */}
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '12px 16px' }}>
-                    {channelsForSite.map(ch => (
-                      <button
-                        key={ch.id}
-                        onClick={() => setActiveTab(ch.id)}
-                        style={{
-                          padding: '6px 12px', borderRadius: 10, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-                          border: 'none',
-                          background: activeTab === ch.id ? GREEN : '#F1F5F9',
-                          color: activeTab === ch.id ? 'white' : '#64748B',
-                        }}
-                      >
-                        {ch.name} <span style={{ opacity: 0.75 }}>{totalForChannel(ch)}</span>
-                      </button>
-                    ))}
-                    <button
-                      onClick={() => setActiveTab('totals')}
-                      style={{
-                        padding: '6px 12px', borderRadius: 10, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-                        border: 'none',
-                        background: activeTab === 'totals' ? GREEN : '#F1F5F9',
-                        color: activeTab === 'totals' ? 'white' : '#64748B',
-                      }}
-                    >
-                      Totals <span style={{ opacity: 0.75 }}>{siteTotal}</span>
-                    </button>
-                  </div>
-
-                  {/* Item list */}
-                  <div style={{ borderTop: '1px solid #F1F5F9' }}>
-                    {grouped.map(([cat, its], gi) => (
-                      <div key={cat}>
-                        <div style={{ padding: '10px 16px 4px', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          {cat}
-                        </div>
-                        {its.map((item, i) => {
-                          const qty = activeTab === 'totals' ? (totalsByItemForSite.get(item.id) || 0) : getQty(item.id, activeTab);
-                          const breakdown = activeTab === 'totals'
-                            ? channelsForSite.map(ch => ({ name: ch.name, qty: getQty(item.id, ch.id) })).filter(b => b.qty > 0)
-                            : [];
-                          const isLast = gi === grouped.length - 1 && i === its.length - 1;
-                          return (
-                            <div key={item.id} style={{
-                              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
-                              borderBottom: isLast ? 'none' : '1px solid #F8FAFC',
-                            }}>
-                              <span style={{ width: 9, height: 9, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 13.5, fontWeight: 600, color: '#1E293B' }}>{item.name}</div>
-                                {breakdown.length > 0 && (
-                                  <div style={{ fontSize: 11.5, color: '#94A3B8', marginTop: 1 }}>
-                                    {breakdown.map(b => `${b.name} ${b.qty}`).join(' · ')}
+                <div style={{ borderTop: '1px solid #F1F5F9', overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', background: '#FAFBFC', whiteSpace: 'nowrap' }}>Item</th>
+                        {channelsForSite.map(ch => (
+                          <th key={ch.id} style={{ textAlign: 'center', padding: '8px 10px', fontSize: 10.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', background: '#FAFBFC', whiteSpace: 'nowrap' }}>
+                            {ch.name}
+                          </th>
+                        ))}
+                        <th style={{ textAlign: 'center', padding: '8px 12px', fontSize: 10.5, fontWeight: 700, color: GREEN, textTransform: 'uppercase', letterSpacing: '0.05em', background: '#F0FDF4', whiteSpace: 'nowrap' }}>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {grouped.map(([cat, its]) => (
+                        <React.Fragment key={cat}>
+                          <tr>
+                            <td colSpan={channelsForSite.length + 2} style={{ padding: '10px 12px 3px', fontSize: 10.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              {cat}
+                            </td>
+                          </tr>
+                          {its.map(item => {
+                            const total = totalsByItemForSite.get(item.id) || 0;
+                            const rowBg = total > 0 ? '#F8FDF9' : 'white';
+                            return (
+                              <tr key={item.id} style={{ background: rowBg, borderBottom: '1px solid #F8FAFC' }}>
+                                <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
+                                    <span style={{ fontSize: 13, fontWeight: total > 0 ? 600 : 500, color: total > 0 ? '#1E293B' : '#94A3B8' }}>{item.name}</span>
                                   </div>
-                                )}
-                              </div>
-                              <QtyBadge qty={qty} />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ))}
-                  </div>
-                </>
+                                </td>
+                                {channelsForSite.map(ch => (
+                                  <td key={ch.id} style={{ padding: '6px 10px', textAlign: 'center' }}>
+                                    <QtyBadge qty={getQty(item.id, ch.id)} />
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 12px', textAlign: 'center' }}>
+                                  <QtyBadge qty={total} />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td style={{ padding: '10px 12px', fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', borderTop: '2px solid #F1F5F9', whiteSpace: 'nowrap' }}>Total</td>
+                        {channelsForSite.map(ch => (
+                          <td key={ch.id} style={{ padding: '10px', textAlign: 'center', fontSize: 14, fontWeight: 800, color: '#334155', borderTop: '2px solid #F1F5F9', whiteSpace: 'nowrap' }}>
+                            {totalForChannel(ch)}
+                          </td>
+                        ))}
+                        <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 15, fontWeight: 800, color: GREEN, background: '#F0FDF4', borderTop: '2px solid #F1F5F9', whiteSpace: 'nowrap' }}>
+                          {siteTotal}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               )}
             </>
           )}
