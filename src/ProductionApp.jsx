@@ -26,7 +26,7 @@ function fmtDateShort(dateStr) {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const CATEGORY_OPTIONS = ['Sandwiches', 'Toasties', 'Salads'];
+const CATEGORY_OPTIONS = ['Sandwiches', 'Toasties', 'Salads', 'Breakfast', 'Snacks', 'Drinks'];
 
 const COLOR_PALETTE = [
   { name: 'Amber',  hex: '#F59E0B' },
