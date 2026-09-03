@@ -36,15 +36,23 @@ function NavBar({ label, sublabel, onPrev, onNext, onToday, showToday }) {
   return (
     <div className="shrink-0 border-b px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2 bg-white" style={{ borderColor: 'var(--top-border)' }}>
       <div className="flex items-center gap-1.5">
-        <button onClick={onPrev} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-          <ChevronLeft size={18} />
+        <button
+          onClick={onPrev}
+          className="p-2.5 rounded-lg transition-colors hover:brightness-95 active:brightness-90"
+          style={{ background: 'color-mix(in srgb, var(--primary) 12%, white)', color: 'var(--primary-dk)' }}
+        >
+          <ChevronLeft size={20} strokeWidth={2.5} />
         </button>
         <div className="text-center min-w-[150px]">
           <div className="text-sm font-bold text-gray-900 leading-tight tracking-tight">{label}</div>
           {sublabel && <div className="text-xs text-gray-400">{sublabel}</div>}
         </div>
-        <button onClick={onNext} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-          <ChevronRight size={18} />
+        <button
+          onClick={onNext}
+          className="p-2.5 rounded-lg transition-colors hover:brightness-95 active:brightness-90"
+          style={{ background: 'color-mix(in srgb, var(--primary) 12%, white)', color: 'var(--primary-dk)' }}
+        >
+          <ChevronRight size={20} strokeWidth={2.5} />
         </button>
       </div>
       {showToday && (

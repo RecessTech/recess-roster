@@ -839,15 +839,23 @@ export default function ProductionApp({ org, user }) {
       <div className="shrink-0 border-b px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2 bg-white flex-wrap" style={{ borderColor: 'var(--top-border)' }}>
         {viewMode === 'planner' ? (
           <div className="flex items-center gap-1.5">
-            <button onClick={() => setDate(d => addDays(d, -1))} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-              <ChevronLeft size={18} />
+            <button
+              onClick={() => setDate(d => addDays(d, -1))}
+              className="p-2.5 rounded-lg transition-colors hover:brightness-95 active:brightness-90"
+              style={{ background: 'color-mix(in srgb, var(--primary) 12%, white)', color: 'var(--primary-dk)' }}
+            >
+              <ChevronLeft size={20} strokeWidth={2.5} />
             </button>
             <div className="text-center min-w-[130px]">
               <div className="text-sm font-bold text-gray-900 leading-tight tracking-tight">{dayLabel(date)}</div>
               <div className="text-xs text-gray-400">{fmtDateShort(date)}</div>
             </div>
-            <button onClick={() => setDate(d => addDays(d, 1))} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-              <ChevronRight size={18} />
+            <button
+              onClick={() => setDate(d => addDays(d, 1))}
+              className="p-2.5 rounded-lg transition-colors hover:brightness-95 active:brightness-90"
+              style={{ background: 'color-mix(in srgb, var(--primary) 12%, white)', color: 'var(--primary-dk)' }}
+            >
+              <ChevronRight size={20} strokeWidth={2.5} />
             </button>
           </div>
         ) : (
