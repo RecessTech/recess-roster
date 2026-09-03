@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck, Link2, Package, ChefHat, BookOpen } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck, Link2, Package, ChefHat, BookOpen, Sparkles } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { db, supabase } from './supabaseClient';
 import StockApp from './StockApp';
 import ProductionApp from './ProductionApp';
 import RecipesApp from './RecipesApp';
+import CrystalBallApp from './CrystalBallApp';
 import toast, { Toaster } from 'react-hot-toast';
 
 // Returns a Set<'YYYY-MM-DD'> of public holidays for a given year and AU state
@@ -93,7 +94,7 @@ const RosterApp = () => {
   });
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', activeApp === 'stock' ? 'stock' : activeApp === 'production' ? 'production' : activeApp === 'recipes' ? 'recipes' : 'blue');
+    document.documentElement.setAttribute('data-theme', activeApp === 'stock' ? 'stock' : activeApp === 'production' ? 'production' : activeApp === 'recipes' ? 'recipes' : activeApp === 'crystalball' ? 'crystalball' : 'blue');
     try { localStorage.setItem('rshift_active_app', activeApp); } catch {}
   }, [activeApp]);
 
@@ -6476,6 +6477,7 @@ Key things to verify after rebuild:
             { app: 'stock',      icon: <Package size={18} />,      label: 'R-Stock'  },
             { app: 'production', icon: <ChefHat size={18} />,      label: 'R-Prod'   },
             { app: 'recipes',    icon: <BookOpen size={18} />,     label: 'R-Recipe' },
+            { app: 'crystalball',icon: <Sparkles size={18} />,     label: 'Crystal Ball' },
           ].map(({ app, icon, label }) => (
             <button key={app} onClick={() => setActiveApp(app)}
               className={`sb-btn group w-full flex justify-center ${activeApp === app ? 'active' : ''}`}
@@ -6542,6 +6544,14 @@ Key things to verify after rebuild:
                   <h1 className="text-base font-bold text-gray-900 tracking-tight">{businessSettings.businessName || org?.name}</h1>
                   <span className="text-gray-300">|</span>
                   <span className="text-sm text-gray-400">R-Recipe</span>
+                </div>
+              </div>
+            ) : activeApp === 'crystalball' ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-base font-bold text-gray-900 tracking-tight">{businessSettings.businessName || org?.name}</h1>
+                  <span className="text-gray-300">|</span>
+                  <span className="text-sm text-gray-400">Crystal Ball</span>
                 </div>
               </div>
             ) : (
@@ -6694,6 +6704,8 @@ Key things to verify after rebuild:
         <div className="h-full overflow-hidden"><ProductionApp org={org} user={user} /></div>
       ) : activeApp === 'recipes' ? (
         <div className="h-full overflow-auto"><RecipesApp org={org} user={user} /></div>
+      ) : activeApp === 'crystalball' ? (
+        <div className="h-full overflow-auto"><CrystalBallApp org={org} user={user} /></div>
       ) : activeView === 'analytics' ? (
         <div className="h-full overflow-auto"><AnalyticsView /></div>
       ) : activeView === 'timesheet' ? (
