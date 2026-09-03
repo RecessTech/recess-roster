@@ -498,6 +498,20 @@ function StatusDropdown({ value, onChange }) {
   );
 }
 
+// Alternates a subtle background band each time the category changes down a
+// (category-sorted) list of rows -- makes long same-supplier lists easier to
+// scan without giving every category its own (increasingly busy) color.
+function withCategoryBands(rows) {
+  let band = false;
+  let prevCategory = null;
+  return rows.map((row, i) => {
+    const cat = row.item.category || '';
+    if (i > 0 && cat !== prevCategory) band = !band;
+    prevCategory = cat;
+    return { row, band };
+  });
+}
+
 // ── Stocktake Tab ─────────────────────────────────────────────────────────────
 // Pure flagging — status only. Order qty and marking things as ordered
 // live in the Ordering tab, which works off whatever gets flagged here.
@@ -603,11 +617,11 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => {
+              {withCategoryBands(rows).map(({ row, band }) => {
                 const info = lastOrderedInfo(row, lastOrderedByKey);
                 const tone = lastOrderedTone(info);
                 return (
-                <tr key={row.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors">
+                <tr key={row.id} className={`border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors ${band ? 'bg-gray-50/70' : ''}`}>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="font-medium text-gray-900 truncate">{row.item.name}</span>
@@ -733,6 +747,14 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
       const key = groupBy === 'category' ? (row.item.category || 'Uncategorized') : (row.supplier || 'No Supplier');
       (groups[key] = groups[key] || []).push(row);
     }
+    // Sort by category then name within each group so same-category items
+    // cluster together -- lets the category band actually mean something.
+    for (const rows of Object.values(groups)) {
+      rows.sort((a, b) =>
+        (a.item.category || '').localeCompare(b.item.category || '') ||
+        a.item.name.localeCompare(b.item.name)
+      );
+    }
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [siteRows, groupBy]);
 
@@ -793,11 +815,11 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(row => {
+                  {withCategoryBands(rows).map(({ row, band }) => {
                     const qty = row.order_qty ?? row.reference_order_qty ?? 0;
                     const sc = STATUS_CONFIG[row.current_status];
                     return (
-                      <tr key={row.id} className={`border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors ${row.ordered ? 'opacity-50' : ''}`}>
+                      <tr key={row.id} className={`border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors ${band ? 'bg-gray-50/70' : ''} ${row.ordered ? 'opacity-50' : ''}`}>
                         <td className="px-4 py-3">
                           <div className="font-medium text-gray-900">{row.item.name}</div>
                           <div className="text-xs text-gray-400">{row.item.sku} · {row.item.uom}</div>
