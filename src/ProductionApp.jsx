@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, Trash2, Edit2, X, Settings, ChevronLeft, ChevronRight,
-  ClipboardList, Loader2, ChevronUp, ChevronDown, ChefHat, Link2, CheckCircle,
+  ClipboardList, Loader2, ChevronUp, ChevronDown, ChefHat, Link2, CheckCircle, BarChart3,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
+import ProductionInsights from './ProductionInsights';
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -683,6 +684,7 @@ export default function ProductionApp({ org, user }) {
   const [date, setDate] = useState(todayStr());
   const [activeSiteId, setActiveSiteId] = useState(null);
   const [hideZero, setHideZero] = useState(false);
+  const [viewMode, setViewMode] = useState('planner'); // 'planner' | 'insights'
   const [showSettings, setShowSettings] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [productionToken, setProductionToken] = useState(org?.production_public_token ?? null);
@@ -835,33 +837,56 @@ export default function ProductionApp({ org, user }) {
     <div className="h-full flex flex-col" style={{ background: 'var(--app-bg)' }}>
       {/* Date bar */}
       <div className="shrink-0 border-b px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2 bg-white flex-wrap" style={{ borderColor: 'var(--top-border)' }}>
-        <div className="flex items-center gap-1.5">
-          <button onClick={() => setDate(d => addDays(d, -1))} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-            <ChevronLeft size={18} />
-          </button>
-          <div className="text-center min-w-[130px]">
-            <div className="text-sm font-bold text-gray-900 leading-tight tracking-tight">{dayLabel(date)}</div>
-            <div className="text-xs text-gray-400">{fmtDateShort(date)}</div>
-          </div>
-          <button onClick={() => setDate(d => addDays(d, 1))} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-            <ChevronRight size={18} />
-          </button>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {date !== todayStr() && (
-            <button onClick={() => setDate(todayStr())} className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors">
-              Today
+        {viewMode === 'planner' ? (
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => setDate(d => addDays(d, -1))} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
+              <ChevronLeft size={18} />
             </button>
+            <div className="text-center min-w-[130px]">
+              <div className="text-sm font-bold text-gray-900 leading-tight tracking-tight">{dayLabel(date)}</div>
+              <div className="text-xs text-gray-400">{fmtDateShort(date)}</div>
+            </div>
+            <button onClick={() => setDate(d => addDays(d, 1))} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
+              <ChevronRight size={18} />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <BarChart3 size={16} className="text-gray-400" />
+            <span className="text-sm font-bold text-gray-900">Insights</span>
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+            {[{ id: 'planner', label: 'Planner' }, { id: 'insights', label: 'Insights' }].map(t => (
+              <button
+                key={t.id}
+                onClick={() => setViewMode(t.id)}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${viewMode === t.id ? 'text-white' : 'text-gray-500 hover:text-gray-700'}`}
+                style={viewMode === t.id ? { background: 'var(--primary)' } : {}}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {viewMode === 'planner' && (
+            <div className="flex items-center gap-1.5">
+              {date !== todayStr() && (
+                <button onClick={() => setDate(todayStr())} className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors">
+                  Today
+                </button>
+              )}
+              <input
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-500"
+              />
+              <button onClick={() => setShowShare(true)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Share a read-only link">
+                <Link2 size={18} />
+              </button>
+            </div>
           )}
-          <input
-            type="date"
-            value={date}
-            onChange={e => setDate(e.target.value)}
-            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-500"
-          />
-          <button onClick={() => setShowShare(true)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Share a read-only link">
-            <Link2 size={18} />
-          </button>
           <button onClick={() => setShowSettings(true)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Manage sites, channels & items">
             <Settings size={18} />
           </button>
@@ -870,6 +895,8 @@ export default function ProductionApp({ org, user }) {
 
       {noSetup ? (
         <EmptySetup onOpenSettings={() => setShowSettings(true)} />
+      ) : viewMode === 'insights' ? (
+        <ProductionInsights orgId={orgId} items={items} />
       ) : (
         <>
           {/* Site tabs */}
