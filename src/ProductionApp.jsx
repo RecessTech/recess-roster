@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, Trash2, Edit2, X, Settings, ChevronLeft, ChevronRight,
-  ClipboardList, Loader2, ChevronUp, ChevronDown, ChefHat, Link2, CheckCircle, BarChart3,
+  ClipboardList, Loader2, ChevronUp, ChevronDown, ChefHat, Link2, CheckCircle, BarChart3, Wheat,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -28,6 +28,10 @@ function fmtDateShort(dateStr) {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const CATEGORY_OPTIONS = ['Sandwiches', 'Toasties', 'Salads', 'Breakfast', 'Snacks', 'Drinks'];
+
+// A loaf is 12 slices, 2 slices per sandwich/toastie -- 6 per loaf.
+const BREAD_CATEGORIES = ['Sandwiches', 'Toasties'];
+const SANDWICHES_PER_LOAF = 6;
 
 const COLOR_PALETTE = [
   { name: 'Amber',  hex: '#F59E0B' },
@@ -806,6 +810,15 @@ export default function ProductionApp({ org, user }) {
     return m;
   }, [items, entries, channelsForSite]);
 
+  const breadCount = useMemo(() => {
+    return items.reduce((sum, it) => {
+      if (!BREAD_CATEGORIES.includes(it.category)) return sum;
+      return sum + (totalsByItemForSite.get(it.id) || 0);
+    }, 0);
+  }, [items, totalsByItemForSite]);
+  const totalLoaves = breadCount / SANDWICHES_PER_LOAF;
+  const loavesToOrder = Math.ceil(totalLoaves);
+
   const activeItems = useMemo(() => {
     let list = items.filter(i => i.active !== false);
     if (!hideZero) return list;
@@ -929,7 +942,19 @@ export default function ProductionApp({ org, user }) {
             <>
               {/* Toolbar */}
               <div className="shrink-0 px-4 py-2 flex items-center justify-between gap-3 flex-wrap border-b" style={{ borderColor: 'var(--top-border)' }}>
-                <p className="text-xs text-gray-400">{activeItems.length} item{activeItems.length !== 1 ? 's' : ''}</p>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <p className="text-xs text-gray-400">{activeItems.length} item{activeItems.length !== 1 ? 's' : ''}</p>
+                  {breadCount > 0 && (
+                    <span
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full"
+                      style={{ background: 'color-mix(in srgb, var(--primary) 12%, white)', color: 'var(--primary-dk)' }}
+                      title={`${breadCount} sandwiches/toasties ÷ ${SANDWICHES_PER_LOAF} per loaf = ${totalLoaves.toFixed(1)} loaves`}
+                    >
+                      <Wheat size={13} />
+                      Total Loaves: {loavesToOrder}
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-3">
                   {dayLock ? (
                     <div className="flex items-center gap-2">
