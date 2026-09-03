@@ -1346,6 +1346,19 @@ export const db = {
     return data || [];
   },
 
+  // Every entry (every site/channel) across a date range — the caller sums
+  // across channels itself, since insights are combined-across-sites totals.
+  async getProductionPlanRange(orgId, startDate, endDate) {
+    const { data, error } = await supabase
+      .from('production_plan_entries')
+      .select('item_id, channel_id, plan_date, qty')
+      .eq('org_id', orgId)
+      .gte('plan_date', startDate)
+      .lte('plan_date', endDate);
+    if (error) throw error;
+    return data || [];
+  },
+
   async setProductionPlanQty(orgId, userId, { itemId, channelId, date, qty }) {
     const { data, error } = await supabase
       .from('production_plan_entries')
