@@ -1400,4 +1400,128 @@ export const db = {
       .eq('plan_date', date);
     if (error) throw error;
   },
+
+  // ── Recipes & COGS (R-Recipe) ───────────────────────────────────────────────
+
+  async getRecipeComponents(orgId) {
+    const { data, error } = await supabase
+      .from('recipe_components')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createRecipeComponent(orgId, component) {
+    const { data, error } = await supabase
+      .from('recipe_components')
+      .insert([{ ...component, org_id: orgId }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateRecipeComponent(componentId, updates) {
+    const { data, error } = await supabase
+      .from('recipe_components')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', componentId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteRecipeComponent(componentId) {
+    const { error } = await supabase
+      .from('recipe_components')
+      .delete()
+      .eq('id', componentId);
+    if (error) throw error;
+  },
+
+  // All component lines for an org in one query — cheap at this scale and
+  // avoids N+1 fetches when computing every component's cost at once.
+  async getRecipeComponentLines(orgId) {
+    const { data, error } = await supabase
+      .from('recipe_component_lines')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createRecipeComponentLine(orgId, line) {
+    const { data, error } = await supabase
+      .from('recipe_component_lines')
+      .insert([{ ...line, org_id: orgId }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateRecipeComponentLine(lineId, updates) {
+    const { data, error } = await supabase
+      .from('recipe_component_lines')
+      .update(updates)
+      .eq('id', lineId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteRecipeComponentLine(lineId) {
+    const { error } = await supabase
+      .from('recipe_component_lines')
+      .delete()
+      .eq('id', lineId);
+    if (error) throw error;
+  },
+
+  async getRecipeMenuItemLines(orgId) {
+    const { data, error } = await supabase
+      .from('recipe_menu_item_lines')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createRecipeMenuItemLine(orgId, line) {
+    const { data, error } = await supabase
+      .from('recipe_menu_item_lines')
+      .insert([{ ...line, org_id: orgId }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateRecipeMenuItemLine(lineId, updates) {
+    const { data, error } = await supabase
+      .from('recipe_menu_item_lines')
+      .update(updates)
+      .eq('id', lineId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteRecipeMenuItemLine(lineId) {
+    const { error } = await supabase
+      .from('recipe_menu_item_lines')
+      .delete()
+      .eq('id', lineId);
+    if (error) throw error;
+  },
 };
