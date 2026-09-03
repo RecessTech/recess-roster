@@ -466,100 +466,6 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, resolver,
   );
 }
 
-// ── SKUs tab ──────────────────────────────────────────────────────────────────
-
-function PriceCell({ value, onCommit }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value == null ? '' : String(value));
-  useEffect(() => { if (!editing) setDraft(value == null ? '' : String(value)); }, [value, editing]);
-
-  function commit() {
-    const n = draft === '' ? null : parseFloat(draft);
-    onCommit(isNaN(n) ? null : n);
-    setEditing(false);
-  }
-
-  return editing ? (
-    <input
-      autoFocus
-      type="number"
-      min="0"
-      step="any"
-      value={draft}
-      onChange={e => setDraft(e.target.value)}
-      onFocus={e => e.target.select()}
-      onBlur={commit}
-      onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
-      className="w-20 text-right border border-purple-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
-    />
-  ) : (
-    <button onClick={() => setEditing(true)} className="w-20 text-right px-2 py-1 rounded-lg hover:bg-purple-50 text-sm font-medium text-gray-700 transition-colors">
-      {value == null ? <span className="text-gray-300">—</span> : value}
-    </button>
-  );
-}
-
-function SkusTab({ skus, onRefresh }) {
-  const [query, setQuery] = useState('');
-  const filtered = skus.filter(s => s.name.toLowerCase().includes(query.toLowerCase()));
-
-  async function handleUpdate(sku, updates) {
-    try {
-      await db.updateStockItem(sku.id, updates);
-      onRefresh();
-    } catch (err) {
-      toast.error('Failed to save: ' + (err.message || 'unknown error'));
-    }
-  }
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" />
-          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search SKUs…"
-            className="w-full border border-gray-200 rounded-xl pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300" />
-        </div>
-        <p className="text-xs text-gray-400">Add or rename SKUs in R-Stock — pricing lives here.</p>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-100">
-              <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">SKU</th>
-              <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Unit</th>
-              <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Pack Size</th>
-              <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Pack Cost</th>
-              <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Cost / Unit</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {filtered.map(sku => (
-              <tr key={sku.id} className="hover:bg-gray-50/60 transition-colors">
-                <td className="px-4 py-2 font-medium text-gray-900">{sku.name}</td>
-                <td className="px-4 py-2 text-gray-500">{sku.uom}</td>
-                <td className="px-4 py-2 text-right">
-                  <PriceCell value={sku.pack_size} onCommit={v => handleUpdate(sku, { pack_size: v })} />
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <PriceCell value={sku.pack_cost} onCommit={v => handleUpdate(sku, { pack_cost: v })} />
-                </td>
-                <td className="px-4 py-2 text-right font-semibold text-gray-700 tabular-nums">
-                  {sku.cost_per_uom == null ? <span className="text-gray-300 font-normal">—</span> : `$${Number(sku.cost_per_uom).toFixed(4)}`}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {filtered.length === 0 && (
-          <p className="text-sm text-gray-400 text-center py-10">No SKUs match "{query}".</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ── Components tab ───────────────────────────────────────────────────────────
 
 function ComponentsTab({ orgId, skus, components, componentLines, resolver, onRefresh }) {
@@ -747,7 +653,7 @@ function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, res
 
 export default function RecipesApp({ org }) {
   const orgId = org?.id;
-  const [activeTab, setActiveTab] = useState('menu'); // 'skus' | 'components' | 'menu'
+  const [activeTab, setActiveTab] = useState('menu'); // 'components' | 'menu'
   const [skus, setSkus] = useState([]);
   const [components, setComponents] = useState([]);
   const [componentLines, setComponentLines] = useState([]);
@@ -782,7 +688,6 @@ export default function RecipesApp({ org }) {
   const resolver = useCostResolver(skus, components, componentLines);
 
   const TABS = [
-    { id: 'skus', label: 'SKUs' },
     { id: 'components', label: 'Components' },
     { id: 'menu', label: 'Menu Recipes' },
   ];
@@ -799,7 +704,7 @@ export default function RecipesApp({ org }) {
     <div className="p-6 max-w-5xl mx-auto space-y-5">
       <div>
         <h2 className="text-xl font-bold text-gray-900">R-Recipe</h2>
-        <p className="text-sm text-gray-400 mt-0.5">SKU pricing, components, and menu recipes — with live COGS &amp; margin.</p>
+        <p className="text-sm text-gray-400 mt-0.5">Components and menu recipes, with live COGS &amp; margin. SKU pricing lives in R-Stock.</p>
       </div>
 
       <div className="flex gap-1 border-b border-gray-100">
@@ -814,7 +719,6 @@ export default function RecipesApp({ org }) {
         ))}
       </div>
 
-      {activeTab === 'skus' && <SkusTab skus={skus} onRefresh={load} />}
       {activeTab === 'components' && (
         <ComponentsTab orgId={orgId} skus={skus} components={components} componentLines={componentLines} resolver={resolver} onRefresh={load} />
       )}

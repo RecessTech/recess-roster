@@ -1592,7 +1592,7 @@ function ReorderView({ items, onRefresh }) {
 
 // ── Items Tab ──────────────────────────────────────────────────────────────────
 
-const BLANK_ITEM = { name: '', category: '', uom: 'units', description: '', units_per_carton: '' };
+const BLANK_ITEM = { name: '', category: '', uom: 'units', description: '', units_per_carton: '', pack_size: '', pack_cost: '' };
 
 function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
   const [showForm, setShowForm] = useState(false);
@@ -1653,6 +1653,8 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
       uom: item.uom || 'units',
       description: item.description || '',
       units_per_carton: item.units_per_carton ?? '',
+      pack_size: item.pack_size ?? '',
+      pack_cost: item.pack_cost ?? '',
     });
     const initial = blankAssignments();
     (sitesByItem.get(item.id) || []).forEach(s => {
@@ -1670,6 +1672,8 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
         ...form,
         description: form.description || null,
         units_per_carton: form.units_per_carton === '' ? null : parseFloat(form.units_per_carton),
+        pack_size: form.pack_size === '' ? null : parseFloat(form.pack_size),
+        pack_cost: form.pack_cost === '' ? null : parseFloat(form.pack_cost),
       };
       let item = editingItem;
       if (editingItem) {
@@ -1766,6 +1770,9 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                     <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{item.sku}</span>
                     <span className="text-sm font-medium text-gray-900">{item.name}</span>
                     {item.category && <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{item.category}</span>}
+                    {item.cost_per_uom != null && (
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium">${Number(item.cost_per_uom).toFixed(4)}/{item.uom}</span>
+                    )}
                   </div>
                   <div className="text-xs text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
                     <span>{item.uom}</span>
@@ -1854,6 +1861,35 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                   className="input-base"
                 />
               </div>
+            </div>
+
+            <div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Pack Size ({form.uom || 'unit'})</label>
+                  <input
+                    type="number" min="0" step="any" value={form.pack_size}
+                    onChange={e => setForm(f => ({ ...f, pack_size: e.target.value }))}
+                    placeholder="e.g. 1000"
+                    className="input-base"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Pack Cost ($)</label>
+                  <input
+                    type="number" min="0" step="any" value={form.pack_cost}
+                    onChange={e => setForm(f => ({ ...f, pack_cost: e.target.value }))}
+                    placeholder="e.g. 12.50"
+                    className="input-base"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 mt-1.5">
+                What one pack/carton costs and how much it holds, in the UoM above — used to calculate cost per {form.uom || 'unit'} for R-Recipe.
+                {form.pack_size && form.pack_cost && parseFloat(form.pack_size) > 0 && (
+                  <span className="font-medium text-gray-600"> ${(parseFloat(form.pack_cost) / parseFloat(form.pack_size)).toFixed(4)} / {form.uom || 'unit'}</span>
+                )}
+              </p>
             </div>
 
             <datalist id="supplier-suggestions">
