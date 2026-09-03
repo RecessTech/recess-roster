@@ -1537,4 +1537,57 @@ export const db = {
       .eq('id', lineId);
     if (error) throw error;
   },
+
+  // ── Crystal Ball: sales history & forecast settings ─────────────────────────
+
+  async getSalesHistory(orgId) {
+    const { data, error } = await supabase
+      .from('sales_history')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sale_date', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  // Upserts on (org_id, sale_date, item_id, channel) -- safe to re-run an
+  // import that overlaps previously-imported dates.
+  async bulkUpsertSalesHistory(orgId, rows) {
+    if (rows.length === 0) return [];
+    const payload = rows.map(r => ({ ...r, org_id: orgId, channel: r.channel || 'pos' }));
+    const { data, error } = await supabase
+      .from('sales_history')
+      .upsert(payload, { onConflict: 'org_id,sale_date,item_id,channel' })
+      .select();
+    if (error) throw error;
+    return data || [];
+  },
+
+  async deleteSalesHistoryRow(rowId) {
+    const { error } = await supabase
+      .from('sales_history')
+      .delete()
+      .eq('id', rowId);
+    if (error) throw error;
+  },
+
+  async getCrystalBallSettings(orgId) {
+    const { data, error } = await supabase
+      .from('crystal_ball_settings')
+      .select('*')
+      .eq('org_id', orgId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  },
+
+  async upsertCrystalBallSettings(orgId, updates) {
+    const { data, error } = await supabase
+      .from('crystal_ball_settings')
+      .upsert({ ...updates, org_id: orgId, updated_at: new Date().toISOString() }, { onConflict: 'org_id' })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
 };

@@ -132,6 +132,26 @@ body {
   --top-border:     #EDE7FB;
 }
 
+[data-theme="crystalball"] {
+  --sb-bg:          #4338CA;
+  --sb-icon:        rgba(238, 242, 255, 0.75);
+  --sb-icon-active: #EEF2FF;
+  --sb-active:      rgba(238, 242, 255, 0.2);
+  --sb-hover:       rgba(238, 242, 255, 0.1);
+  --sb-logo-bg:     rgba(238, 242, 255, 0.15);
+  --sb-logo-fg:     #EEF2FF;
+  --sb-tooltip-bg:  #3730A3;
+  --sb-tooltip-bd:  rgba(238,242,255,0.15);
+
+  --primary:        #4338CA;
+  --primary-dk:     #3730A3;
+  --primary-fg:     white;
+
+  --app-bg:         #F8F8FF;
+  --top-bg:         white;
+  --top-border:     #E7E6FA;
+}
+
 /* Dark theme (logo 3) */
 [data-theme="dark"] {
   --sb-bg:          #171717;
