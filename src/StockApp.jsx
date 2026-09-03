@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
   ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History, Box, ArrowLeftRight, Search,
-  TrendingUp, ChevronLeft, ChevronRight, Tag, User, Settings,
+  TrendingUp, ChevronLeft, ChevronRight, Tag, User, Settings, GripVertical, ArrowUpDown, Check,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -561,6 +561,7 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
     for (const rows of Object.values(groups)) {
       rows.sort((a, b) =>
         (a.item.category || '').localeCompare(b.item.category || '') ||
+        (a.item.sort_order || 0) - (b.item.sort_order || 0) ||
         a.item.name.localeCompare(b.item.name)
       );
     }
@@ -752,6 +753,7 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
     for (const rows of Object.values(groups)) {
       rows.sort((a, b) =>
         (a.item.category || '').localeCompare(b.item.category || '') ||
+        (a.item.sort_order || 0) - (b.item.sort_order || 0) ||
         a.item.name.localeCompare(b.item.name)
       );
     }
@@ -1491,6 +1493,103 @@ function CsvImportModal({ orgId, locations, onClose, onSave, defaultCategory = '
   );
 }
 
+// ── Reorder mode ─────────────────────────────────────────────────────────────
+// Manual per-category ordering for groupings alphabetical order can't
+// express (e.g. keeping Rocket next to Cos, Chives next to Dill). Drag an
+// item within its category to set stock_items.sort_order, which Stocktake
+// and Ordering use as the tiebreaker (after category) when clustering a
+// supplier's items.
+
+function groupItemsByCategory(list) {
+  const byCat = {};
+  for (const item of list) {
+    const cat = item.category || 'Uncategorized';
+    (byCat[cat] = byCat[cat] || []).push(item);
+  }
+  for (const cat of Object.keys(byCat)) {
+    byCat[cat].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name));
+  }
+  return Object.entries(byCat).sort(([a], [b]) => a.localeCompare(b));
+}
+
+function ReorderView({ items, onRefresh }) {
+  const [groups, setGroups] = useState(() => groupItemsByCategory(items));
+  const [dragId, setDragId] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setGroups(groupItemsByCategory(items)); }, [items]);
+
+  async function persistOrder(category, orderedItems) {
+    setSaving(true);
+    try {
+      const changed = orderedItems
+        .map((item, i) => ({ item, order: i * 10 }))
+        .filter(({ item, order }) => (item.sort_order || 0) !== order);
+      await Promise.all(changed.map(({ item, order }) => db.updateStockItem(item.id, { sort_order: order })));
+      onRefresh();
+    } catch (err) {
+      toast.error('Failed to save order: ' + (err.message || 'unknown error'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function moveItem(category, fromId, toId) {
+    let reordered = null;
+    setGroups(gs => gs.map(([cat, rows]) => {
+      if (cat !== category) return [cat, rows];
+      const fromIdx = rows.findIndex(r => r.id === fromId);
+      const toIdx = rows.findIndex(r => r.id === toId);
+      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return [cat, rows];
+      const next = [...rows];
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      reordered = next;
+      return [cat, next];
+    }));
+    if (reordered) persistOrder(category, reordered);
+  }
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <p className="text-xs text-gray-400 flex items-center gap-1.5">
+        Drag items to arrange them within each category — this order carries through to the Stocktake and Ordering lists.
+        {saving && <span className="text-gray-300">· Saving…</span>}
+      </p>
+      {groups.map(([category, rows]) => (
+        <div key={category}>
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Tag size={12} className="text-gray-400" />
+            {category}
+            <span className="text-xs font-normal text-gray-400 normal-case">· {rows.length} item{rows.length !== 1 ? 's' : ''}</span>
+          </h3>
+          <div className="card overflow-hidden divide-y divide-gray-50">
+            {rows.map(item => (
+              <div
+                key={item.id}
+                draggable
+                onDragStart={() => setDragId(item.id)}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => {
+                  e.preventDefault();
+                  if (dragId && dragId !== item.id) moveItem(category, dragId, item.id);
+                  setDragId(null);
+                }}
+                onDragEnd={() => setDragId(null)}
+                className={`flex items-center gap-2.5 px-3 py-2 bg-white cursor-grab active:cursor-grabbing transition-opacity ${dragId === item.id ? 'opacity-40' : ''}`}
+              >
+                <GripVertical size={14} className="text-gray-300 flex-shrink-0" />
+                <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 flex-shrink-0">{item.sku}</span>
+                <span className="text-sm text-gray-900 truncate">{item.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Items Tab ──────────────────────────────────────────────────────────────────
 
 const BLANK_ITEM = { name: '', category: '', uom: 'units', description: '', units_per_carton: '' };
@@ -1503,6 +1602,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
   const [siteAssignments, setSiteAssignments] = useState({}); // locationId -> { assigned, supplier, referenceOrderQty }
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
+  const [mode, setMode] = useState('list'); // 'list' | 'reorder'
 
   const sitesByItem = useMemo(() => {
     const map = new Map();
@@ -1623,6 +1723,13 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
         </div>
         <div className="flex gap-2">
           <button
+            onClick={() => setMode(m => m === 'reorder' ? 'list' : 'reorder')}
+            className={mode === 'reorder' ? 'btn-primary flex items-center gap-1.5' : 'btn-ghost border border-gray-200 flex items-center gap-1.5'}
+          >
+            {mode === 'reorder' ? <Check size={14} /> : <ArrowUpDown size={14} />}
+            {mode === 'reorder' ? 'Done Reordering' : 'Reorder'}
+          </button>
+          <button
             onClick={() => setShowCsvImport(true)}
             disabled={locations.length === 0}
             className="btn-ghost border border-gray-200 flex items-center gap-1.5 disabled:opacity-40"
@@ -1640,7 +1747,9 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
         </div>
       </div>
 
-      {filteredItems.length === 0 ? (
+      {mode === 'reorder' ? (
+        <ReorderView items={items} onRefresh={onRefresh} />
+      ) : filteredItems.length === 0 ? (
         <EmptyState
           Icon={search ? Search : Package}
           title={search ? `No items match "${search}"` : 'No items yet'}
