@@ -6,6 +6,11 @@
 -- create duplicate ingredient lines (no dedup on those tables).
 --
 -- Org is resolved via the existing 'Crown St' production site.
+-- Menu item names cross-checked against a live export of your
+-- actual production_items — 'Big Tuna' and 'Mushroom & Egg' are
+-- written to match what's really there; 6 others (Turkey Brie &
+-- Cranberry, Mango Chia Pudding, Yoghurt Cup, Protein Ball, Coca
+-- Cola, Samboys) don't exist yet and will be created new.
 -- ============================================================
 
 -- ── 1. SKU PRICING ─────────────────────────────────────────
@@ -897,8 +902,9 @@ INSERT INTO recipe_component_lines (org_id, component_id, stock_item_id, qty, so
 -- ── 4. MENU ITEM RECIPES ───────────────────────────────────
 -- Category/price are UPDATEd onto an existing R-Prod item by
 -- name where one already exists; otherwise a new item is
--- INSERTed. 'The Big Tuna' below is written as 'Big Tuna' to
--- match the name already used in R-Prod.
+-- INSERTed. Two names are corrected to match R-Prod exactly:
+-- 'The Big Tuna' -> 'Big Tuna', 'Egg & Mushroom Toastie' ->
+-- 'Mushroom & Egg'.
 --
 -- Protein Ball / Coca Cola / Samboys are bought-in resale items
 -- with no real recipe in the spreadsheet — each gets a single
@@ -1013,10 +1019,10 @@ INSERT INTO production_items (org_id, name, category, color, sell_price)
   SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1), 'B&E Toastie', 'Toasties', '#94A3B8', 13.9
   WHERE NOT EXISTS (SELECT 1 FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'B&E Toastie');
 
-UPDATE production_items SET category = 'Toasties', sell_price = 13.9 WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Egg & Mushroom Toastie';
+UPDATE production_items SET category = 'Toasties', sell_price = 13.9 WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mushroom & Egg';
 INSERT INTO production_items (org_id, name, category, color, sell_price)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1), 'Egg & Mushroom Toastie', 'Toasties', '#94A3B8', 13.9
-  WHERE NOT EXISTS (SELECT 1 FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Egg & Mushroom Toastie');
+  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1), 'Mushroom & Egg', 'Toasties', '#94A3B8', 13.9
+  WHERE NOT EXISTS (SELECT 1 FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mushroom & Egg');
 
 UPDATE production_items SET category = 'Breakfast', sell_price = 6.9 WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mango Chia Pudding';
 INSERT INTO production_items (org_id, name, category, color, sell_price)
@@ -1783,47 +1789,47 @@ INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_or
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
   SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Egg & Mushroom Toastie'),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mushroom & Egg'),
     (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Bread'),
     2.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
   SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Egg & Mushroom Toastie'),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mushroom & Egg'),
     (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Butter'),
     30.0, 1;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
   SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Egg & Mushroom Toastie'),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mushroom & Egg'),
     (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mushroom Mix'),
     90.0, 2;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
   SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Egg & Mushroom Toastie'),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mushroom & Egg'),
     (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Truffle Mayo'),
     30.0, 3;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
   SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Egg & Mushroom Toastie'),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mushroom & Egg'),
     (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Egg'),
     80.0, 4;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
   SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Egg & Mushroom Toastie'),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mushroom & Egg'),
     (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Parmesan'),
     30.0, 5;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
   SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Egg & Mushroom Toastie'),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mushroom & Egg'),
     (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Swiss'),
     20.0, 6;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
   SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Egg & Mushroom Toastie'),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mushroom & Egg'),
     (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Chives'),
     1.0, 7;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
   SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Egg & Mushroom Toastie'),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mushroom & Egg'),
     (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Cos'),
     3.0, 8;
 
