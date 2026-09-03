@@ -110,6 +110,28 @@ body {
   --top-border:     #DCF3E4;
 }
 
+/* Recipes theme — R-Recipe's colourway, a distinct purple so it
+   reads apart from R-Shift's blue, R-Stock's orange and R-Prod's green */
+[data-theme="recipes"] {
+  --sb-bg:          #6D28D9;
+  --sb-icon:        rgba(245, 243, 255, 0.75);
+  --sb-icon-active: #F5F3FF;
+  --sb-active:      rgba(245, 243, 255, 0.2);
+  --sb-hover:       rgba(245, 243, 255, 0.1);
+  --sb-logo-bg:     rgba(245, 243, 255, 0.15);
+  --sb-logo-fg:     #F5F3FF;
+  --sb-tooltip-bg:  #5B21B6;
+  --sb-tooltip-bd:  rgba(245,243,255,0.15);
+
+  --primary:        #6D28D9;
+  --primary-dk:     #5B21B6;
+  --primary-fg:     white;
+
+  --app-bg:         #FAF8FF;
+  --top-bg:         white;
+  --top-border:     #EDE7FB;
+}
+
 /* Dark theme (logo 3) */
 [data-theme="dark"] {
   --sb-bg:          #171717;
