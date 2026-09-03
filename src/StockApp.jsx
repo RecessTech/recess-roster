@@ -296,7 +296,7 @@ function SupplierAssignmentsModal({ suppliers, assignments, orgMembers, orgId, o
       onSaved();
       onClose();
     } catch (err) {
-      toast.error('Failed to save assignments');
+      toast.error('Failed to save assignments: ' + (err.message || 'unknown error'));
       console.error(err);
     } finally {
       setSaving(false);
@@ -1697,7 +1697,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
       setShowForm(false);
       onRefresh();
     } catch (err) {
-      toast.error('Failed to save item');
+      toast.error('Failed to save item: ' + (err.message || 'unknown error'));
       console.error(err);
     } finally {
       setSaving(false);
@@ -1711,7 +1711,8 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
       toast.success('Item deleted');
       onRefresh();
     } catch (err) {
-      toast.error('Failed to delete item');
+      toast.error('Failed to delete item: ' + (err.message || 'unknown error'));
+      console.error(err);
     }
   }
 
@@ -2001,7 +2002,7 @@ function LocationsTab({ locations, orgId, onRefresh }) {
       setShowAdd(false);
       onRefresh();
     } catch (err) {
-      toast.error('Failed to add location');
+      toast.error('Failed to add location: ' + (err.message || 'unknown error'));
       console.error(err);
     } finally {
       setSaving(false);
@@ -2013,7 +2014,7 @@ function LocationsTab({ locations, orgId, onRefresh }) {
       await db.updateLocation(loc.id, { active: !loc.active });
       onRefresh();
     } catch (err) {
-      toast.error('Failed to update location');
+      toast.error('Failed to update location: ' + (err.message || 'unknown error'));
     }
   }
 
@@ -2024,7 +2025,7 @@ function LocationsTab({ locations, orgId, onRefresh }) {
       toast.success('Location deleted');
       onRefresh();
     } catch (err) {
-      toast.error('Failed to delete location');
+      toast.error('Failed to delete location: ' + (err.message || 'unknown error'));
     }
   }
 
@@ -2133,7 +2134,7 @@ export default function StockApp({ user, org }) {
       setOrgMembers(members);
       setSelectedLocationId(prev => prev && locs.some(l => l.id === prev) ? prev : (locs.find(l => l.active)?.id || locs[0]?.id || null));
     } catch (err) {
-      toast.error('Failed to load stock data');
+      toast.error('Failed to load stock data: ' + (err.message || 'unknown error'));
       console.error(err);
     }
     setLoading(false);
@@ -2169,7 +2170,7 @@ export default function StockApp({ user, org }) {
     try {
       await db.updateSiteItemStatus(siteRowId, status);
     } catch (err) {
-      toast.error('Failed to update status');
+      toast.error('Failed to update status: ' + (err.message || 'unknown error'));
       console.error(err);
       loadData();
     }
@@ -2180,7 +2181,7 @@ export default function StockApp({ user, org }) {
     try {
       await db.updateSiteItemOrderQty(siteRowId, orderQty);
     } catch (err) {
-      toast.error('Failed to update order qty');
+      toast.error('Failed to update order qty: ' + (err.message || 'unknown error'));
       console.error(err);
       loadData();
     }
@@ -2191,7 +2192,7 @@ export default function StockApp({ user, org }) {
     try {
       await db.updateSiteItemOrdered(siteRowId, ordered);
     } catch (err) {
-      toast.error('Failed to update ordered status');
+      toast.error('Failed to update ordered status: ' + (err.message || 'unknown error'));
       console.error(err);
       loadData();
     }
