@@ -419,7 +419,7 @@ function EditableQty({ value, isSet, unit, onCommit }) {
       style={isSet ? { backgroundColor: 'color-mix(in srgb, var(--primary) 10%, white)' } : undefined}
       title="Click to set how much to order"
     >
-      {formatQty(value, unit)}
+      {formatQtyHuman(value, unit)}
     </button>
   );
 }
@@ -651,7 +651,7 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                     </span>
                   </td>
                   <td className="px-3 py-2 text-center">
-                    <div className="text-[10px] text-gray-400 leading-none mb-1">ref {row.reference_order_qty}</div>
+                    <div className="text-[10px] text-gray-400 leading-none mb-1">ref {formatQtyHuman(row.reference_order_qty, row.item.uom)}</div>
                     <EditableQty
                       value={row.order_qty ?? row.reference_order_qty ?? 0}
                       isSet={row.order_qty !== null && row.order_qty !== undefined}
