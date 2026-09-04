@@ -27,7 +27,7 @@ function fmtDateShort(dateStr) {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const CATEGORY_OPTIONS = ['Sandwiches', 'Toasties', 'Salads', 'Breakfast', 'Snacks', 'Drinks'];
+const CATEGORY_OPTIONS = ['Sandwiches', 'Toasties', 'Salads', 'Breakfast', 'Snacks', 'Drinks', 'Coffee & Tea', 'Bakery', 'Soups'];
 
 // A loaf is 12 slices, 2 slices per sandwich/toastie -- 6 per loaf.
 const BREAD_CATEGORIES = ['Sandwiches', 'Toasties'];
