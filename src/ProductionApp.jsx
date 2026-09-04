@@ -832,7 +832,10 @@ export default function ProductionApp({ org, user }) {
       if (!groups.has(cat)) groups.set(cat, []);
       groups.get(cat).push(it);
     });
-    return [...groups.entries()];
+    for (const group of groups.values()) {
+      group.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [activeItems]);
 
   if (loadingCatalog) {

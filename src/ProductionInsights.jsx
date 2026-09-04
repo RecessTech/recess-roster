@@ -320,7 +320,10 @@ export default function ProductionInsights({ orgId, items }) {
       if (!g.has(cat)) g.set(cat, []);
       g.get(cat).push(it);
     });
-    return [...g.entries()];
+    for (const group of g.values()) {
+      group.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return [...g.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [items]);
 
   return (
