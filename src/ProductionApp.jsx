@@ -819,11 +819,17 @@ export default function ProductionApp({ org, user }) {
   const totalLoaves = breadCount / SANDWICHES_PER_LOAF;
   const loavesToOrder = Math.ceil(totalLoaves);
 
+  // Items flagged (in R-Recipe) as not needing R-Prod planning -- made to
+  // order or shelf stock, e.g. coffee, drinks -- are excluded everywhere
+  // in R-Prod (planner and Insights alike).
+  const planningItems = useMemo(() => {
+    return items.filter(i => i.active !== false && i.needs_prod_planning !== false);
+  }, [items]);
+
   const activeItems = useMemo(() => {
-    let list = items.filter(i => i.active !== false);
-    if (!hideZero) return list;
-    return list.filter(i => (totalsByItemForSite.get(i.id) || 0) > 0);
-  }, [items, hideZero, totalsByItemForSite]);
+    if (!hideZero) return planningItems;
+    return planningItems.filter(i => (totalsByItemForSite.get(i.id) || 0) > 0);
+  }, [planningItems, hideZero, totalsByItemForSite]);
 
   const grouped = useMemo(() => {
     const groups = new Map();
@@ -917,7 +923,7 @@ export default function ProductionApp({ org, user }) {
       {noSetup ? (
         <EmptySetup onOpenSettings={() => setShowSettings(true)} />
       ) : viewMode === 'insights' ? (
-        <ProductionInsights orgId={orgId} items={items} />
+        <ProductionInsights orgId={orgId} items={planningItems} />
       ) : (
         <>
           {/* Site tabs */}
