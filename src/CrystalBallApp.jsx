@@ -427,24 +427,15 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
             <div className="flex items-end justify-between px-0.5">
               <div>
                 <h3 className="text-sm font-bold text-gray-900">Item Forecast</h3>
-                <p className="text-xs text-gray-400">Each channel's avg. of past {DOW_LABELS[dayOfWeekIndex(date)]}s, added together × uplift</p>
+                <p className="text-xs text-gray-400">Each channel's avg. of past {DOW_LABELS[dayOfWeekIndex(date)]}s, added together × buffer</p>
               </div>
-            </div>
-
-            {itemForecastsByCategory.length > 0 && (
-              <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
-                {itemForecastsByCategory.map(({ cat, total }) => (
-                  <div key={cat} className="rounded-xl px-3 py-2.5 text-center" style={{ background: total > 0 ? 'color-mix(in srgb, var(--primary) 10%, white)' : '#F9FAFB' }}>
-                    <p className="text-2xl font-extrabold tabular-nums" style={{ color: total > 0 ? 'var(--primary)' : '#D1D5DB' }}>{total.toFixed(0)}</p>
-                    <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide truncate">{cat}</p>
-                  </div>
-                ))}
-                <div className="rounded-xl px-3 py-2.5 text-center border-2" style={{ borderColor: 'var(--primary)' }}>
-                  <p className="text-2xl font-extrabold tabular-nums" style={{ color: 'var(--primary)' }}>{grandForecastTotal.toFixed(0)}</p>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--primary)' }}>Total</p>
+              {itemForecastsByCategory.length > 0 && (
+                <div className="text-right">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Today's Total</p>
+                  <p className="text-xl font-extrabold tabular-nums" style={{ color: 'var(--primary)' }}>{Math.ceil(grandForecastTotal)}</p>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {itemForecastsByCategory.length === 0 ? (
               <div className="card p-8 text-center text-sm text-gray-400">No {DOW_LABELS[dayOfWeekIndex(date)]} history yet for any item.</div>
@@ -452,50 +443,60 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
               <div className="space-y-2">
                 {itemForecastsByCategory.map(({ cat, rows, groupTotals, total }) => {
                   const isCollapsed = collapsedForecast.has(cat);
+                  const totalBg = 'color-mix(in srgb, var(--primary) 6%, white)';
                   return (
                     <div key={cat} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                      <button onClick={() => toggleForecastCat(cat)} className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/60 transition-colors gap-3">
-                        <span className="text-sm font-bold text-gray-900">{cat}</span>
-                        <div className="flex items-center gap-4">
-                          {CHANNEL_GROUPS.map((g, i) => (
-                            <div key={g.key} className="text-right hidden sm:block w-16">
-                              <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide truncate">{g.label}</div>
-                              <div className="text-xs font-semibold text-gray-500 tabular-nums">{groupTotals[i].toFixed(1)}</div>
-                            </div>
-                          ))}
-                          <div className="text-right w-16">
-                            <div className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: 'var(--primary)' }}>Total</div>
-                            <span className="text-sm font-extrabold tabular-nums" style={{ color: 'var(--primary-dk)' }}>{total.toFixed(1)}</span>
-                          </div>
-                          {isCollapsed ? <ChevronDown size={15} className="text-gray-300" /> : <ChevronUp size={15} className="text-gray-300" />}
-                        </div>
-                      </button>
-                      {!isCollapsed && (
-                        <table className="w-full text-sm border-t border-gray-50">
-                          <thead>
-                            <tr className="border-b border-gray-50">
+                      <table className="w-full text-sm table-fixed">
+                        <colgroup>
+                          <col />
+                          <col className="w-[15%]" />
+                          <col className="w-[15%]" />
+                          <col className="w-[15%]" />
+                          <col className="w-[15%]" />
+                        </colgroup>
+                        <thead>
+                          <tr
+                            onClick={() => toggleForecastCat(cat)}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleForecastCat(cat); } }}
+                            role="button" tabIndex={0} aria-expanded={!isCollapsed}
+                            className="cursor-pointer hover:brightness-[0.98] transition-[filter] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset"
+                            style={{ background: 'color-mix(in srgb, var(--primary) 5%, white)', '--tw-ring-color': 'var(--primary)' }}
+                          >
+                            <th className="text-left px-4 py-2.5 font-bold text-gray-900 flex items-center gap-1.5">
+                              {isCollapsed ? <ChevronDown size={14} className="text-gray-400 shrink-0" /> : <ChevronUp size={14} className="text-gray-400 shrink-0" />}
+                              <span className="truncate">{cat}</span>
+                            </th>
+                            {groupTotals.map((gt, i) => (
+                              <th key={CHANNEL_GROUPS[i].key} className="text-right px-3 py-2.5 font-semibold text-gray-500 tabular-nums">{gt.toFixed(1)}</th>
+                            ))}
+                            <th className="text-right px-4 py-2.5 font-extrabold tabular-nums" style={{ color: 'var(--primary-dk)', background: totalBg }}>{Math.ceil(total)}</th>
+                          </tr>
+                          {!isCollapsed && (
+                            <tr className="bg-gray-50/60 border-b border-gray-100">
                               <th className="text-left px-4 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Item</th>
                               {CHANNEL_GROUPS.map(g => (
                                 <th key={g.key} className="text-right px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{g.label}</th>
                               ))}
-                              <th className="text-right px-4 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Total</th>
+                              <th className="text-right px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--primary)', background: totalBg }}>Total</th>
                             </tr>
-                          </thead>
+                          )}
+                        </thead>
+                        {!isCollapsed && (
                           <tbody className="divide-y divide-gray-50">
-                            {rows.map(({ item, groupStats, forecast }) => (
-                              <tr key={item.id}>
-                                <td className="px-4 py-2 font-medium text-gray-800">{item.name}</td>
+                            {rows.map(({ item, groupStats, forecast }, idx) => (
+                              <tr key={item.id} className={idx % 2 === 1 ? 'bg-gray-50/40' : undefined}>
+                                <td className="px-4 py-2 font-medium text-gray-800 truncate">{item.name}</td>
                                 {groupStats.map(g => (
                                   <td key={g.key} className="px-3 py-2 text-right text-gray-500 tabular-nums" title={`${g.samples} sample${g.samples !== 1 ? 's' : ''}`}>
                                     {g.avg > 0 ? g.avg.toFixed(1) : '–'}
                                   </td>
                                 ))}
-                                <td className="px-4 py-2 text-right font-extrabold tabular-nums" style={{ color: 'var(--primary-dk)' }}>{forecast.toFixed(1)}</td>
+                                <td className="px-4 py-2 text-right font-extrabold tabular-nums" style={{ color: 'var(--primary-dk)', background: totalBg }}>{Math.ceil(forecast)}</td>
                               </tr>
                             ))}
                           </tbody>
-                        </table>
-                      )}
+                        )}
+                      </table>
                     </div>
                   );
                 })}
@@ -522,17 +523,22 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
                   const isCollapsed = collapsedPrep.has(cat);
                   return (
                     <div key={cat} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                      <button onClick={() => togglePrepCat(cat)} className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/60 transition-colors">
-                        <span className="text-sm font-bold text-gray-900">{cat}</span>
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-xs font-semibold text-gray-400">{rows.length} item{rows.length !== 1 ? 's' : ''}</span>
-                          {isCollapsed ? <ChevronDown size={15} className="text-gray-300" /> : <ChevronUp size={15} className="text-gray-300" />}
-                        </div>
+                      <button
+                        onClick={() => togglePrepCat(cat)}
+                        aria-expanded={!isCollapsed}
+                        className="w-full flex items-center justify-between px-4 py-2.5 hover:brightness-[0.98] transition-[filter]"
+                        style={{ background: 'color-mix(in srgb, var(--primary) 5%, white)' }}
+                      >
+                        <span className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
+                          {isCollapsed ? <ChevronDown size={14} className="text-gray-400 shrink-0" /> : <ChevronUp size={14} className="text-gray-400 shrink-0" />}
+                          {cat}
+                        </span>
+                        <span className="text-xs font-semibold text-gray-400">{rows.length} item{rows.length !== 1 ? 's' : ''}</span>
                       </button>
                       {!isCollapsed && (
-                        <div className="divide-y divide-gray-50 border-t border-gray-50">
-                          {rows.map(({ sku, grams }) => (
-                            <div key={sku.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                        <div className="divide-y divide-gray-50 border-t border-gray-100">
+                          {rows.map(({ sku, grams }, idx) => (
+                            <div key={sku.id} className={`flex items-center justify-between gap-3 px-4 py-2.5 ${idx % 2 === 1 ? 'bg-gray-50/40' : ''}`}>
                               <p className="text-sm font-medium text-gray-800">{sku.name}</p>
                               <p className="text-sm font-semibold text-gray-700 tabular-nums">{grams.toFixed(0)} {sku.uom}</p>
                             </div>
