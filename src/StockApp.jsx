@@ -59,14 +59,20 @@ function trimNum(n) {
   return n % 1 === 0 ? String(n) : n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-// Order History reads better in kg/L than in raw g/ml once quantities
-// get into the thousands -- purely a display choice, doesn't touch what's
+// Order quantities read better in kg/L than in raw g/ml once they get
+// into the thousands -- purely a display choice, doesn't touch what's
 // actually stored (still g/ml, so R-Recipe/Crystal Ball math is unaffected).
+function humanQtyParts(value, unit) {
+  if (value != null && (unit === 'g' || unit === 'ml') && Math.abs(value) >= 1000) {
+    return { value: trimNum(value / 1000), unit: unit === 'g' ? 'kg' : 'L' };
+  }
+  return { value, unit };
+}
+
 function formatQtyHuman(value, unit) {
   if (value == null) return formatQty(value, unit);
-  if (unit === 'g' && Math.abs(value) >= 1000) return `${trimNum(value / 1000)} kg`;
-  if (unit === 'ml' && Math.abs(value) >= 1000) return `${trimNum(value / 1000)} L`;
-  return formatQty(value, unit);
+  const p = humanQtyParts(value, unit);
+  return formatQty(p.value, p.unit);
 }
 
 // Prefers a still-live "ordered today, not yet archived" flag over the
@@ -1301,6 +1307,7 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
                 <div className="space-y-1.5">
                   {rows.map(r => {
                     const pct = maxQty > 0 ? (r.qty / maxQty) * 100 : 0;
+                    const disp = humanQtyParts(r.qty, uom);
                     return (
                       <div key={r.item.id} className="flex items-center gap-3">
                         <div className="w-36 sm:w-44 flex-shrink-0 min-w-0">
@@ -1311,7 +1318,7 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
                           <div className="h-full rounded-md" style={{ width: `${pct}%`, backgroundColor: BRAND }} />
                         </div>
                         <div className="w-20 flex-shrink-0 text-right text-sm font-semibold text-gray-900">
-                          {r.qty}{isPackUnit(uom) ? ' x' : ''} <span className="font-normal text-gray-400 text-xs">{uom}</span>
+                          {disp.value}{isPackUnit(disp.unit) ? ' x' : ''} <span className="font-normal text-gray-400 text-xs">{disp.unit}</span>
                         </div>
                         <div className="w-10 flex-shrink-0 text-right text-xs text-gray-400">{r.times}×</div>
                       </div>
