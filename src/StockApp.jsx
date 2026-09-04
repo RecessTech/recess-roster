@@ -75,6 +75,30 @@ function formatQtyHuman(value, unit) {
   return formatQty(p.value, p.unit);
 }
 
+// Items ordered by the tray/box (item.order_pack_label set, e.g. "tray")
+// display and edit as a pack count in Stocktake/Ordering/Transfers --
+// item.pack_size is already "grams (or ml) in one tray/box", so the pack
+// count is just qty / pack_size. The underlying stored value never
+// changes: still grams/ml throughout, so R-Recipe, Crystal Ball, order
+// history and Insights are all completely unaffected by this -- it's a
+// display+edit convenience layered on top for the ordering workflow only.
+function usesOrderPack(item) {
+  return !!item?.order_pack_label && Number(item?.pack_size) > 0;
+}
+
+function orderPackCount(value, item) {
+  return (Number(value) || 0) / Number(item.pack_size);
+}
+
+function formatOrderQty(value, item) {
+  if (value == null) return formatQtyHuman(value, item?.uom);
+  if (usesOrderPack(item)) {
+    const n = orderPackCount(value, item);
+    return `${trimNum(n)} ${item.order_pack_label}${Math.abs(n) === 1 ? '' : 's'}`;
+  }
+  return formatQtyHuman(value, item?.uom);
+}
+
 // Prefers a still-live "ordered today, not yet archived" flag over the
 // archived history, since the archive won't have today's entry until the
 // midnight job runs. Returns { label, days, never } so callers can both
@@ -384,16 +408,20 @@ function SearchInput({ value, onChange, placeholder = 'Search…' }) {
   );
 }
 
-// Click-to-edit order qty — used on both Stocktake and Ordering, always
-// the same stock_item_sites.order_qty field, so editing it in either
-// place updates the same value. isSet distinguishes "explicitly set"
-// from "falling back to the reference qty" with a subtle highlight.
-function EditableQty({ value, isSet, unit, onCommit }) {
+// Click-to-edit order qty — used on Stocktake, Ordering, and Transfers,
+// always the same stock_item_sites.order_qty field, so editing it in any
+// place updates the same value. isSet distinguishes "explicitly set" from
+// "falling back to the reference qty" with a subtle highlight. When the
+// item is ordered by the tray/box (item.order_pack_label), this displays
+// and edits a pack count instead of the raw stored gram/ml value --
+// onCommit always still receives the raw value, converted back.
+function EditableQty({ value, isSet, item, onCommit }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  const usePack = usesOrderPack(item);
 
   function start() {
-    setDraft(String(value));
+    setDraft(usePack ? trimNum(orderPackCount(value, item)) : String(value));
     setEditing(true);
   }
 
@@ -401,8 +429,9 @@ function EditableQty({ value, isSet, unit, onCommit }) {
     setEditing(false);
     const parsed = parseFloat(draft);
     if (isNaN(parsed) || parsed < 0) return;
-    if (parsed === value) return;
-    onCommit(parsed);
+    const newValue = usePack ? parsed * Number(item.pack_size) : parsed;
+    if (newValue === value) return;
+    onCommit(newValue);
   }
 
   if (editing) {
@@ -421,11 +450,11 @@ function EditableQty({ value, isSet, unit, onCommit }) {
   return (
     <button
       onClick={start}
-      className={`w-20 inline-flex items-center justify-center px-2 py-1 rounded-lg font-semibold transition-colors hover:bg-gray-100 ${isSet ? 'text-gray-900' : 'text-gray-500'}`}
+      className={`min-w-20 inline-flex items-center justify-center px-2 py-1 rounded-lg font-semibold transition-colors hover:bg-gray-100 whitespace-nowrap ${isSet ? 'text-gray-900' : 'text-gray-500'}`}
       style={isSet ? { backgroundColor: 'color-mix(in srgb, var(--primary) 10%, white)' } : undefined}
-      title="Click to set how much to order"
+      title={usePack ? `Click to set how many ${item.order_pack_label}s to order (${item.pack_size}${item.uom} per ${item.order_pack_label})` : 'Click to set how much to order'}
     >
-      {formatQtyHuman(value, unit)}
+      {formatOrderQty(value, item)}
     </button>
   );
 }
@@ -665,11 +694,11 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                       </span>
                     </td>
                     <td className="px-3 py-2 text-center">
-                      <div className="text-[10px] text-gray-400 leading-none mb-1">ref {formatQtyHuman(row.reference_order_qty, row.item.uom)}</div>
+                      <div className="text-[10px] text-gray-400 leading-none mb-1">ref {formatOrderQty(row.reference_order_qty, row.item)}</div>
                       <EditableQty
                         value={row.order_qty ?? row.reference_order_qty ?? 0}
                         isSet={row.order_qty !== null && row.order_qty !== undefined}
-                        unit={row.item.uom}
+                        item={row.item}
                         onCommit={val => onUpdateOrderQty(row.id, val)}
                       />
                     </td>
@@ -877,7 +906,7 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
                           <EditableQty
                             value={qty}
                             isSet={row.order_qty !== null && row.order_qty !== undefined}
-                            unit={row.item.uom}
+                            item={row.item}
                             onCommit={val => onUpdateOrderQty(row.id, val)}
                           />
                         </td>
@@ -986,7 +1015,7 @@ function TransfersTab({ items, sites, locations, onUpdateOrderQty, onUpdateOrder
                           <EditableQty
                             value={qty}
                             isSet={row.order_qty !== null && row.order_qty !== undefined}
-                            unit={row.item.uom}
+                            item={row.item}
                             onCommit={val => onUpdateOrderQty(row.id, val)}
                           />
                         </td>
@@ -1635,7 +1664,7 @@ function ReorderView({ items, onRefresh }) {
 
 // ── Items Tab ──────────────────────────────────────────────────────────────────
 
-const BLANK_ITEM = { name: '', category: '', uom: 'units', description: '', units_per_carton: '', pack_size: '', pack_cost: '' };
+const BLANK_ITEM = { name: '', category: '', uom: 'units', description: '', units_per_carton: '', pack_size: '', pack_cost: '', order_pack_label: '' };
 
 function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
   const [showForm, setShowForm] = useState(false);
@@ -1698,6 +1727,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
       units_per_carton: item.units_per_carton ?? '',
       pack_size: item.pack_size ?? '',
       pack_cost: item.pack_cost ?? '',
+      order_pack_label: item.order_pack_label ?? '',
     });
     const initial = blankAssignments();
     (sitesByItem.get(item.id) || []).forEach(s => {
@@ -1717,6 +1747,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
         units_per_carton: form.units_per_carton === '' ? null : parseFloat(form.units_per_carton),
         pack_size: form.pack_size === '' ? null : parseFloat(form.pack_size),
         pack_cost: form.pack_cost === '' ? null : parseFloat(form.pack_cost),
+        order_pack_label: form.order_pack_label.trim() || null,
       };
       let item = editingItem;
       if (editingItem) {
@@ -1816,6 +1847,9 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                     {item.category && <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{item.category}</span>}
                     {item.cost_per_uom != null && (
                       <span className="text-xs px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium">${Number(item.cost_per_uom).toFixed(4)}/{item.uom}</span>
+                    )}
+                    {item.order_pack_label && (
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">ordered by {item.order_pack_label}</span>
                     )}
                   </div>
                   <div className="text-xs text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
@@ -1933,6 +1967,19 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                 {form.pack_size && form.pack_cost && parseFloat(form.pack_size) > 0 && (
                   <span className="font-medium text-gray-600"> ${(parseFloat(form.pack_cost) / parseFloat(form.pack_size)).toFixed(4)} / {form.uom || 'unit'}</span>
                 )}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Ordered By (optional)</label>
+              <input
+                type="text" value={form.order_pack_label}
+                onChange={e => setForm(f => ({ ...f, order_pack_label: e.target.value }))}
+                placeholder="e.g. tray, box — leave blank to order in the UoM above"
+                className="input-base"
+              />
+              <p className="text-xs text-gray-400 mt-1.5">
+                For items bought as a whole tray/box rather than by weight (e.g. avocados, eggs) — Stocktake and Ordering show &amp; edit a pack count ("2 trays") instead of {form.pack_size || '1000'}{form.uom || 'g'}. R-Recipe and order history still use the UoM/Pack Size above, unaffected.
               </p>
             </div>
 
