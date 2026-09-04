@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  Sparkles, Upload, Loader2, ChevronLeft, ChevronRight,
-  AlertTriangle, Check, X, Percent,
+  Sparkles, Upload, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
+  AlertTriangle, Check, X, Percent, Layers,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -251,6 +251,23 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
   const [date, setDate] = useState(addDays(todayStr(), 1));
   const [upliftInput, setUpliftInput] = useState(String(settings?.channel_uplift_pct ?? 0));
   const [savingUplift, setSavingUplift] = useState(false);
+  const [collapsedForecast, setCollapsedForecast] = useState(() => new Set());
+  const [collapsedPrep, setCollapsedPrep] = useState(() => new Set());
+
+  function toggleForecastCat(cat) {
+    setCollapsedForecast(prev => {
+      const next = new Set(prev);
+      next.has(cat) ? next.delete(cat) : next.add(cat);
+      return next;
+    });
+  }
+  function togglePrepCat(cat) {
+    setCollapsedPrep(prev => {
+      const next = new Set(prev);
+      next.has(cat) ? next.delete(cat) : next.add(cat);
+      return next;
+    });
+  }
 
   useEffect(() => { setUpliftInput(String(settings?.channel_uplift_pct ?? 0)); }, [settings]);
 
@@ -336,11 +353,14 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
     return [...groups.entries()];
   }, [ingredientTotals]);
 
+  const grandForecastTotal = itemForecastsByCategory.reduce((s, g) => s + g.total, 0);
+  const totalIngredientLines = ingredientTotals.length;
+
   const hasHistory = salesHistory.length > 0;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="space-y-5">
+      <div className="card px-4 py-3 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-1.5">
           <button onClick={() => setDate(d => addDays(d, -1))} className="p-2.5 rounded-lg transition-colors hover:brightness-95" style={{ background: 'color-mix(in srgb, var(--primary) 12%, white)', color: 'var(--primary-dk)' }}>
             <ChevronLeft size={18} strokeWidth={2.5} />
@@ -353,19 +373,22 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
             <ChevronRight size={18} strokeWidth={2.5} />
           </button>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-500 flex items-center gap-1.5">
-            <Percent size={13} className="text-gray-400" /> Channel uplift
-          </label>
+        <div
+          className="flex items-center gap-2 rounded-xl pl-3 pr-2 py-1.5"
+          style={{ background: 'color-mix(in srgb, var(--primary) 6%, white)' }}
+          title="Manually accounts for sales channels not yet in your history (e.g. UberEats, DoorDash)"
+        >
+          <Percent size={13} style={{ color: 'var(--primary)' }} />
+          <span className="text-xs font-semibold text-gray-600">Channel uplift</span>
           <input
             type="number" step="any" value={upliftInput}
             onChange={e => setUpliftInput(e.target.value)}
             onBlur={saveUplift}
             onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-            className="w-16 text-right border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2"
+            className="w-14 text-right bg-white border border-gray-200 rounded-lg px-1.5 py-1 text-sm font-semibold focus:outline-none focus:ring-2"
             style={{ '--tw-ring-color': 'var(--primary)' }}
           />
-          <span className="text-xs text-gray-400">%{savingUplift ? ' · saving…' : ''}</span>
+          <span className="text-xs text-gray-400 w-4">{savingUplift ? <Loader2 size={12} className="animate-spin" /> : '%'}</span>
         </div>
       </div>
 
@@ -377,74 +400,105 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
         </div>
       ) : (
         <>
-          <div className="card overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/80">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Item Forecast (avg. of past {DOW_LABELS[dayOfWeekIndex(date)]}s × uplift)</h3>
+          <div className="space-y-2.5">
+            <div className="flex items-end justify-between px-0.5">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900">Item Forecast</h3>
+                <p className="text-xs text-gray-400">Avg. of past {DOW_LABELS[dayOfWeekIndex(date)]}s × uplift</p>
+              </div>
             </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-50">
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-400 uppercase">Item</th>
-                  <th className="text-right px-4 py-2 text-xs font-semibold text-gray-400 uppercase">Historical Avg</th>
-                  <th className="text-right px-4 py-2 text-xs font-semibold text-gray-400 uppercase">Forecast</th>
-                  <th className="text-right px-4 py-2 text-xs font-semibold text-gray-400 uppercase">Samples</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {itemForecastsByCategory.map(({ cat, rows, total }) => (
-                  <Fragment key={cat}>
-                    <tr className="bg-gray-50/60">
-                      <td colSpan={2} className="px-4 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">{cat}</td>
-                      <td className="px-4 py-1.5 text-right text-xs font-semibold uppercase tracking-wide tabular-nums" style={{ color: 'var(--primary-dk)' }}>{total.toFixed(1)}</td>
-                      <td className="px-4 py-1.5"></td>
-                    </tr>
-                    {rows.map(({ item, avg, forecast, samples }) => (
-                      <tr key={item.id}>
-                        <td className="px-4 py-2 font-medium text-gray-800">{item.name}</td>
-                        <td className="px-4 py-2 text-right text-gray-500 tabular-nums">{avg.toFixed(1)}</td>
-                        <td className="px-4 py-2 text-right font-semibold tabular-nums" style={{ color: 'var(--primary-dk)' }}>{forecast.toFixed(1)}</td>
-                        <td className="px-4 py-2 text-right text-gray-400 tabular-nums">{samples}</td>
-                      </tr>
-                    ))}
-                  </Fragment>
+
+            {itemForecastsByCategory.length > 0 && (
+              <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
+                {itemForecastsByCategory.map(({ cat, total }) => (
+                  <div key={cat} className="rounded-xl px-3 py-2.5 text-center" style={{ background: total > 0 ? 'color-mix(in srgb, var(--primary) 10%, white)' : '#F9FAFB' }}>
+                    <p className="text-2xl font-extrabold tabular-nums" style={{ color: total > 0 ? 'var(--primary)' : '#D1D5DB' }}>{total.toFixed(0)}</p>
+                    <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide truncate">{cat}</p>
+                  </div>
                 ))}
-                {itemForecasts.length === 0 && (
-                  <tr><td colSpan={4} className="px-4 py-6 text-center text-gray-400 text-sm">No {DOW_LABELS[dayOfWeekIndex(date)]} history yet for any item.</td></tr>
-                )}
-              </tbody>
-            </table>
+                <div className="rounded-xl px-3 py-2.5 text-center border-2" style={{ borderColor: 'var(--primary)' }}>
+                  <p className="text-2xl font-extrabold tabular-nums" style={{ color: 'var(--primary)' }}>{grandForecastTotal.toFixed(0)}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--primary)' }}>Total</p>
+                </div>
+              </div>
+            )}
+
+            {itemForecastsByCategory.length === 0 ? (
+              <div className="card p-8 text-center text-sm text-gray-400">No {DOW_LABELS[dayOfWeekIndex(date)]} history yet for any item.</div>
+            ) : (
+              <div className="space-y-2">
+                {itemForecastsByCategory.map(({ cat, rows, total }) => {
+                  const isCollapsed = collapsedForecast.has(cat);
+                  return (
+                    <div key={cat} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                      <button onClick={() => toggleForecastCat(cat)} className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/60 transition-colors">
+                        <span className="text-sm font-bold text-gray-900">{cat}</span>
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-sm font-extrabold tabular-nums" style={{ color: 'var(--primary-dk)' }}>{total.toFixed(1)}</span>
+                          {isCollapsed ? <ChevronDown size={15} className="text-gray-300" /> : <ChevronUp size={15} className="text-gray-300" />}
+                        </div>
+                      </button>
+                      {!isCollapsed && (
+                        <div className="divide-y divide-gray-50 border-t border-gray-50">
+                          {rows.map(({ item, avg, forecast, samples }) => (
+                            <div key={item.id} className="flex items-center gap-3 px-4 py-2.5">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-gray-900 truncate">{item.name}</p>
+                                <p className="text-xs text-gray-400">{avg.toFixed(1)} avg · {samples} sample{samples !== 1 ? 's' : ''}</p>
+                              </div>
+                              <p className="text-base font-extrabold tabular-nums" style={{ color: 'var(--primary-dk)' }}>{forecast.toFixed(1)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          <div className="card overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/80">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Ingredient Prep List</h3>
+          <div className="space-y-2.5">
+            <div className="flex items-end justify-between px-0.5">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900">Ingredient Prep List</h3>
+                <p className="text-xs text-gray-400">Expanded through R-Recipe from the forecast above</p>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-400">
+                <Layers size={13} /> {totalIngredientLines} ingredient{totalIngredientLines !== 1 ? 's' : ''}
+              </div>
             </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-50">
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-400 uppercase">Ingredient</th>
-                  <th className="text-right px-4 py-2 text-xs font-semibold text-gray-400 uppercase">Required</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {ingredientsByCategory.map(([cat, rows]) => (
-                  <Fragment key={cat}>
-                    <tr className="bg-gray-50/60">
-                      <td colSpan={2} className="px-4 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">{cat}</td>
-                    </tr>
-                    {rows.map(({ sku, grams }) => (
-                      <tr key={sku.id}>
-                        <td className="px-4 py-2 font-medium text-gray-800">{sku.name}</td>
-                        <td className="px-4 py-2 text-right font-semibold text-gray-700 tabular-nums">{grams.toFixed(0)} {sku.uom}</td>
-                      </tr>
-                    ))}
-                  </Fragment>
-                ))}
-                {ingredientTotals.length === 0 && (
-                  <tr><td colSpan={2} className="px-4 py-6 text-center text-gray-400 text-sm">Nothing to prep -- no recipes resolve for this day's forecasted items yet.</td></tr>
-                )}
-              </tbody>
-            </table>
+
+            {ingredientsByCategory.length === 0 ? (
+              <div className="card p-8 text-center text-sm text-gray-400">Nothing to prep -- no recipes resolve for this day's forecasted items yet.</div>
+            ) : (
+              <div className="space-y-2">
+                {ingredientsByCategory.map(([cat, rows]) => {
+                  const isCollapsed = collapsedPrep.has(cat);
+                  return (
+                    <div key={cat} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                      <button onClick={() => togglePrepCat(cat)} className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/60 transition-colors">
+                        <span className="text-sm font-bold text-gray-900">{cat}</span>
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-xs font-semibold text-gray-400">{rows.length} item{rows.length !== 1 ? 's' : ''}</span>
+                          {isCollapsed ? <ChevronDown size={15} className="text-gray-300" /> : <ChevronUp size={15} className="text-gray-300" />}
+                        </div>
+                      </button>
+                      {!isCollapsed && (
+                        <div className="divide-y divide-gray-50 border-t border-gray-50">
+                          {rows.map(({ sku, grams }) => (
+                            <div key={sku.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                              <p className="text-sm font-medium text-gray-800">{sku.name}</p>
+                              <p className="text-sm font-semibold text-gray-700 tabular-nums">{grams.toFixed(0)} {sku.uom}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </>
       )}
