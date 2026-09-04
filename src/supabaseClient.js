@@ -1541,13 +1541,29 @@ export const db = {
   // ── Crystal Ball: sales history & forecast settings ─────────────────────────
 
   async getSalesHistory(orgId) {
-    const { data, error } = await supabase
-      .from('sales_history')
-      .select('*')
-      .eq('org_id', orgId)
-      .order('sale_date', { ascending: true });
-    if (error) throw error;
-    return data || [];
+    let allData = [];
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('sales_history')
+        .select('*')
+        .eq('org_id', orgId)
+        .order('sale_date', { ascending: true })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        allData = allData.concat(data);
+        hasMore = data.length === pageSize;
+        page++;
+      } else {
+        hasMore = false;
+      }
+    }
+    return allData;
   },
 
   // Upserts on (org_id, sale_date, item_id, channel) -- safe to re-run an
