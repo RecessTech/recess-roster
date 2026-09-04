@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
 import {
   Sparkles, Upload, Loader2, ChevronLeft, ChevronRight,
   AlertTriangle, Check, X, Percent,
@@ -308,6 +308,34 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
       .sort((a, b) => a.sku.name.localeCompare(b.sku.name));
   }, [itemForecasts, resolver, skuById]);
 
+  // Item forecast, sectioned by menu category with a per-category total --
+  // categories/items keep first-seen order (not alphabetised).
+  const itemForecastsByCategory = useMemo(() => {
+    const groups = new Map();
+    itemForecasts.forEach(f => {
+      const cat = f.item.category || 'Other';
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat).push(f);
+    });
+    return [...groups.entries()].map(([cat, rows]) => ({
+      cat,
+      rows,
+      total: rows.reduce((s, r) => s + r.forecast, 0),
+    }));
+  }, [itemForecasts]);
+
+  // Ingredient prep list, sectioned by SKU category -- no combined total per
+  // section since ingredients within a category can have different UoMs.
+  const ingredientsByCategory = useMemo(() => {
+    const groups = new Map();
+    ingredientTotals.forEach(r => {
+      const cat = r.sku.category || 'Other';
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat).push(r);
+    });
+    return [...groups.entries()];
+  }, [ingredientTotals]);
+
   const hasHistory = salesHistory.length > 0;
 
   return (
@@ -363,13 +391,22 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {itemForecasts.map(({ item, avg, forecast, samples }) => (
-                  <tr key={item.id}>
-                    <td className="px-4 py-2 font-medium text-gray-800">{item.name}</td>
-                    <td className="px-4 py-2 text-right text-gray-500 tabular-nums">{avg.toFixed(1)}</td>
-                    <td className="px-4 py-2 text-right font-semibold tabular-nums" style={{ color: 'var(--primary-dk)' }}>{forecast.toFixed(1)}</td>
-                    <td className="px-4 py-2 text-right text-gray-400 tabular-nums">{samples}</td>
-                  </tr>
+                {itemForecastsByCategory.map(({ cat, rows, total }) => (
+                  <Fragment key={cat}>
+                    <tr className="bg-gray-50/60">
+                      <td colSpan={2} className="px-4 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">{cat}</td>
+                      <td className="px-4 py-1.5 text-right text-xs font-semibold uppercase tracking-wide tabular-nums" style={{ color: 'var(--primary-dk)' }}>{total.toFixed(1)}</td>
+                      <td className="px-4 py-1.5"></td>
+                    </tr>
+                    {rows.map(({ item, avg, forecast, samples }) => (
+                      <tr key={item.id}>
+                        <td className="px-4 py-2 font-medium text-gray-800">{item.name}</td>
+                        <td className="px-4 py-2 text-right text-gray-500 tabular-nums">{avg.toFixed(1)}</td>
+                        <td className="px-4 py-2 text-right font-semibold tabular-nums" style={{ color: 'var(--primary-dk)' }}>{forecast.toFixed(1)}</td>
+                        <td className="px-4 py-2 text-right text-gray-400 tabular-nums">{samples}</td>
+                      </tr>
+                    ))}
+                  </Fragment>
                 ))}
                 {itemForecasts.length === 0 && (
                   <tr><td colSpan={4} className="px-4 py-6 text-center text-gray-400 text-sm">No {DOW_LABELS[dayOfWeekIndex(date)]} history yet for any item.</td></tr>
@@ -390,11 +427,18 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {ingredientTotals.map(({ sku, grams }) => (
-                  <tr key={sku.id}>
-                    <td className="px-4 py-2 font-medium text-gray-800">{sku.name}</td>
-                    <td className="px-4 py-2 text-right font-semibold text-gray-700 tabular-nums">{grams.toFixed(0)} {sku.uom}</td>
-                  </tr>
+                {ingredientsByCategory.map(([cat, rows]) => (
+                  <Fragment key={cat}>
+                    <tr className="bg-gray-50/60">
+                      <td colSpan={2} className="px-4 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">{cat}</td>
+                    </tr>
+                    {rows.map(({ sku, grams }) => (
+                      <tr key={sku.id}>
+                        <td className="px-4 py-2 font-medium text-gray-800">{sku.name}</td>
+                        <td className="px-4 py-2 text-right font-semibold text-gray-700 tabular-nums">{grams.toFixed(0)} {sku.uom}</td>
+                      </tr>
+                    ))}
+                  </Fragment>
                 ))}
                 {ingredientTotals.length === 0 && (
                   <tr><td colSpan={2} className="px-4 py-6 text-center text-gray-400 text-sm">Nothing to prep -- no recipes resolve for this day's forecasted items yet.</td></tr>
