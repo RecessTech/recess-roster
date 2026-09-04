@@ -518,17 +518,16 @@ function StatusDropdown({ value, onChange }) {
   );
 }
 
-// Alternates a subtle background band each time the category changes down a
-// (category-sorted) list of rows -- makes long same-supplier lists easier to
-// scan without giving every category its own (increasingly busy) color.
-function withCategoryBands(rows) {
-  let band = false;
+// Marks the first row of each category cluster down a (category-sorted)
+// list of rows, so a supplier-grouped table can insert a labelled divider
+// between categories instead of relying on a hard-to-read alternating tint.
+function withCategoryDividers(rows) {
   let prevCategory = null;
   return rows.map((row, i) => {
-    const cat = row.item.category || '';
-    if (i > 0 && cat !== prevCategory) band = !band;
+    const cat = row.item.category || 'Uncategorized';
+    const isNewCategory = i === 0 || cat !== prevCategory;
     prevCategory = cat;
-    return { row, band };
+    return { row, isNewCategory, category: cat };
   });
 }
 
@@ -638,40 +637,50 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
               </tr>
             </thead>
             <tbody>
-              {withCategoryBands(rows).map(({ row, band }) => {
+              {withCategoryDividers(rows).map(({ row, isNewCategory, category }, idx) => {
                 const info = lastOrderedInfo(row, lastOrderedByKey);
                 const tone = lastOrderedTone(info);
                 return (
-                <tr key={row.id} className={`border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors ${band ? 'bg-gray-100' : ''}`}>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="font-medium text-gray-900 truncate">{row.item.name}</span>
-                      {row.item.category && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 flex-shrink-0">{row.item.category}</span>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-400 truncate mb-1">{row.item.sku} · {row.item.uom}</div>
-                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${LAST_ORDERED_TONE_CLASSES[tone].bg} ${LAST_ORDERED_TONE_CLASSES[tone].text}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone].dot}`} />
-                      {info.label}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <div className="text-[10px] text-gray-400 leading-none mb-1">ref {formatQtyHuman(row.reference_order_qty, row.item.uom)}</div>
-                    <EditableQty
-                      value={row.order_qty ?? row.reference_order_qty ?? 0}
-                      isSet={row.order_qty !== null && row.order_qty !== undefined}
-                      unit={row.item.uom}
-                      onCommit={val => onUpdateOrderQty(row.id, val)}
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <StatusDropdown
-                      value={row.current_status}
-                      onChange={status => onUpdateStatus(row.id, status)}
-                    />
-                  </td>
-                </tr>
+                <React.Fragment key={row.id}>
+                  {groupBy === 'supplier' && isNewCategory && (
+                    <tr>
+                      <td colSpan={3} className={`px-3 ${idx === 0 ? '' : 'pt-2.5'} pb-1`}>
+                        <div className="flex items-center gap-1.5">
+                          <Tag size={10} className="text-gray-400 flex-shrink-0" />
+                          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{category}</span>
+                          <span className="flex-1 h-px bg-gray-100" />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  <tr className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors">
+                    <td className="px-3 py-2">
+                      <div className="min-w-0">
+                        <span className="text-[15px] font-semibold text-gray-900 truncate block">{row.item.name}</span>
+                      </div>
+                      <div className="text-xs text-gray-400 truncate mb-1">{row.item.sku} · {row.item.uom}</div>
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${LAST_ORDERED_TONE_CLASSES[tone].bg} ${LAST_ORDERED_TONE_CLASSES[tone].text}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone].dot}`} />
+                        {info.label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <div className="text-[10px] text-gray-400 leading-none mb-1">ref {formatQtyHuman(row.reference_order_qty, row.item.uom)}</div>
+                      <EditableQty
+                        value={row.order_qty ?? row.reference_order_qty ?? 0}
+                        isSet={row.order_qty !== null && row.order_qty !== undefined}
+                        unit={row.item.uom}
+                        onCommit={val => onUpdateOrderQty(row.id, val)}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <StatusDropdown
+                        value={row.current_status}
+                        onChange={status => onUpdateStatus(row.id, status)}
+                      />
+                    </td>
+                  </tr>
+                </React.Fragment>
                 );
               })}
             </tbody>
@@ -837,13 +846,25 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
                   </tr>
                 </thead>
                 <tbody>
-                  {withCategoryBands(rows).map(({ row, band }) => {
+                  {withCategoryDividers(rows).map(({ row, isNewCategory, category }, idx) => {
                     const qty = row.order_qty ?? row.reference_order_qty ?? 0;
                     const sc = STATUS_CONFIG[row.current_status];
                     return (
-                      <tr key={row.id} className={`border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors ${band ? 'bg-gray-100' : ''} ${row.ordered ? 'opacity-50' : ''}`}>
+                    <React.Fragment key={row.id}>
+                      {groupBy === 'supplier' && isNewCategory && (
+                        <tr>
+                          <td colSpan={4} className={`px-4 ${idx === 0 ? '' : 'pt-2.5'} pb-1`}>
+                            <div className="flex items-center gap-1.5">
+                              <Tag size={10} className="text-gray-400 flex-shrink-0" />
+                              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{category}</span>
+                              <span className="flex-1 h-px bg-gray-100" />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      <tr className={`border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors ${row.ordered ? 'opacity-50' : ''}`}>
                         <td className="px-4 py-3">
-                          <div className="font-medium text-gray-900">{row.item.name}</div>
+                          <div className="text-[15px] font-semibold text-gray-900">{row.item.name}</div>
                           <div className="text-xs text-gray-400">{row.item.sku} · {row.item.uom}</div>
                         </td>
                         <td className="px-4 py-3">
@@ -871,6 +892,7 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
                           />
                         </td>
                       </tr>
+                    </React.Fragment>
                     );
                   })}
                 </tbody>
