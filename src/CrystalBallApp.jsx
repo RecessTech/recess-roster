@@ -246,6 +246,19 @@ function SalesHistoryTab({ orgId, items, salesHistory, onRefresh }) {
 }
 
 // ── Forecast tab ──────────────────────────────────────────────────────────────
+// Each sales channel is forecast independently (its own day-of-week average),
+// then the channels are ADDED together -- in-store customers, delivery-app
+// customers, and Classpass customers are different people ordering on top of
+// each other, not samples of the same demand to be blended into one average.
+
+const CHANNEL_GROUPS = [
+  { key: 'instore', label: 'In-Store', channels: ['pos'] },
+  { key: 'delivery', label: 'Delivery Apps', channels: ['ubereats', 'doordash'] },
+  { key: 'classpass', label: 'Classpass', channels: ['classpass'] },
+];
+const CHANNEL_TO_GROUP = new Map(
+  CHANNEL_GROUPS.flatMap(g => g.channels.map(ch => [ch, g.key]))
+);
 
 function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, onSettingsSaved }) {
   const [date, setDate] = useState(addDays(todayStr(), 1));
@@ -285,12 +298,15 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
     }
   }
 
-  // Historical day-of-week average qty, per item, from POS sales history.
+  // Historical day-of-week average qty, per item, PER CHANNEL GROUP -- keeping
+  // groups separate (rather than one bucket per item) is what lets them be
+  // added together below instead of diluting each other into one blended avg.
   const dowAverages = useMemo(() => {
-    const buckets = new Map(); // itemId -> [sum,count] per dow
+    const buckets = new Map(); // `${itemId}:${dow}:${groupKey}` -> [sum,count]
     salesHistory.forEach(row => {
+      const groupKey = CHANNEL_TO_GROUP.get(row.channel) || 'instore';
       const dow = dayOfWeekIndex(row.sale_date);
-      const key = `${row.item_id}:${dow}`;
+      const key = `${row.item_id}:${dow}:${groupKey}`;
       const entry = buckets.get(key) || [0, 0];
       entry[0] += Number(row.qty) || 0;
       entry[1] += 1;
@@ -304,10 +320,16 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
   const itemForecasts = useMemo(() => {
     const dow = dayOfWeekIndex(date);
     return items.map(item => {
-      const bucket = dowAverages.get(`${item.id}:${dow}`);
-      const avg = bucket ? bucket[0] / bucket[1] : 0;
-      const samples = bucket ? bucket[1] : 0;
-      return { item, avg, samples, forecast: avg * uplift };
+      const groupStats = CHANNEL_GROUPS.map(g => {
+        const bucket = dowAverages.get(`${item.id}:${dow}:${g.key}`);
+        const avg = bucket ? bucket[0] / bucket[1] : 0;
+        const samples = bucket ? bucket[1] : 0;
+        return { ...g, avg, samples };
+      });
+      const baseTotal = groupStats.reduce((s, g) => s + g.avg, 0);
+      const forecast = baseTotal * uplift;
+      const samples = groupStats.reduce((s, g) => s + g.samples, 0);
+      return { item, groupStats, forecast, samples };
     }).filter(f => f.forecast > 0 || f.samples > 0);
   }, [items, dowAverages, date, uplift]);
 
@@ -337,6 +359,7 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
     return [...groups.entries()].map(([cat, rows]) => ({
       cat,
       rows,
+      groupTotals: CHANNEL_GROUPS.map((g, i) => rows.reduce((s, r) => s + r.groupStats[i].avg, 0)),
       total: rows.reduce((s, r) => s + r.forecast, 0),
     }));
   }, [itemForecasts]);
@@ -376,10 +399,10 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
         <div
           className="flex items-center gap-2 rounded-xl pl-3 pr-2 py-1.5"
           style={{ background: 'color-mix(in srgb, var(--primary) 6%, white)' }}
-          title="Manually accounts for sales channels not yet in your history (e.g. UberEats, DoorDash)"
+          title="Extra buffer on top of the modeled total -- for channels without their own history yet (e.g. B2B) or a growth trend"
         >
           <Percent size={13} style={{ color: 'var(--primary)' }} />
-          <span className="text-xs font-semibold text-gray-600">Channel uplift</span>
+          <span className="text-xs font-semibold text-gray-600">Buffer</span>
           <input
             type="number" step="any" value={upliftInput}
             onChange={e => setUpliftInput(e.target.value)}
@@ -404,7 +427,7 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
             <div className="flex items-end justify-between px-0.5">
               <div>
                 <h3 className="text-sm font-bold text-gray-900">Item Forecast</h3>
-                <p className="text-xs text-gray-400">Avg. of past {DOW_LABELS[dayOfWeekIndex(date)]}s × uplift</p>
+                <p className="text-xs text-gray-400">Each channel's avg. of past {DOW_LABELS[dayOfWeekIndex(date)]}s, added together × uplift</p>
               </div>
             </div>
 
@@ -427,29 +450,51 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
               <div className="card p-8 text-center text-sm text-gray-400">No {DOW_LABELS[dayOfWeekIndex(date)]} history yet for any item.</div>
             ) : (
               <div className="space-y-2">
-                {itemForecastsByCategory.map(({ cat, rows, total }) => {
+                {itemForecastsByCategory.map(({ cat, rows, groupTotals, total }) => {
                   const isCollapsed = collapsedForecast.has(cat);
                   return (
                     <div key={cat} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                      <button onClick={() => toggleForecastCat(cat)} className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/60 transition-colors">
+                      <button onClick={() => toggleForecastCat(cat)} className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/60 transition-colors gap-3">
                         <span className="text-sm font-bold text-gray-900">{cat}</span>
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-sm font-extrabold tabular-nums" style={{ color: 'var(--primary-dk)' }}>{total.toFixed(1)}</span>
+                        <div className="flex items-center gap-4">
+                          {CHANNEL_GROUPS.map((g, i) => (
+                            <div key={g.key} className="text-right hidden sm:block w-16">
+                              <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide truncate">{g.label}</div>
+                              <div className="text-xs font-semibold text-gray-500 tabular-nums">{groupTotals[i].toFixed(1)}</div>
+                            </div>
+                          ))}
+                          <div className="text-right w-16">
+                            <div className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: 'var(--primary)' }}>Total</div>
+                            <span className="text-sm font-extrabold tabular-nums" style={{ color: 'var(--primary-dk)' }}>{total.toFixed(1)}</span>
+                          </div>
                           {isCollapsed ? <ChevronDown size={15} className="text-gray-300" /> : <ChevronUp size={15} className="text-gray-300" />}
                         </div>
                       </button>
                       {!isCollapsed && (
-                        <div className="divide-y divide-gray-50 border-t border-gray-50">
-                          {rows.map(({ item, avg, forecast, samples }) => (
-                            <div key={item.id} className="flex items-center gap-3 px-4 py-2.5">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-gray-900 truncate">{item.name}</p>
-                                <p className="text-xs text-gray-400">{avg.toFixed(1)} avg · {samples} sample{samples !== 1 ? 's' : ''}</p>
-                              </div>
-                              <p className="text-base font-extrabold tabular-nums" style={{ color: 'var(--primary-dk)' }}>{forecast.toFixed(1)}</p>
-                            </div>
-                          ))}
-                        </div>
+                        <table className="w-full text-sm border-t border-gray-50">
+                          <thead>
+                            <tr className="border-b border-gray-50">
+                              <th className="text-left px-4 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Item</th>
+                              {CHANNEL_GROUPS.map(g => (
+                                <th key={g.key} className="text-right px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{g.label}</th>
+                              ))}
+                              <th className="text-right px-4 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {rows.map(({ item, groupStats, forecast }) => (
+                              <tr key={item.id}>
+                                <td className="px-4 py-2 font-medium text-gray-800">{item.name}</td>
+                                {groupStats.map(g => (
+                                  <td key={g.key} className="px-3 py-2 text-right text-gray-500 tabular-nums" title={`${g.samples} sample${g.samples !== 1 ? 's' : ''}`}>
+                                    {g.avg > 0 ? g.avg.toFixed(1) : '–'}
+                                  </td>
+                                ))}
+                                <td className="px-4 py-2 text-right font-extrabold tabular-nums" style={{ color: 'var(--primary-dk)' }}>{forecast.toFixed(1)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       )}
                     </div>
                   );
