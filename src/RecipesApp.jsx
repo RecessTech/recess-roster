@@ -571,7 +571,10 @@ function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, res
       if (!groups.has(cat)) groups.set(cat, []);
       groups.get(cat).push(r);
     });
-    return [...groups.entries()];
+    for (const group of groups.values()) {
+      group.sort((a, b) => a.item.name.localeCompare(b.item.name));
+    }
+    return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const avgMargin = useMemo(() => {
