@@ -122,18 +122,23 @@ function lastOrderedInfo(row, lastOrderedByKey) {
 // ordered" as already works for stock status. "fresh" is genuinely
 // green (a real positive signal) rather than gray, which used to make
 // it indistinguishable from "N/A" -- both just blended into the rest
-// of the row's gray text.
+// of the row's gray text. Five tones, day-by-day at the fresh end
+// where the difference actually matters (today/yesterday vs. two days
+// ago), then widening out: still green either way, just a shade
+// softer by day 2, amber from day 3, red from a week.
 const LAST_ORDERED_TONE_CLASSES = {
-  fresh:   { bg: 'bg-green-50', text: 'text-green-600', dot: 'bg-green-500' },
-  warn:    { bg: 'bg-amber-50', text: 'text-amber-600', dot: 'bg-amber-500' },
-  stale:   { bg: 'bg-red-50',   text: 'text-red-600',   dot: 'bg-red-500'   },
-  neutral: { bg: 'bg-gray-50',  text: 'text-gray-400',  dot: 'bg-gray-300'  },
+  fresh:    { bg: 'bg-green-50', text: 'text-green-700', dot: 'bg-green-600' },
+  fresh2:   { bg: 'bg-green-50', text: 'text-green-500', dot: 'bg-green-400' },
+  warn:     { bg: 'bg-amber-50', text: 'text-amber-600', dot: 'bg-amber-500' },
+  stale:    { bg: 'bg-red-50',   text: 'text-red-600',   dot: 'bg-red-500'   },
+  neutral:  { bg: 'bg-gray-50',  text: 'text-gray-400',  dot: 'bg-gray-300'  },
 };
 
 function lastOrderedTone(info) {
   if (info.never) return 'neutral';
-  if (info.days >= 14) return 'stale';
-  if (info.days >= 7) return 'warn';
+  if (info.days >= 7) return 'stale';
+  if (info.days >= 3) return 'warn';
+  if (info.days >= 2) return 'fresh2';
   return 'fresh';
 }
 
