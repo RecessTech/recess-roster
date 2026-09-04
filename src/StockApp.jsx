@@ -55,6 +55,20 @@ function formatQty(value, unit) {
   return isPackUnit(unit) ? `${value} x ${unit}` : `${value} ${unit}`;
 }
 
+function trimNum(n) {
+  return n % 1 === 0 ? String(n) : n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+// Order History reads better in kg/L than in raw g/ml once quantities
+// get into the thousands -- purely a display choice, doesn't touch what's
+// actually stored (still g/ml, so R-Recipe/Crystal Ball math is unaffected).
+function formatQtyHuman(value, unit) {
+  if (value == null) return formatQty(value, unit);
+  if (unit === 'g' && Math.abs(value) >= 1000) return `${trimNum(value / 1000)} kg`;
+  if (unit === 'ml' && Math.abs(value) >= 1000) return `${trimNum(value / 1000)} L`;
+  return formatQty(value, unit);
+}
+
 // Prefers a still-live "ordered today, not yet archived" flag over the
 // archived history, since the archive won't have today's entry until the
 // midnight job runs. Returns { label, days, never } so callers can both
@@ -1039,7 +1053,7 @@ function HistoryTab({ items, locations, orderHistory, selectedLocationId, onSele
                               <span className="text-xs text-gray-400 flex-shrink-0">{row.item.sku}</span>
                             </div>
                             <span className="text-gray-500 font-medium flex-shrink-0 ml-3">
-                              {row.order_qty != null ? formatQty(row.order_qty, row.item.uom) : `— ${row.item.uom}`}
+                              {row.order_qty != null ? formatQtyHuman(row.order_qty, row.item.uom) : `— ${row.item.uom}`}
                             </span>
                           </div>
                         );
