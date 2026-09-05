@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
+import { isoWeekLabel } from './isoWeek';
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -21,6 +22,17 @@ function dayOfWeekIndex(dateStr) { return new Date(dateStr + 'T12:00:00').getDay
 const DOW_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 function fmtDateLong(dateStr) {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+}
+function fmtDateShort(dateStr) {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+}
+// Monday of the ISO week containing dateStr -- same Monday-start convention
+// used throughout the app (roster, R-Prod insights, R-Stock).
+function mondayOf(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const dow = d.getDay(); // 0 = Sun
+  d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
+  return fmtISO(d);
 }
 
 // ── Quantity resolver ────────────────────────────────────────────────────────
@@ -574,7 +586,11 @@ function ForecastTab({ orgId, items, dowAverages, resolver, skuById, settings, o
 // week" view to weigh against standing order sizes.
 
 function WeeklyConsumptionTab({ items, dowAverages, uplift, resolver, skuById }) {
-  const [startDate, setStartDate] = useState(todayStr());
+  // Defaults to the upcoming full ISO week (Mon-Sun), not whatever's left of
+  // the current one -- this is an ordering-decision view, and "3 days left
+  // in W36" is a lot less useful than a full W37. Prev/Next always shifts by
+  // a full week, so it stays Monday-aligned no matter how far you navigate.
+  const [startDate, setStartDate] = useState(() => addDays(mondayOf(todayStr()), 7));
   const [collapsed, setCollapsed] = useState(() => new Set());
 
   function toggleCat(cat) {
@@ -632,14 +648,14 @@ function WeeklyConsumptionTab({ items, dowAverages, uplift, resolver, skuById })
             <ChevronLeft size={18} strokeWidth={2.5} />
           </button>
           <div className="text-center min-w-[220px]">
-            <div className="text-sm font-bold text-gray-900">{fmtDateLong(startDate)} – {fmtDateLong(weekDates[6])}</div>
-            <div className="text-xs text-gray-400">7 days, each from its own day-of-week history</div>
+            <div className="text-sm font-bold text-gray-900">{isoWeekLabel(startDate)} · {fmtDateShort(startDate)} – {fmtDateShort(weekDates[6])}</div>
+            <div className="text-xs text-gray-400">Mon–Sun, each day from its own day-of-week history</div>
           </div>
           <button onClick={() => setStartDate(d => addDays(d, 7))} className="p-2.5 rounded-lg transition-colors hover:brightness-95" style={{ background: 'color-mix(in srgb, var(--primary) 12%, white)', color: 'var(--primary-dk)' }}>
             <ChevronRight size={18} strokeWidth={2.5} />
           </button>
         </div>
-        <button onClick={() => setStartDate(todayStr())} className="btn-secondary text-xs">This week</button>
+        <button onClick={() => setStartDate(mondayOf(todayStr()))} className="btn-secondary text-xs">This week</button>
       </div>
 
       <div className="flex items-end justify-between px-0.5">

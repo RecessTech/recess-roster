@@ -8,6 +8,7 @@ import {
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
 import Papa from 'papaparse';
+import { isoWeekLabel } from './isoWeek';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
@@ -1341,7 +1342,7 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
               <ChevronLeft size={15} />
             </button>
             <span className="text-xs font-medium text-gray-600 min-w-[150px] text-center">
-              {formatWeekRange(weekStart)}{isCurrentWeek && ' (this week)'}
+              {isoWeekLabel(weekStart)} · {formatWeekRange(weekStart)}{isCurrentWeek && ' (this week)'}
             </span>
             <button
               onClick={() => setWeekOffset(o => Math.min(0, o + 1))}

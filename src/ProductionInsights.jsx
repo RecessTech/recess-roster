@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, BarChart3 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
+import { isoWeekLabel } from './isoWeek';
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -185,7 +186,7 @@ function WeekInsights({ weekStart, setWeekStart, grouped, qtyFor, hideZero }) {
   return (
     <>
       <NavBar
-        label={`Week of ${dayShort(weekStart)}`}
+        label={`${isoWeekLabel(weekStart)} · Week of ${dayShort(weekStart)}`}
         sublabel={`${fmtDateShort(weekStart)} – ${fmtDateShort(addDays(weekStart, 6))}`}
         onPrev={() => setWeekStart(w => addDays(w, -7))}
         onNext={() => setWeekStart(w => addDays(w, 7))}
