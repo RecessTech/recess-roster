@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Sparkles, Upload, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
-  AlertTriangle, Check, X, Percent, Layers,
+  AlertTriangle, Check, X, Percent, Layers, Clock,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -280,8 +280,11 @@ function forecastItemsForDate(items, dowAverages, uplift, dateStr) {
   return items.map(item => {
     const groupStats = CHANNEL_GROUPS.map(g => {
       const bucket = dowAverages.get(`${item.id}:${dow}:${g.key}`);
+      // bucket = [recency-weighted sum, weight total, raw sample count] --
+      // the average uses the weighted pair so recent weeks count for more;
+      // "samples" for the tooltip stays the raw count either way.
       const avg = bucket ? bucket[0] / bucket[1] : 0;
-      const samples = bucket ? bucket[1] : 0;
+      const samples = bucket ? bucket[2] : 0;
       return { ...g, avg, samples };
     });
     const baseTotal = groupStats.reduce((s, g) => s + g.avg, 0);
@@ -315,6 +318,8 @@ function ForecastTab({ orgId, items, dowAverages, resolver, skuById, settings, o
   const [date, setDate] = useState(addDays(todayStr(), 1));
   const [upliftInput, setUpliftInput] = useState(String(settings?.channel_uplift_pct ?? 0));
   const [savingUplift, setSavingUplift] = useState(false);
+  const [recencyInput, setRecencyInput] = useState(String(settings?.recency_halflife_weeks ?? 4));
+  const [savingRecency, setSavingRecency] = useState(false);
   const [collapsedForecast, setCollapsedForecast] = useState(() => new Set());
   const [collapsedPrep, setCollapsedPrep] = useState(() => new Set());
 
@@ -334,6 +339,7 @@ function ForecastTab({ orgId, items, dowAverages, resolver, skuById, settings, o
   }
 
   useEffect(() => { setUpliftInput(String(settings?.channel_uplift_pct ?? 0)); }, [settings]);
+  useEffect(() => { setRecencyInput(String(settings?.recency_halflife_weeks ?? 4)); }, [settings]);
 
   async function saveUplift() {
     const pct = parseFloat(upliftInput);
@@ -346,6 +352,20 @@ function ForecastTab({ orgId, items, dowAverages, resolver, skuById, settings, o
       toast.error('Failed to save: ' + (err.message || 'unknown error'));
     } finally {
       setSavingUplift(false);
+    }
+  }
+
+  async function saveRecency() {
+    const weeks = parseFloat(recencyInput);
+    if (isNaN(weeks) || weeks < 0) return;
+    setSavingRecency(true);
+    try {
+      await db.upsertCrystalBallSettings(orgId, { recency_halflife_weeks: weeks });
+      onSettingsSaved();
+    } catch (err) {
+      toast.error('Failed to save: ' + (err.message || 'unknown error'));
+    } finally {
+      setSavingRecency(false);
     }
   }
 
@@ -419,22 +439,41 @@ function ForecastTab({ orgId, items, dowAverages, resolver, skuById, settings, o
             <ChevronRight size={18} strokeWidth={2.5} />
           </button>
         </div>
-        <div
-          className="flex items-center gap-2 rounded-xl pl-3 pr-2 py-1.5"
-          style={{ background: 'color-mix(in srgb, var(--primary) 6%, white)' }}
-          title="Extra buffer on top of the modeled total -- for channels without their own history yet (e.g. B2B) or a growth trend"
-        >
-          <Percent size={13} style={{ color: 'var(--primary)' }} />
-          <span className="text-xs font-semibold text-gray-600">Buffer</span>
-          <input
-            type="number" step="any" value={upliftInput}
-            onChange={e => setUpliftInput(e.target.value)}
-            onBlur={saveUplift}
-            onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-            className="w-14 text-right bg-white border border-gray-200 rounded-lg px-1.5 py-1 text-sm font-semibold focus:outline-none focus:ring-2"
-            style={{ '--tw-ring-color': 'var(--primary)' }}
-          />
-          <span className="text-xs text-gray-400 w-4">{savingUplift ? <Loader2 size={12} className="animate-spin" /> : '%'}</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div
+            className="flex items-center gap-2 rounded-xl pl-3 pr-2 py-1.5"
+            style={{ background: 'color-mix(in srgb, var(--primary) 6%, white)' }}
+            title="How fast older sales stop counting: a sale one half-life ago counts half as much as one from today. Lower = reacts faster to recent trends; 0 = flat average of all history (old behaviour)"
+          >
+            <Clock size={13} style={{ color: 'var(--primary)' }} />
+            <span className="text-xs font-semibold text-gray-600">Recency</span>
+            <input
+              type="number" step="any" min="0" value={recencyInput}
+              onChange={e => setRecencyInput(e.target.value)}
+              onBlur={saveRecency}
+              onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+              className="w-14 text-right bg-white border border-gray-200 rounded-lg px-1.5 py-1 text-sm font-semibold focus:outline-none focus:ring-2"
+              style={{ '--tw-ring-color': 'var(--primary)' }}
+            />
+            <span className="text-xs text-gray-400 w-8">{savingRecency ? <Loader2 size={12} className="animate-spin" /> : 'wks'}</span>
+          </div>
+          <div
+            className="flex items-center gap-2 rounded-xl pl-3 pr-2 py-1.5"
+            style={{ background: 'color-mix(in srgb, var(--primary) 6%, white)' }}
+            title="Extra buffer on top of the modeled total -- for channels without their own history yet (e.g. B2B) or a growth trend"
+          >
+            <Percent size={13} style={{ color: 'var(--primary)' }} />
+            <span className="text-xs font-semibold text-gray-600">Buffer</span>
+            <input
+              type="number" step="any" value={upliftInput}
+              onChange={e => setUpliftInput(e.target.value)}
+              onBlur={saveUplift}
+              onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+              className="w-14 text-right bg-white border border-gray-200 rounded-lg px-1.5 py-1 text-sm font-semibold focus:outline-none focus:ring-2"
+              style={{ '--tw-ring-color': 'var(--primary)' }}
+            />
+            <span className="text-xs text-gray-400 w-4">{savingUplift ? <Loader2 size={12} className="animate-spin" /> : '%'}</span>
+          </div>
         </div>
       </div>
 
@@ -450,7 +489,7 @@ function ForecastTab({ orgId, items, dowAverages, resolver, skuById, settings, o
             <div className="flex items-end justify-between px-0.5">
               <div>
                 <h3 className="text-sm font-bold text-gray-900">Item Forecast</h3>
-                <p className="text-xs text-gray-400">Each channel's avg. of past {DOW_LABELS[dayOfWeekIndex(date)]}s, added together × buffer</p>
+                <p className="text-xs text-gray-400">Each channel's recency-weighted avg. of past {DOW_LABELS[dayOfWeekIndex(date)]}s, added together × buffer</p>
               </div>
               {itemForecastsByCategory.length > 0 && (
                 <div className="text-right">
@@ -762,19 +801,30 @@ export default function CrystalBallApp({ org }) {
   // groups separate (rather than one bucket per item) is what lets them be
   // added together instead of diluting each other into one blended avg.
   // Shared by the daily Forecast tab and the Weekly Consumption rollup.
+  //
+  // Recency-weighted: a sale one half-life ago counts half as much as one
+  // from today, two half-lives ago a quarter, etc. -- without this, every
+  // past Tuesday counts equally, so a forecast for "next Tuesday" and one
+  // for "the Tuesday after" are always identical (nothing in the model
+  // varies week to week). 0 = old flat-average behaviour.
+  const halfLifeDays = (Number(settings?.recency_halflife_weeks) || 0) * 7;
   const dowAverages = useMemo(() => {
-    const buckets = new Map(); // `${itemId}:${dow}:${groupKey}` -> [sum,count]
+    const buckets = new Map(); // `${itemId}:${dow}:${groupKey}` -> [weightedSum, weightTotal, rawCount]
+    const now = Date.now();
     salesHistory.forEach(row => {
       const groupKey = CHANNEL_TO_GROUP.get(row.channel) || 'instore';
       const dow = dayOfWeekIndex(row.sale_date);
       const key = `${row.item_id}:${dow}:${groupKey}`;
-      const entry = buckets.get(key) || [0, 0];
-      entry[0] += Number(row.qty) || 0;
-      entry[1] += 1;
+      const daysAgo = Math.max(0, (now - new Date(row.sale_date + 'T12:00:00').getTime()) / 86400000);
+      const weight = halfLifeDays > 0 ? Math.pow(0.5, daysAgo / halfLifeDays) : 1;
+      const entry = buckets.get(key) || [0, 0, 0];
+      entry[0] += (Number(row.qty) || 0) * weight;
+      entry[1] += weight;
+      entry[2] += 1;
       buckets.set(key, entry);
     });
     return buckets;
-  }, [salesHistory]);
+  }, [salesHistory, halfLifeDays]);
   const uplift = 1 + (Number(settings?.channel_uplift_pct) || 0) / 100;
 
   const TABS = [
