@@ -260,7 +260,46 @@ const CHANNEL_TO_GROUP = new Map(
   CHANNEL_GROUPS.flatMap(g => g.channels.map(ch => [ch, g.key]))
 );
 
-function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, onSettingsSaved }) {
+// Same math the single-day Forecast tab uses, factored out so the weekly
+// rollup can call it once per date and sum -- forecasts stay identical
+// whichever tab you look at them from.
+function forecastItemsForDate(items, dowAverages, uplift, dateStr) {
+  const dow = dayOfWeekIndex(dateStr);
+  return items.map(item => {
+    const groupStats = CHANNEL_GROUPS.map(g => {
+      const bucket = dowAverages.get(`${item.id}:${dow}:${g.key}`);
+      const avg = bucket ? bucket[0] / bucket[1] : 0;
+      const samples = bucket ? bucket[1] : 0;
+      return { ...g, avg, samples };
+    });
+    const baseTotal = groupStats.reduce((s, g) => s + g.avg, 0);
+    const forecast = baseTotal * uplift;
+    const samples = groupStats.reduce((s, g) => s + g.samples, 0);
+    return { item, groupStats, forecast, samples };
+  }).filter(f => f.forecast > 0 || f.samples > 0);
+}
+
+// kg/L display conversion for the weekly SKU rollup -- same >=1000 rule
+// used in R-Stock, kept local here since it's the only place in Crystal
+// Ball that shows raw stock-item quantities to a human.
+function trimNum(n) {
+  const num = Number(n);
+  if (!isFinite(num)) return '0';
+  return (Math.round(num * 100) / 100).toString();
+}
+function formatQtyHuman(qty, uom) {
+  if ((uom === 'g' || uom === 'ml') && qty >= 1000) {
+    return `${trimNum(qty / 1000)} ${uom === 'g' ? 'kg' : 'L'}`;
+  }
+  return `${trimNum(qty)} ${uom || ''}`;
+}
+function packEquivalent(qty, sku) {
+  if (!sku.order_pack_label || !(Number(sku.pack_size) > 0)) return null;
+  const count = qty / Number(sku.pack_size);
+  return `≈ ${trimNum(count)} ${sku.order_pack_label}${Math.abs(count - 1) < 0.001 ? '' : 's'}`;
+}
+
+function ForecastTab({ orgId, items, dowAverages, resolver, skuById, settings, onSettingsSaved }) {
   const [date, setDate] = useState(addDays(todayStr(), 1));
   const [upliftInput, setUpliftInput] = useState(String(settings?.channel_uplift_pct ?? 0));
   const [savingUplift, setSavingUplift] = useState(false);
@@ -298,40 +337,12 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
     }
   }
 
-  // Historical day-of-week average qty, per item, PER CHANNEL GROUP -- keeping
-  // groups separate (rather than one bucket per item) is what lets them be
-  // added together below instead of diluting each other into one blended avg.
-  const dowAverages = useMemo(() => {
-    const buckets = new Map(); // `${itemId}:${dow}:${groupKey}` -> [sum,count]
-    salesHistory.forEach(row => {
-      const groupKey = CHANNEL_TO_GROUP.get(row.channel) || 'instore';
-      const dow = dayOfWeekIndex(row.sale_date);
-      const key = `${row.item_id}:${dow}:${groupKey}`;
-      const entry = buckets.get(key) || [0, 0];
-      entry[0] += Number(row.qty) || 0;
-      entry[1] += 1;
-      buckets.set(key, entry);
-    });
-    return buckets;
-  }, [salesHistory]);
-
   const uplift = 1 + (Number(settings?.channel_uplift_pct) || 0) / 100;
 
-  const itemForecasts = useMemo(() => {
-    const dow = dayOfWeekIndex(date);
-    return items.map(item => {
-      const groupStats = CHANNEL_GROUPS.map(g => {
-        const bucket = dowAverages.get(`${item.id}:${dow}:${g.key}`);
-        const avg = bucket ? bucket[0] / bucket[1] : 0;
-        const samples = bucket ? bucket[1] : 0;
-        return { ...g, avg, samples };
-      });
-      const baseTotal = groupStats.reduce((s, g) => s + g.avg, 0);
-      const forecast = baseTotal * uplift;
-      const samples = groupStats.reduce((s, g) => s + g.samples, 0);
-      return { item, groupStats, forecast, samples };
-    }).filter(f => f.forecast > 0 || f.samples > 0);
-  }, [items, dowAverages, date, uplift]);
+  const itemForecasts = useMemo(
+    () => forecastItemsForDate(items, dowAverages, uplift, date),
+    [items, dowAverages, date, uplift]
+  );
 
   const ingredientTotals = useMemo(() => {
     const totals = new Map();
@@ -379,7 +390,7 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
   const grandForecastTotal = itemForecastsByCategory.reduce((s, g) => s + g.total, 0);
   const totalIngredientLines = ingredientTotals.length;
 
-  const hasHistory = salesHistory.length > 0;
+  const hasHistory = dowAverages.size > 0;
 
   return (
     <div className="space-y-5">
@@ -557,6 +568,135 @@ function ForecastTab({ orgId, items, salesHistory, resolver, skuById, settings, 
   );
 }
 
+// ── Weekly Consumption tab ──────────────────────────────────────────────────
+// Same forecast + R-Recipe expansion as the daily prep list, summed across
+// 7 days instead of one -- a "how much of each SKU will we get through this
+// week" view to weigh against standing order sizes.
+
+function WeeklyConsumptionTab({ items, dowAverages, uplift, resolver, skuById }) {
+  const [startDate, setStartDate] = useState(todayStr());
+  const [collapsed, setCollapsed] = useState(() => new Set());
+
+  function toggleCat(cat) {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      next.has(cat) ? next.delete(cat) : next.add(cat);
+      return next;
+    });
+  }
+
+  const weekDates = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(startDate, i)),
+    [startDate]
+  );
+
+  const weeklyItemTotals = useMemo(() => {
+    const totals = new Map(); // itemId -> forecast qty summed across the week
+    weekDates.forEach(d => {
+      forecastItemsForDate(items, dowAverages, uplift, d).forEach(({ item, forecast }) => {
+        if (forecast <= 0) return;
+        totals.set(item.id, (totals.get(item.id) || 0) + forecast);
+      });
+    });
+    return totals;
+  }, [items, dowAverages, uplift, weekDates]);
+
+  const skuTotals = useMemo(() => {
+    const totals = new Map(); // skuId -> base-uom qty for the week
+    weeklyItemTotals.forEach((qty, itemId) => {
+      resolver.itemExpansion(itemId).forEach((perUnit, skuId) => {
+        totals.set(skuId, (totals.get(skuId) || 0) + perUnit * qty);
+      });
+    });
+    return [...totals.entries()]
+      .map(([skuId, qty]) => ({ sku: skuById.get(skuId), qty }))
+      .filter(r => r.sku)
+      .sort((a, b) => a.sku.name.localeCompare(b.sku.name));
+  }, [weeklyItemTotals, resolver, skuById]);
+
+  const skusByCategory = useMemo(() => {
+    const groups = new Map();
+    skuTotals.forEach(r => {
+      const cat = r.sku.category || 'Other';
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat).push(r);
+    });
+    return [...groups.entries()];
+  }, [skuTotals]);
+
+  return (
+    <div className="space-y-5">
+      <div className="card px-4 py-3 flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setStartDate(d => addDays(d, -7))} className="p-2.5 rounded-lg transition-colors hover:brightness-95" style={{ background: 'color-mix(in srgb, var(--primary) 12%, white)', color: 'var(--primary-dk)' }}>
+            <ChevronLeft size={18} strokeWidth={2.5} />
+          </button>
+          <div className="text-center min-w-[220px]">
+            <div className="text-sm font-bold text-gray-900">{fmtDateLong(startDate)} – {fmtDateLong(weekDates[6])}</div>
+            <div className="text-xs text-gray-400">7 days, each from its own day-of-week history</div>
+          </div>
+          <button onClick={() => setStartDate(d => addDays(d, 7))} className="p-2.5 rounded-lg transition-colors hover:brightness-95" style={{ background: 'color-mix(in srgb, var(--primary) 12%, white)', color: 'var(--primary-dk)' }}>
+            <ChevronRight size={18} strokeWidth={2.5} />
+          </button>
+        </div>
+        <button onClick={() => setStartDate(todayStr())} className="btn-secondary text-xs">This week</button>
+      </div>
+
+      <div className="flex items-end justify-between px-0.5">
+        <div>
+          <h3 className="text-sm font-bold text-gray-900">Expected Consumption</h3>
+          <p className="text-xs text-gray-400">Forecast for the 7 days above, expanded through R-Recipe and summed per SKU</p>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-400">
+          <Layers size={13} /> {skuTotals.length} SKU{skuTotals.length !== 1 ? 's' : ''}
+        </div>
+      </div>
+
+      {skusByCategory.length === 0 ? (
+        <div className="card p-8 text-center text-sm text-gray-400">Nothing to show -- no recipes resolve for this week's forecasted items yet.</div>
+      ) : (
+        <div className="space-y-2">
+          {skusByCategory.map(([cat, rows]) => {
+            const isCollapsed = collapsed.has(cat);
+            return (
+              <div key={cat} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                <button
+                  onClick={() => toggleCat(cat)}
+                  aria-expanded={!isCollapsed}
+                  className="w-full flex items-center justify-between px-4 py-2.5 hover:brightness-[0.98] transition-[filter]"
+                  style={{ background: 'color-mix(in srgb, var(--primary) 5%, white)' }}
+                >
+                  <span className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
+                    {isCollapsed ? <ChevronDown size={14} className="text-gray-400 shrink-0" /> : <ChevronUp size={14} className="text-gray-400 shrink-0" />}
+                    {cat}
+                  </span>
+                  <span className="text-xs font-semibold text-gray-400">{rows.length} item{rows.length !== 1 ? 's' : ''}</span>
+                </button>
+                {!isCollapsed && (
+                  <div className="divide-y divide-gray-50 border-t border-gray-100">
+                    {rows.map(({ sku, qty }, idx) => {
+                      const pack = packEquivalent(qty, sku);
+                      return (
+                        <div key={sku.id} className={`flex items-center justify-between gap-3 px-4 py-2.5 ${idx % 2 === 1 ? 'bg-gray-50/40' : ''}`}>
+                          <p className="text-sm font-medium text-gray-800">{sku.name}</p>
+                          <div className="text-right">
+                            <p className="text-sm font-semibold text-gray-700 tabular-nums">{formatQtyHuman(qty, sku.uom)}</p>
+                            {pack && <p className="text-[11px] text-gray-400 tabular-nums">{pack}</p>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Top level ─────────────────────────────────────────────────────────────────
 
 export default function CrystalBallApp({ org }) {
@@ -602,8 +742,28 @@ export default function CrystalBallApp({ org }) {
   const resolver = useQtyResolver(components, componentLines, menuItemLines);
   const skuById = useMemo(() => new Map(skus.map(s => [s.id, s])), [skus]);
 
+  // Historical day-of-week average qty, per item, PER CHANNEL GROUP -- keeping
+  // groups separate (rather than one bucket per item) is what lets them be
+  // added together instead of diluting each other into one blended avg.
+  // Shared by the daily Forecast tab and the Weekly Consumption rollup.
+  const dowAverages = useMemo(() => {
+    const buckets = new Map(); // `${itemId}:${dow}:${groupKey}` -> [sum,count]
+    salesHistory.forEach(row => {
+      const groupKey = CHANNEL_TO_GROUP.get(row.channel) || 'instore';
+      const dow = dayOfWeekIndex(row.sale_date);
+      const key = `${row.item_id}:${dow}:${groupKey}`;
+      const entry = buckets.get(key) || [0, 0];
+      entry[0] += Number(row.qty) || 0;
+      entry[1] += 1;
+      buckets.set(key, entry);
+    });
+    return buckets;
+  }, [salesHistory]);
+  const uplift = 1 + (Number(settings?.channel_uplift_pct) || 0) / 100;
+
   const TABS = [
     { id: 'forecast', label: 'Forecast' },
+    { id: 'weekly', label: 'Week Ahead' },
     { id: 'history', label: 'Sales History' },
   ];
 
@@ -638,7 +798,10 @@ export default function CrystalBallApp({ org }) {
       </div>
 
       {activeTab === 'forecast' && (
-        <ForecastTab orgId={orgId} items={items} salesHistory={salesHistory} resolver={resolver} skuById={skuById} settings={settings} onSettingsSaved={load} />
+        <ForecastTab orgId={orgId} items={items} dowAverages={dowAverages} resolver={resolver} skuById={skuById} settings={settings} onSettingsSaved={load} />
+      )}
+      {activeTab === 'weekly' && (
+        <WeeklyConsumptionTab items={items} dowAverages={dowAverages} uplift={uplift} resolver={resolver} skuById={skuById} />
       )}
       {activeTab === 'history' && (
         <SalesHistoryTab orgId={orgId} items={items} salesHistory={salesHistory} onRefresh={load} />
