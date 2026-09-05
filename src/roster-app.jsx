@@ -6,6 +6,7 @@ import StockApp from './StockApp';
 import ProductionApp from './ProductionApp';
 import RecipesApp from './RecipesApp';
 import CrystalBallApp from './CrystalBallApp';
+import { isoWeekLabel } from './isoWeek';
 import toast, { Toaster } from 'react-hot-toast';
 
 // Returns a Set<'YYYY-MM-DD'> of public holidays for a given year and AU state
@@ -4437,7 +4438,7 @@ const RosterApp = () => {
     };
 
     const copyForPayroll = () => {
-      const weekRange = `${dates[0]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} - ${dates[dates.length - 1]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+      const weekRange = `${dates[0] ? isoWeekLabel(formatDateKey(dates[0])) + ' · ' : ''}${dates[0]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} - ${dates[dates.length - 1]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`;
 
       const header = `TIMESHEET: ${weekRange}\n\n`;
       const colHeader = `${'Name'.padEnd(20)} ${'Type'.padEnd(8)} ${dayNames.map(d => d.padStart(7)).join(' ')}  ${'TOTAL'.padStart(7)}\n`;
@@ -5911,7 +5912,7 @@ Key things to verify after rebuild:
 
     const selectedStaff = staff.find(s => s.id === selectedStaffId) || activeStaff[0] || null;
     const scheduleByDay = selectedStaff ? generateStaffSchedule(selectedStaff) : [];
-    const weekRange = `${dates[0]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} – ${dates[dates.length - 1]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+    const weekRange = `${dates[0] ? isoWeekLabel(formatDateKey(dates[0])) + ' · ' : ''}${dates[0]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} – ${dates[dates.length - 1]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`;
 
     const shiftHours = (shift) => {
       const [sh, sm] = shift.startTime.split(':').map(Number);
@@ -6564,7 +6565,7 @@ Key things to verify after rebuild:
                 <div className="flex items-center gap-1">
                   <button onClick={() => setCurrentDate(d => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; })} className="p-1 rounded hover:bg-gray-100 text-gray-500 transition-colors" title="Previous week"><ChevronLeft size={16} /></button>
                   <button onClick={() => setCurrentDate(new Date())} className="text-xs px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded font-medium text-gray-700 transition-colors whitespace-nowrap">
-                    {dates[0]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })} – {dates[dates.length - 1]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {dates[0] && isoWeekLabel(formatDateKey(dates[0]))} · {dates[0]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' })} – {dates[dates.length - 1]?.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </button>
                   <button onClick={() => setCurrentDate(d => { const n = new Date(d); n.setDate(n.getDate() + 7); return n; })} className="p-1 rounded hover:bg-gray-100 text-gray-500 transition-colors" title="Next week"><ChevronRight size={16} /></button>
                 </div>
