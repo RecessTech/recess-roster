@@ -2,7 +2,7 @@
 -- Baby Cos Gem (SKU-0077): pack_size corrected again, this time from a
 -- real physical composition instead of a consumption-derived estimate.
 --
--- Box = 12 packs x 2 heads x 200g/head = 4800g.
+-- Box = 12 packs x 2 heads x 150g/head (accounting for wastage) = 3600g.
 --
 -- Supersedes the previous 2238g estimate (supabase_stock_correct_baby_cos_gem_weight.sql),
 -- which was back-derived from POS-only weekly consumption divided by
@@ -20,7 +20,7 @@
 -- both read this same pack_size directly -- nothing else to fix.
 -- ============================================================
 
-UPDATE stock_items SET pack_size = 4800, updated_at = now()
+UPDATE stock_items SET pack_size = 3600, updated_at = now()
 WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Bus Stop' LIMIT 1) AND sku = 'SKU-0077';
 
 -- ── VERIFY ─────────────────────────────────────────────────────
