@@ -272,19 +272,49 @@ const CHANNEL_TO_GROUP = new Map(
   CHANNEL_GROUPS.flatMap(g => g.channels.map(ch => [ch, g.key]))
 );
 
+// A bucket needs at least this many historical same-weekday data points
+// before a trend line is trusted at all -- below this, too few points
+// makes a "slope" meaningless noise, so it's forced flat.
+const MIN_TREND_SAMPLES = 4;
+// However strong the fitted trend looks, its contribution this many
+// weeks out is capped to +-50% of the current level -- a couple of
+// unusually large recent weeks shouldn't be able to extrapolate a
+// forecast to zero or to some absurd multiple several weeks out.
+const MAX_TREND_DELTA_FRACTION = 0.5;
+
+// Weighted least squares over a bucket's (weeksFromNow, qty) points --
+// weeksFromNow is negative for past sales, 0 = today -- returning the
+// fitted value at the requested weeksFromNow. With < MIN_TREND_SAMPLES
+// points, or with all points landing in the same week (no x variance
+// to fit a slope against), this degrades to the flat recency-weighted
+// mean (slope forced to 0), same as before trend support existed.
+function bucketPredict(bucket, weeksFromNow) {
+  if (!bucket) return { value: 0, samples: 0 };
+  const [rawCount, sw, swx, swy, swxx, swxy] = bucket;
+  if (sw <= 0) return { value: 0, samples: rawCount };
+  const xbar = swx / sw;
+  const ybar = swy / sw;
+  const sxx = swxx - sw * xbar * xbar;
+  const slope = (rawCount >= MIN_TREND_SAMPLES && sxx > 1e-6)
+    ? (swxy - sw * xbar * ybar) / sxx
+    : 0;
+  const intercept = ybar - slope * xbar; // fitted value at weeksFromNow = 0 (today)
+  const trendDelta = slope * weeksFromNow;
+  const cap = Math.abs(intercept) * MAX_TREND_DELTA_FRACTION;
+  const clampedDelta = Math.max(-cap, Math.min(cap, trendDelta));
+  return { value: Math.max(0, intercept + clampedDelta), samples: rawCount };
+}
+
 // Same math the single-day Forecast tab uses, factored out so the weekly
 // rollup can call it once per date and sum -- forecasts stay identical
 // whichever tab you look at them from.
 function forecastItemsForDate(items, dowAverages, uplift, dateStr) {
   const dow = dayOfWeekIndex(dateStr);
+  const weeksFromNow = (new Date(dateStr + 'T12:00:00').getTime() - new Date(todayStr() + 'T12:00:00').getTime()) / (7 * 86400000);
   return items.map(item => {
     const groupStats = CHANNEL_GROUPS.map(g => {
       const bucket = dowAverages.get(`${item.id}:${dow}:${g.key}`);
-      // bucket = [recency-weighted sum, weight total, raw sample count] --
-      // the average uses the weighted pair so recent weeks count for more;
-      // "samples" for the tooltip stays the raw count either way.
-      const avg = bucket ? bucket[0] / bucket[1] : 0;
-      const samples = bucket ? bucket[2] : 0;
+      const { value: avg, samples } = bucketPredict(bucket, weeksFromNow);
       return { ...g, avg, samples };
     });
     const baseTotal = groupStats.reduce((s, g) => s + g.avg, 0);
@@ -443,7 +473,7 @@ function ForecastTab({ orgId, items, dowAverages, resolver, skuById, settings, o
           <div
             className="flex items-center gap-2 rounded-xl pl-3 pr-2 py-1.5"
             style={{ background: 'color-mix(in srgb, var(--primary) 6%, white)' }}
-            title="How fast older sales stop counting: a sale one half-life ago counts half as much as one from today. Lower = reacts faster to recent trends; 0 = flat average of all history (old behaviour)"
+            title="How fast older sales stop counting, for both the average level and the trend line fitted through it: a sale one half-life ago counts half as much as one from today. Lower = reacts faster to recent trends; 0 = flat average of all history, no trend (old behaviour)"
           >
             <Clock size={13} style={{ color: 'var(--primary)' }} />
             <span className="text-xs font-semibold text-gray-600">Recency</span>
@@ -489,7 +519,7 @@ function ForecastTab({ orgId, items, dowAverages, resolver, skuById, settings, o
             <div className="flex items-end justify-between px-0.5">
               <div>
                 <h3 className="text-sm font-bold text-gray-900">Item Forecast</h3>
-                <p className="text-xs text-gray-400">Each channel's recency-weighted avg. of past {DOW_LABELS[dayOfWeekIndex(date)]}s, added together × buffer</p>
+                <p className="text-xs text-gray-400">Each channel's trend-projected avg. of past {DOW_LABELS[dayOfWeekIndex(date)]}s, added together × buffer</p>
               </div>
               {itemForecastsByCategory.length > 0 && (
                 <div className="text-right">
@@ -808,8 +838,15 @@ export default function CrystalBallApp({ org }) {
   // for "the Tuesday after" are always identical (nothing in the model
   // varies week to week). 0 = old flat-average behaviour.
   const halfLifeDays = (Number(settings?.recency_halflife_weeks) || 0) * 7;
+  // Each bucket accumulates the weighted sums a weighted-least-squares trend
+  // line needs (qty vs. weeksFromNow, weeksFromNow=0 is today, negative for
+  // past sales) rather than just a mean -- bucketPredict() fits and
+  // extrapolates from these, degrading to a flat recency-weighted average
+  // when there isn't enough data to trust a slope. This is why forecasts
+  // for different future weeks can now actually differ from each other,
+  // instead of every future Monday reusing the exact same number.
   const dowAverages = useMemo(() => {
-    const buckets = new Map(); // `${itemId}:${dow}:${groupKey}` -> [weightedSum, weightTotal, rawCount]
+    const buckets = new Map(); // `${itemId}:${dow}:${groupKey}` -> [rawCount, sw, swx, swy, swxx, swxy]
     const now = Date.now();
     salesHistory.forEach(row => {
       const groupKey = CHANNEL_TO_GROUP.get(row.channel) || 'instore';
@@ -817,10 +854,15 @@ export default function CrystalBallApp({ org }) {
       const key = `${row.item_id}:${dow}:${groupKey}`;
       const daysAgo = Math.max(0, (now - new Date(row.sale_date + 'T12:00:00').getTime()) / 86400000);
       const weight = halfLifeDays > 0 ? Math.pow(0.5, daysAgo / halfLifeDays) : 1;
-      const entry = buckets.get(key) || [0, 0, 0];
-      entry[0] += (Number(row.qty) || 0) * weight;
+      const x = -daysAgo / 7;
+      const y = Number(row.qty) || 0;
+      const entry = buckets.get(key) || [0, 0, 0, 0, 0, 0];
+      entry[0] += 1;
       entry[1] += weight;
-      entry[2] += 1;
+      entry[2] += weight * x;
+      entry[3] += weight * y;
+      entry[4] += weight * x * x;
+      entry[5] += weight * x * y;
       buckets.set(key, entry);
     });
     return buckets;
