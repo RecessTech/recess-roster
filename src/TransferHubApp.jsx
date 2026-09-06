@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ArrowLeftRight, Package, MapPin, Search, Check, XCircle, Clock, User, Send, ClipboardList, History as HistoryIcon,
+  Link2, CheckCircle, X,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -311,6 +312,84 @@ function QueueTab({ requests, itemById, locationById, locations, emailByUserId, 
   );
 }
 
+// ── Share modal (read-only public link, no login required) ────────────────
+
+function Modal({ title, onClose, children, maxWidth = 'max-w-md' }) {
+  return (
+    <div className="modal-overlay">
+      <div className={`modal-container ${maxWidth} max-h-[90vh] flex flex-col`}>
+        <div className="modal-header flex-shrink-0">
+          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="modal-body overflow-y-auto">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function ShareModal({ token, orgId, onClose, onTokenChange }) {
+  const [copied, setCopied] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const shareUrl = token ? `${window.location.origin}/transfers/${token}` : null;
+
+  function copyLink() {
+    if (!shareUrl) return;
+    navigator.clipboard.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function regenerate() {
+    setRegenerating(true);
+    try {
+      const updated = await db.regenerateOrgTransferPublicToken(orgId);
+      onTokenChange(updated.transfer_public_token);
+      setCopied(false);
+    } catch (err) {
+      toast.error('Could not regenerate link: ' + (err.message || 'unknown error'));
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
+  return (
+    <Modal title="Share Transfer Hub" onClose={onClose} maxWidth="max-w-md">
+      <div className="space-y-3">
+        <p className="text-xs text-gray-500">
+          Anyone with this link sees a read-only overview of what's currently needed at either site — no login required, and no editing. Good for handing to every staff member so they can check before heading between sites.
+        </p>
+        <div className="flex items-center gap-2">
+          <input
+            readOnly
+            value={shareUrl || 'Generating link…'}
+            onFocus={e => e.target.select()}
+            className="flex-1 text-xs font-mono bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700"
+          />
+          <button
+            onClick={copyLink}
+            disabled={!shareUrl}
+            className="text-white text-xs py-2 px-3 rounded-lg flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+            style={{ background: 'var(--primary)' }}
+          >
+            {copied ? <CheckCircle size={14} /> : <Link2 size={14} />}
+            <span>{copied ? 'Copied' : 'Copy'}</span>
+          </button>
+        </div>
+        <button
+          onClick={regenerate}
+          disabled={regenerating}
+          className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-50"
+        >
+          {regenerating ? 'Regenerating…' : 'Regenerate link (invalidates the old one)'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 // ── History tab ───────────────────────────────────────────────────────────
 
 function HistoryTab({ requests, itemById, locationById, emailByUserId }) {
@@ -373,6 +452,10 @@ export default function TransferHubApp({ user, org }) {
   const [requests, setRequests] = useState([]);
   const [orgMembers, setOrgMembers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showShare, setShowShare] = useState(false);
+  const [transferToken, setTransferToken] = useState(org?.transfer_public_token ?? null);
+
+  useEffect(() => { setTransferToken(org?.transfer_public_token ?? null); }, [org?.transfer_public_token]);
 
   useEffect(() => { loadData(); }, [org?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -498,6 +581,13 @@ export default function TransferHubApp({ user, org }) {
             <span className="text-sm font-semibold text-gray-900">{items.length}</span>
             <span className="text-xs text-gray-500">SKUs</span>
           </div>
+          <button
+            onClick={() => setShowShare(true)}
+            className="p-2.5 rounded-xl bg-white border border-gray-200 shadow-soft hover:bg-gray-50 text-gray-500 transition-colors"
+            title="Share a read-only link with staff"
+          >
+            <Link2 size={16} />
+          </button>
         </div>
       </div>
 
@@ -548,6 +638,10 @@ export default function TransferHubApp({ user, org }) {
           locationById={locationById}
           emailByUserId={emailByUserId}
         />
+      )}
+
+      {showShare && (
+        <ShareModal token={transferToken} orgId={org.id} onClose={() => setShowShare(false)} onTokenChange={setTransferToken} />
       )}
     </div>
   );

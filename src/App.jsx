@@ -4,10 +4,12 @@ import RosterApp from './roster-app';
 import PublicScheduleView from './PublicScheduleView';
 import PublicRosterView from './PublicRosterView';
 import PublicProductionView from './PublicProductionView';
+import PublicTransferHubView from './PublicTransferHubView';
 
 // Resolve public routes before auth: /s/<token> (one staff member's shifts),
-// /r/<token> (the whole roster, read-only), and /prod/<token> (the daily
-// production plan, read-only)
+// /r/<token> (the whole roster, read-only), /prod/<token> (the daily
+// production plan, read-only), and /transfers/<token> (Transfer Hub's
+// open-requests dashboard, read-only)
 const publicMatch = window.location.pathname.match(/^\/s\/([^/]+)/);
 const PUBLIC_TOKEN = publicMatch ? publicMatch[1] : null;
 
@@ -16,6 +18,9 @@ const PUBLIC_ROSTER_TOKEN = publicRosterMatch ? publicRosterMatch[1] : null;
 
 const publicProductionMatch = window.location.pathname.match(/^\/prod\/([^/]+)/);
 const PUBLIC_PRODUCTION_TOKEN = publicProductionMatch ? publicProductionMatch[1] : null;
+
+const publicTransferMatch = window.location.pathname.match(/^\/transfers\/([^/]+)/);
+const PUBLIC_TRANSFER_TOKEN = publicTransferMatch ? publicTransferMatch[1] : null;
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -79,6 +84,9 @@ function App() {
   }
   if (PUBLIC_PRODUCTION_TOKEN) {
     return <PublicProductionView token={PUBLIC_PRODUCTION_TOKEN} />;
+  }
+  if (PUBLIC_TRANSFER_TOKEN) {
+    return <PublicTransferHubView token={PUBLIC_TRANSFER_TOKEN} />;
   }
   if (PUBLIC_TOKEN) {
     return <PublicScheduleView token={PUBLIC_TOKEN} />;
