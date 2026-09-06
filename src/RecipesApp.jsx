@@ -367,8 +367,13 @@ function ComponentBuilderModal({ component, skus, components, componentLines, re
 function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryPackagingLines, packagingExclusions, resolver, orgId, onClose, onRefresh }) {
   const [sellPrice, setSellPrice] = useState(String(item.sell_price ?? ''));
   const [showPicker, setShowPicker] = useState(false);
+  const [showPackagingPicker, setShowPackagingPicker] = useState(false);
 
-  const lines = menuItemLines.filter(l => l.item_id === item.id);
+  const lines = menuItemLines.filter(l => l.item_id === item.id && !l.is_packaging);
+  // Extra/different packaging for just this one item -- e.g. Coffee & Tea
+  // has no category rule, so each drink's packaging is picked here
+  // directly rather than inherited.
+  const itemPackagingLines = menuItemLines.filter(l => l.item_id === item.id && l.is_packaging);
   const categoryLines = categoryPackagingLines.filter(l => l.category === item.category);
   const packagingLines = effectivePackagingLines(item, categoryPackagingLines, packagingExclusions);
   const excludedLines = categoryLines.filter(l => !packagingLines.includes(l));
@@ -427,6 +432,22 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryP
     }
   }
 
+  async function handlePickPackaging({ id }) {
+    setShowPackagingPicker(false);
+    try {
+      await db.createRecipeMenuItemLine(orgId, {
+        item_id: item.id,
+        stock_item_id: id,
+        qty: 1,
+        is_packaging: true,
+        sort_order: itemPackagingLines.length,
+      });
+      onRefresh();
+    } catch (err) {
+      toast.error('Failed to add packaging: ' + (err.message || 'unknown error'));
+    }
+  }
+
   async function handleQtyChange(line, qty) {
     try {
       await db.updateRecipeMenuItemLine(line.id, { qty });
@@ -441,7 +462,7 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryP
       await db.deleteRecipeMenuItemLine(line.id);
       onRefresh();
     } catch (err) {
-      toast.error('Failed to remove ingredient: ' + (err.message || 'unknown error'));
+      toast.error('Failed to remove: ' + (err.message || 'unknown error'));
     }
   }
 
@@ -533,19 +554,23 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryP
         </div>
 
         <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-            Packaging{item.category ? ` — ${item.category} default` : ''}
-          </p>
-          {!item.category ? (
-            <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-xl">Set a category on this item to pick up packaging rules.</p>
-          ) : categoryLines.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-xl">No packaging rule for {item.category} yet — set one up in the Packaging tab.</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              Packaging{item.category ? ` — ${item.category}` : ''}
+            </p>
+            <button onClick={() => setShowPackagingPicker(true)} className="flex items-center gap-1.5 text-xs font-semibold text-purple-600 hover:text-purple-700">
+              <Plus size={13} /> Add Packaging
+            </button>
+          </div>
+          {categoryLines.length === 0 && itemPackagingLines.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-xl">No packaging yet — add it here, or set a category rule in the Packaging tab.</p>
           ) : (
             <div className="bg-gray-50 rounded-xl divide-y divide-gray-100 overflow-hidden">
               {packagingLines.map(line => (
                 <div key={line.id} className="flex items-center gap-2 px-3 py-2">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 truncate">{resolver.lineName(line)}</p>
+                    <p className="text-[11px] text-gray-400">{item.category} default</p>
                   </div>
                   <span className="text-xs text-gray-400">{fmtQty(line.qty)} {resolver.lineUom(line)}</span>
                   <span className="text-sm font-semibold text-gray-600 w-16 text-right tabular-nums">
@@ -569,10 +594,26 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryP
                   </button>
                 </div>
               ))}
+              {itemPackagingLines.map(line => (
+                <LineRow key={line.id} line={line} resolver={resolver}
+                  onQtyChange={q => handleQtyChange(line, q)}
+                  onDelete={() => handleDeleteLine(line)} />
+              ))}
             </div>
           )}
         </div>
       </div>
+
+      {showPackagingPicker && (
+        <IngredientPicker
+          skus={skus}
+          components={[]}
+          title="Add Packaging"
+          placeholder="Search packaging & other SKUs…"
+          onPick={handlePickPackaging}
+          onClose={() => setShowPackagingPicker(false)}
+        />
+      )}
 
       {showPicker && (
         <IngredientPicker
@@ -672,7 +713,7 @@ function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, cat
   const [showBuilder, setShowBuilder] = useState(null);
 
   const rows = menuItems.map(item => {
-    const lines = menuItemLines.filter(l => l.item_id === item.id);
+    const lines = menuItemLines.filter(l => l.item_id === item.id && !l.is_packaging);
     const cogs = lines.reduce((sum, l) => {
       const c = resolver.lineUnitCost(l);
       return c == null ? sum : sum + c * (Number(l.qty) || 0);
