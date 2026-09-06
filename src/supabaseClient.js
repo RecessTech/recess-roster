@@ -1704,12 +1704,15 @@ export const db = {
     return data || [];
   },
 
-  async createTransferRequest(orgId, { itemId, locationId, quantity, note, requestedBy }) {
+  // Exactly one of itemId/componentId should be set -- a request is either
+  // a raw stock SKU or a prepared recipe component (e.g. "Pickled Onion").
+  async createTransferRequest(orgId, { itemId, componentId, locationId, quantity, note, requestedBy }) {
     const { data, error } = await supabase
       .from('transfer_requests')
       .insert([{
         org_id: orgId,
-        item_id: itemId,
+        stock_item_id: itemId || null,
+        component_id: componentId || null,
         requesting_location_id: locationId,
         quantity,
         note: note || null,

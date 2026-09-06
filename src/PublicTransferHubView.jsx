@@ -48,14 +48,17 @@ export default function PublicTransferHubView({ token }) {
   const grouped = useMemo(() => {
     if (!data) return [];
     const itemById = new Map(data.items.map(i => [i.id, i]));
+    const componentById = new Map((data.components || []).map(c => [c.id, c]));
     const locationById = new Map(data.locations.map(l => [l.id, l]));
     const groups = new Map();
     for (const r of data.requests) {
       const loc = locationById.get(r.requesting_location_id);
-      const item = itemById.get(r.item_id);
-      if (!loc || !item) continue;
+      const subject = r.stock_item_id
+        ? itemById.get(r.stock_item_id)
+        : (componentById.get(r.component_id) ? { ...componentById.get(r.component_id), sku: null } : null);
+      if (!loc || !subject) continue;
       if (!groups.has(loc.name)) groups.set(loc.name, []);
-      groups.get(loc.name).push({ ...r, item });
+      groups.get(loc.name).push({ ...r, item: subject });
     }
     return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [data]);
@@ -128,7 +131,7 @@ export default function PublicTransferHubView({ token }) {
                   <div key={r.id} style={{ padding: '10px 16px', borderTop: '1px solid #F1F5F9', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 13.5, fontWeight: 600, color: '#1E293B' }}>{r.item.name}</div>
-                      <div style={{ fontSize: 11.5, color: '#94A3B8', marginTop: 1 }}>{r.item.sku} · {timeAgo(r.requested_at)}</div>
+                      <div style={{ fontSize: 11.5, color: '#94A3B8', marginTop: 1 }}>{r.item.sku || 'Component'} · {timeAgo(r.requested_at)}</div>
                       {r.note && <div style={{ fontSize: 11.5, color: '#64748B', marginTop: 3, fontStyle: 'italic' }}>&ldquo;{r.note}&rdquo;</div>}
                     </div>
                     <div style={{

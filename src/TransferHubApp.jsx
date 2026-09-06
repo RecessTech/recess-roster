@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   ArrowLeftRight, Package, MapPin, Search, Check, XCircle, Clock, User, Send, ClipboardList, History as HistoryIcon,
   Link2, CheckCircle, X,
@@ -35,25 +35,32 @@ function timeAgo(iso) {
   return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
 }
 
-// ── SKU picker ────────────────────────────────────────────────────────────
-// Searches the shared stock_items catalog by name or SKU. A plain <select>
-// doesn't scale once a catalog has hundreds of SKUs, so this is a small
-// filtered dropdown instead.
+// ── SKU / component picker ─────────────────────────────────────────────────
+// Searches both the shared stock_items catalog and R-Recipe's prepared
+// components (e.g. "Pickled Onion", "Tuna Mix") by name or SKU. A plain
+// <select> doesn't scale once a catalog has hundreds of entries, so this is
+// a small filtered dropdown instead. `value`/`onChange` deal in
+// { kind: 'item' | 'component', id } since a request points at exactly one.
 
-function ItemPicker({ items, value, onChange, placeholder = 'Search SKUs by name…' }) {
+function ItemPicker({ items, components, value, onChange, placeholder = 'Search SKUs & components…' }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
 
-  const selected = items.find(i => i.id === value) || null;
+  const options = useMemo(() => [
+    ...items.map(i => ({ kind: 'item', id: i.id, name: i.name, sku: i.sku, uom: i.uom })),
+    ...components.map(c => ({ kind: 'component', id: c.id, name: c.name, sku: null, uom: c.uom })),
+  ], [items, components]);
+
+  const selected = value ? options.find(o => o.kind === value.kind && o.id === value.id) || null : null;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const pool = q
-      ? items.filter(i => i.name.toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q))
-      : items;
+      ? options.filter(o => o.name.toLowerCase().includes(q) || (o.sku || '').toLowerCase().includes(q))
+      : options;
     return pool.slice(0, 50);
-  }, [items, query]);
+  }, [options, query]);
 
   useEffect(() => {
     if (!open) return;
@@ -72,7 +79,7 @@ function ItemPicker({ items, value, onChange, placeholder = 'Search SKUs by name
         <input
           className="input-base pl-8"
           placeholder={placeholder}
-          value={open ? query : (selected ? `${selected.name} · ${selected.sku || 'no SKU'}` : '')}
+          value={open ? query : (selected ? `${selected.name} · ${selected.kind === 'component' ? 'Component' : (selected.sku || 'no SKU')}` : '')}
           onChange={e => { setQuery(e.target.value); onChange(null); }}
           onFocus={() => { setOpen(true); setQuery(''); }}
         />
@@ -80,16 +87,16 @@ function ItemPicker({ items, value, onChange, placeholder = 'Search SKUs by name
       {open && (
         <div className="absolute z-20 mt-1 w-full max-h-56 overflow-auto card border border-gray-200 shadow-soft py-1">
           {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-gray-400">No matching SKUs</div>
-          ) : filtered.map(i => (
+            <div className="px-3 py-2 text-xs text-gray-400">No matching SKUs or components</div>
+          ) : filtered.map(o => (
             <button
-              key={i.id}
+              key={`${o.kind}:${o.id}`}
               type="button"
-              onClick={() => { onChange(i.id); setOpen(false); setQuery(''); }}
+              onClick={() => { onChange({ kind: o.kind, id: o.id }); setOpen(false); setQuery(''); }}
               className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between gap-2"
             >
-              <span className="font-medium text-gray-900">{i.name}</span>
-              <span className="text-xs text-gray-400 shrink-0">{i.sku} · {i.uom}</span>
+              <span className="font-medium text-gray-900">{o.name}</span>
+              <span className="text-xs text-gray-400 shrink-0">{o.kind === 'component' ? `Component · ${o.uom}` : `${o.sku} · ${o.uom}`}</span>
             </button>
           ))}
         </div>
@@ -99,12 +106,12 @@ function ItemPicker({ items, value, onChange, placeholder = 'Search SKUs by name
 }
 
 // ── Request tab ───────────────────────────────────────────────────────────
-// Anyone at either site flags a SKU they need. No stock-on-hand check --
-// this is intent, not a reconciled count.
+// Anyone at either site flags a SKU or prepared component they need. No
+// stock-on-hand check -- this is intent, not a reconciled count.
 
-function RequestTab({ items, locations, myOpenRequests, itemById, locationById, onCreate, onCancel }) {
+function RequestTab({ items, components, locations, myOpenRequests, subjectOf, locationById, onCreate, onCancel }) {
   const [locationId, setLocationId] = useState(locations[0]?.id || null);
-  const [itemId, setItemId] = useState(null);
+  const [selection, setSelection] = useState(null);
   const [quantity, setQuantity] = useState('');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -115,13 +122,19 @@ function RequestTab({ items, locations, myOpenRequests, itemById, locationById, 
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!locationId || !itemId || !quantity || Number(quantity) <= 0) {
-      toast.error('Pick a site, a SKU and a quantity greater than 0');
+    if (!locationId || !selection || !quantity || Number(quantity) <= 0) {
+      toast.error('Pick a site, a SKU or component, and a quantity greater than 0');
       return;
     }
     setSubmitting(true);
-    await onCreate({ itemId, locationId, quantity: Number(quantity), note: note.trim() });
-    setItemId(null);
+    await onCreate({
+      itemId: selection.kind === 'item' ? selection.id : null,
+      componentId: selection.kind === 'component' ? selection.id : null,
+      locationId,
+      quantity: Number(quantity),
+      note: note.trim(),
+    });
+    setSelection(null);
     setQuantity('');
     setNote('');
     setSubmitting(false);
@@ -149,8 +162,8 @@ function RequestTab({ items, locations, myOpenRequests, itemById, locationById, 
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">SKU</label>
-          <ItemPicker items={items} value={itemId} onChange={setItemId} />
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">SKU or Component</label>
+          <ItemPicker items={items} components={components} value={selection} onChange={setSelection} />
         </div>
 
         <div>
@@ -189,15 +202,15 @@ function RequestTab({ items, locations, myOpenRequests, itemById, locationById, 
         ) : (
           <div className="card divide-y divide-gray-50">
             {myOpenRequests.map(r => {
-              const item = itemById.get(r.item_id);
+              const subject = subjectOf(r);
               const loc = locationById.get(r.requesting_location_id);
-              if (!item) return null;
+              if (!subject) return null;
               return (
                 <div key={r.id} className="px-4 py-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="font-medium text-gray-900 text-sm truncate">{item.name}</div>
+                    <div className="font-medium text-gray-900 text-sm truncate">{subject.name}</div>
                     <div className="text-xs text-gray-400 truncate">
-                      {r.quantity} {item.uom} · {loc?.name} · {timeAgo(r.requested_at)}
+                      {r.quantity} {subject.uom} · {loc?.name} · {timeAgo(r.requested_at)}
                     </div>
                   </div>
                   <button
@@ -222,16 +235,21 @@ function RequestTab({ items, locations, myOpenRequests, itemById, locationById, 
 // transfers can see the lot. Fulfilling is manual: pick which site is
 // sending the stock, no stock-on-hand check.
 
-function QueueRow({ row, item, requestingLocation, locations, requesterEmail, onFulfill, onCancel }) {
+function QueueRow({ row, subject, requestingLocation, locations, requesterEmail, onFulfill, onCancel }) {
   const fallbackSource = locations.find(l => l.id !== row.requesting_location_id)?.id || locations[0]?.id || '';
   const [sourceLocationId, setSourceLocationId] = useState(fallbackSource);
 
   return (
     <div className="px-4 py-3 flex items-center gap-3 flex-wrap">
       <div className="min-w-0 flex-1">
-        <div className="font-medium text-gray-900 text-sm">{item.name}</div>
+        <div className="font-medium text-gray-900 text-sm flex items-center gap-1.5">
+          {subject.name}
+          {subject.kind === 'component' && (
+            <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Component</span>
+          )}
+        </div>
         <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
-          <span>{row.quantity} {item.uom}</span>
+          <span>{row.quantity} {subject.uom}</span>
           <span>·</span>
           <span className="flex items-center gap-1"><User size={11} />{requesterEmail || 'Unknown'}</span>
           <span>·</span>
@@ -268,17 +286,17 @@ function QueueRow({ row, item, requestingLocation, locations, requesterEmail, on
   );
 }
 
-function QueueTab({ requests, itemById, locationById, locations, emailByUserId, onFulfill, onCancel }) {
+function QueueTab({ requests, subjectOf, locationById, locations, emailByUserId, onFulfill, onCancel }) {
   const grouped = useMemo(() => {
     const groups = {};
     for (const r of requests) {
       const loc = locationById.get(r.requesting_location_id);
-      const item = itemById.get(r.item_id);
-      if (!loc || !item) continue;
+      const subject = subjectOf(r);
+      if (!loc || !subject) continue;
       (groups[loc.name] = groups[loc.name] || []).push(r);
     }
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
-  }, [requests, locationById, itemById]);
+  }, [requests, locationById, subjectOf]);
 
   if (requests.length === 0) {
     return <EmptyState Icon={ClipboardList} title="No open transfer requests" hint="Requests sent from either site will show up here to action." />;
@@ -297,7 +315,7 @@ function QueueTab({ requests, itemById, locationById, locations, emailByUserId, 
               <QueueRow
                 key={row.id}
                 row={row}
-                item={itemById.get(row.item_id)}
+                subject={subjectOf(row)}
                 requestingLocation={locationById.get(row.requesting_location_id)}
                 locations={locations}
                 requesterEmail={emailByUserId.get(row.requested_by)}
@@ -392,7 +410,7 @@ function ShareModal({ token, orgId, onClose, onTokenChange }) {
 
 // ── History tab ───────────────────────────────────────────────────────────
 
-function HistoryTab({ requests, itemById, locationById, emailByUserId }) {
+function HistoryTab({ requests, subjectOf, locationById, emailByUserId }) {
   const sorted = useMemo(
     () => [...requests].sort((a, b) => new Date(b.actioned_at || b.requested_at) - new Date(a.actioned_at || a.requested_at)),
     [requests]
@@ -416,15 +434,18 @@ function HistoryTab({ requests, itemById, locationById, emailByUserId }) {
         </thead>
         <tbody>
           {sorted.map(r => {
-            const item = itemById.get(r.item_id);
+            const subject = subjectOf(r);
             const reqLoc = locationById.get(r.requesting_location_id);
             const srcLoc = locationById.get(r.source_location_id);
-            if (!item) return null;
+            if (!subject) return null;
             return (
               <tr key={r.id} className="border-b border-gray-50 last:border-b-0">
                 <td className="px-4 py-3">
-                  <div className="font-medium text-gray-900">{item.name}</div>
-                  <div className="text-xs text-gray-400">{r.quantity} {item.uom}</div>
+                  <div className="font-medium text-gray-900">
+                    {subject.name}
+                    {subject.kind === 'component' && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Component</span>}
+                  </div>
+                  <div className="text-xs text-gray-400">{r.quantity} {subject.uom}</div>
                 </td>
                 <td className="px-4 py-3 text-xs text-gray-500">{emailByUserId.get(r.requested_by) || 'Unknown'}</td>
                 <td className="px-4 py-3 text-xs text-gray-500">{srcLoc?.name || '—'} → {reqLoc?.name || '—'}</td>
@@ -449,6 +470,7 @@ export default function TransferHubApp({ user, org }) {
   const [activeTab, setActiveTab] = useState('request');
   const [locations, setLocations] = useState([]);
   const [items, setItems] = useState([]);
+  const [components, setComponents] = useState([]);
   const [requests, setRequests] = useState([]);
   const [orgMembers, setOrgMembers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -463,14 +485,16 @@ export default function TransferHubApp({ user, org }) {
     if (!org?.id) return;
     setLoading(true);
     try {
-      const [locs, stockItems, reqs, members] = await Promise.all([
+      const [locs, stockItems, recipeComponents, reqs, members] = await Promise.all([
         db.getLocations(org.id),
         db.getStockItems(org.id),
+        db.getRecipeComponents(org.id),
         db.getTransferRequests(org.id),
         db.getOrgMembersWithEmail(org.id),
       ]);
       setLocations(locs);
       setItems(stockItems);
+      setComponents(recipeComponents);
       setRequests(reqs);
       setOrgMembers(members);
     } catch (err) {
@@ -481,9 +505,27 @@ export default function TransferHubApp({ user, org }) {
   }
 
   const activeLocations = useMemo(() => locations.filter(l => l.active), [locations]);
+  const activeItems = useMemo(() => items.filter(i => i.active), [items]);
+  const activeComponents = useMemo(() => components.filter(c => c.active), [components]);
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+  const componentById = useMemo(() => new Map(components.map(c => [c.id, c])), [components]);
   const locationById = useMemo(() => new Map(locations.map(l => [l.id, l])), [locations]);
   const emailByUserId = useMemo(() => new Map(orgMembers.map(m => [m.user_id, m.email])), [orgMembers]);
+
+  // A request points at exactly one of a raw stock SKU or a prepared
+  // recipe component (e.g. "Pickled Onion") -- this normalises either into
+  // one shape the tabs can render without caring which.
+  const subjectOf = useCallback(row => {
+    if (row.stock_item_id) {
+      const item = itemById.get(row.stock_item_id);
+      return item ? { kind: 'item', name: item.name, sku: item.sku, uom: item.uom } : null;
+    }
+    if (row.component_id) {
+      const comp = componentById.get(row.component_id);
+      return comp ? { kind: 'component', name: comp.name, sku: null, uom: comp.uom } : null;
+    }
+    return null;
+  }, [itemById, componentById]);
 
   const openRequests = useMemo(() => requests.filter(r => r.status === 'open'), [requests]);
   const historyRequests = useMemo(() => requests.filter(r => r.status !== 'open'), [requests]);
@@ -492,9 +534,9 @@ export default function TransferHubApp({ user, org }) {
     [openRequests, user?.id]
   );
 
-  async function handleCreate({ itemId, locationId, quantity, note }) {
+  async function handleCreate({ itemId, componentId, locationId, quantity, note }) {
     try {
-      const created = await db.createTransferRequest(org.id, { itemId, locationId, quantity, note, requestedBy: user?.id });
+      const created = await db.createTransferRequest(org.id, { itemId, componentId, locationId, quantity, note, requestedBy: user?.id });
       setRequests(prev => [created, ...prev]);
       toast.success('Transfer request sent');
     } catch (err) {
@@ -578,8 +620,8 @@ export default function TransferHubApp({ user, org }) {
           </div>
           <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-gray-200 shadow-soft">
             <Package size={14} className="text-gray-400" />
-            <span className="text-sm font-semibold text-gray-900">{items.length}</span>
-            <span className="text-xs text-gray-500">SKUs</span>
+            <span className="text-sm font-semibold text-gray-900">{items.length + components.length}</span>
+            <span className="text-xs text-gray-500">SKUs &amp; components</span>
           </div>
           <button
             onClick={() => setShowShare(true)}
@@ -611,10 +653,11 @@ export default function TransferHubApp({ user, org }) {
 
       {activeTab === 'request' && (
         <RequestTab
-          items={items}
+          items={activeItems}
+          components={activeComponents}
           locations={activeLocations}
           myOpenRequests={myOpenRequests}
-          itemById={itemById}
+          subjectOf={subjectOf}
           locationById={locationById}
           onCreate={handleCreate}
           onCancel={handleCancel}
@@ -623,7 +666,7 @@ export default function TransferHubApp({ user, org }) {
       {activeTab === 'queue' && (
         <QueueTab
           requests={openRequests}
-          itemById={itemById}
+          subjectOf={subjectOf}
           locationById={locationById}
           locations={activeLocations}
           emailByUserId={emailByUserId}
@@ -634,7 +677,7 @@ export default function TransferHubApp({ user, org }) {
       {activeTab === 'history' && (
         <HistoryTab
           requests={historyRequests}
-          itemById={itemById}
+          subjectOf={subjectOf}
           locationById={locationById}
           emailByUserId={emailByUserId}
         />
