@@ -41,19 +41,22 @@ serve(async (req) => {
       .eq('org_id', org.id)
       .single();
 
-    // Dashboard overview only: open requests, the locations/items needed to
-    // label them. No requester identity -- this link goes to every staff
-    // member, so who asked for what stays inside the logged-in app.
-    const [{ data: locations }, { data: items }, { data: requests }] = await Promise.all([
+    // Dashboard overview only: open requests, and the locations/items/
+    // components needed to label them. No requester identity -- this link
+    // goes to every staff member, so who asked for what stays inside the
+    // logged-in app.
+    const [{ data: locations }, { data: items }, { data: components }, { data: requests }] = await Promise.all([
       supabase.from('locations').select('id, name').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
       supabase.from('stock_items').select('id, name, sku, uom').eq('org_id', org.id),
-      supabase.from('transfer_requests').select('id, item_id, requesting_location_id, quantity, note, requested_at').eq('org_id', org.id).eq('status', 'open').order('requested_at', { ascending: false }),
+      supabase.from('recipe_components').select('id, name, uom').eq('org_id', org.id),
+      supabase.from('transfer_requests').select('id, stock_item_id, component_id, requesting_location_id, quantity, note, requested_at').eq('org_id', org.id).eq('status', 'open').order('requested_at', { ascending: false }),
     ]);
 
     return new Response(JSON.stringify({
       businessName: settings?.business_name || org.name || 'Transfer Hub',
       locations: locations || [],
       items: items || [],
+      components: components || [],
       requests: requests || [],
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
