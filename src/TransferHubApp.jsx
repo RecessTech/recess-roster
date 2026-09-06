@@ -318,7 +318,7 @@ function QueueTab({ requests, subjectOf, locationById, locations, emailByUserId,
                 subject={subjectOf(row)}
                 requestingLocation={locationById.get(row.requesting_location_id)}
                 locations={locations}
-                requesterEmail={emailByUserId.get(row.requested_by)}
+                requesterEmail={emailByUserId.get(row.requested_by) || row.requested_by_name}
                 onFulfill={onFulfill}
                 onCancel={onCancel}
               />
@@ -447,7 +447,7 @@ function HistoryTab({ requests, subjectOf, locationById, emailByUserId }) {
                   </div>
                   <div className="text-xs text-gray-400">{r.quantity} {subject.uom}</div>
                 </td>
-                <td className="px-4 py-3 text-xs text-gray-500">{emailByUserId.get(r.requested_by) || 'Unknown'}</td>
+                <td className="px-4 py-3 text-xs text-gray-500">{emailByUserId.get(r.requested_by) || r.requested_by_name || 'Unknown'}</td>
                 <td className="px-4 py-3 text-xs text-gray-500">{srcLoc?.name || '—'} → {reqLoc?.name || '—'}</td>
                 <td className="px-4 py-3">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.status === 'fulfilled' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
