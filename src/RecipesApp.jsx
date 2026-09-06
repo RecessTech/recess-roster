@@ -372,12 +372,14 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryP
   const categoryLines = categoryPackagingLines.filter(l => l.category === item.category);
   const packagingLines = effectivePackagingLines(item, categoryPackagingLines, packagingExclusions);
   const excludedLines = categoryLines.filter(l => !packagingLines.includes(l));
-  const allCostedLines = [...lines, ...packagingLines];
-  const cogs = allCostedLines.reduce((sum, l) => {
+  // Packaging is tracked and shown per-line below, but margin/COGS here
+  // is food cost only -- packaging isn't part of the food-cost target
+  // this percentage is meant to track.
+  const cogs = lines.reduce((sum, l) => {
     const c = resolver.lineUnitCost(l);
     return c == null ? sum : sum + c * (Number(l.qty) || 0);
   }, 0);
-  const hasUnknown = allCostedLines.some(l => resolver.lineUnitCost(l) == null);
+  const hasUnknown = lines.some(l => resolver.lineUnitCost(l) == null);
   const price = parseFloat(sellPrice) || 0;
   const gp = price - cogs;
   const margin = price > 0 ? gp / price : null;
@@ -671,13 +673,11 @@ function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, cat
 
   const rows = menuItems.map(item => {
     const lines = menuItemLines.filter(l => l.item_id === item.id);
-    const packagingLines = effectivePackagingLines(item, categoryPackagingLines, packagingExclusions);
-    const allLines = [...lines, ...packagingLines];
-    const cogs = allLines.reduce((sum, l) => {
+    const cogs = lines.reduce((sum, l) => {
       const c = resolver.lineUnitCost(l);
       return c == null ? sum : sum + c * (Number(l.qty) || 0);
     }, 0);
-    const hasLines = allLines.length > 0;
+    const hasLines = lines.length > 0;
     const price = Number(item.sell_price) || 0;
     const gp = price - cogs;
     const margin = price > 0 ? gp / price : null;
