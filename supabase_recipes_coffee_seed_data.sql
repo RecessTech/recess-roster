@@ -7,8 +7,9 @@
 -- create duplicate ingredient lines (no dedup on those tables),
 -- same caveat as supabase_recipes_seed_data.sql.
 --
--- Org resolved via the existing 'Crown St' production site, same
--- anchor used throughout the rest of the recipe system.
+-- Org resolved via the existing 'Espresso' production_item (Coffee
+-- & Tea category) rather than a named production site, since site
+-- names vary/aren't guaranteed to exist across environments.
 --
 -- METHODOLOGY
 -- -----------
@@ -47,55 +48,55 @@
 -- ── 1. SKU PRICING ─────────────────────────────────────────
 
 UPDATE stock_items SET uom = 'g', category = 'DRY', pack_size = 5000.0, pack_cost = 180.0, order_pack_label = 'bag'
-  WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Coffee Beans';
+  WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Coffee Beans';
 INSERT INTO stock_items (org_id, name, uom, category, pack_size, pack_cost, order_pack_label)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1), 'Coffee Beans', 'g', 'DRY', 5000.0, 180.0, 'bag'
-  WHERE NOT EXISTS (SELECT 1 FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Coffee Beans');
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1), 'Coffee Beans', 'g', 'DRY', 5000.0, 180.0, 'bag'
+  WHERE NOT EXISTS (SELECT 1 FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Coffee Beans');
 
 INSERT INTO stock_items (org_id, name, uom, category)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1), 'Drinking Chocolate Powder', 'g', 'DRY'
-  WHERE NOT EXISTS (SELECT 1 FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Drinking Chocolate Powder');
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1), 'Drinking Chocolate Powder', 'g', 'DRY'
+  WHERE NOT EXISTS (SELECT 1 FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Drinking Chocolate Powder');
 
 INSERT INTO stock_items (org_id, name, uom, category)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1), 'Chai Concentrate', 'ml', 'DRY'
-  WHERE NOT EXISTS (SELECT 1 FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Chai Concentrate');
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1), 'Chai Concentrate', 'ml', 'DRY'
+  WHERE NOT EXISTS (SELECT 1 FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Chai Concentrate');
 
 INSERT INTO stock_items (org_id, name, uom, category)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1), 'Matcha Powder', 'g', 'DRY'
-  WHERE NOT EXISTS (SELECT 1 FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Matcha Powder');
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1), 'Matcha Powder', 'g', 'DRY'
+  WHERE NOT EXISTS (SELECT 1 FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Matcha Powder');
 
 -- ── 2. RECIPE COMPONENTS ───────────────────────────────────
 -- Reusable "shot" preps so every drink references 1 or 2 shots
 -- instead of duplicating the 20g coffee dose everywhere.
 
 INSERT INTO recipe_components (org_id, name, type, uom, batch_yield)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1), 'Single Espresso Shot', 'prep', 'g', 1.0
-  WHERE NOT EXISTS (SELECT 1 FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Single Espresso Shot');
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1), 'Single Espresso Shot', 'prep', 'g', 1.0
+  WHERE NOT EXISTS (SELECT 1 FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Single Espresso Shot');
 INSERT INTO recipe_components (org_id, name, type, uom, batch_yield)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1), 'Double Espresso Shot', 'prep', 'g', 1.0
-  WHERE NOT EXISTS (SELECT 1 FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Double Espresso Shot');
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1), 'Double Espresso Shot', 'prep', 'g', 1.0
+  WHERE NOT EXISTS (SELECT 1 FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Double Espresso Shot');
 
 -- ── 3. RECIPE COMPONENT LINES ───────────────────────────────
 
 INSERT INTO recipe_component_lines (org_id, component_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Single Espresso Shot'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Coffee Beans'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Single Espresso Shot'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Coffee Beans'),
     20.0, 0;
 
 INSERT INTO recipe_component_lines (org_id, component_id, sub_component_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Double Espresso Shot'),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Single Espresso Shot'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Double Espresso Shot'),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Single Espresso Shot'),
     2.0, 0;
 
 -- ── 4. SELL PRICES ───────────────────────────────────────────
 -- Flat S/M/L tier across every sized Coffee & Tea item. Espresso
 -- (unsized) is intentionally left untouched.
 
-UPDATE production_items SET sell_price = 5.20 WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name IN ('Flat White (Small)', 'Cappuccino (Small)', 'Latte (Small)', 'Mocha (Small)', 'Hot Chocolate (Small)', 'Chai Latte (Small)', 'Matcha Latte (Small)');
-UPDATE production_items SET sell_price = 5.50 WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name IN ('Flat White (Medium)', 'Cappuccino (Medium)', 'Latte (Medium)', 'Mocha (Medium)', 'Hot Chocolate (Medium)', 'Chai Latte (Medium)', 'Matcha Latte (Medium)');
-UPDATE production_items SET sell_price = 6.20 WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name IN ('Flat White (Large)', 'Cappuccino (Large)', 'Latte (Large)', 'Mocha (Large)', 'Hot Chocolate (Large)', 'Chai Latte (Large)', 'Matcha Latte (Large)');
+UPDATE production_items SET sell_price = 5.20 WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name IN ('Flat White (Small)', 'Cappuccino (Small)', 'Latte (Small)', 'Mocha (Small)', 'Hot Chocolate (Small)', 'Chai Latte (Small)', 'Matcha Latte (Small)');
+UPDATE production_items SET sell_price = 5.50 WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name IN ('Flat White (Medium)', 'Cappuccino (Medium)', 'Latte (Medium)', 'Mocha (Medium)', 'Hot Chocolate (Medium)', 'Chai Latte (Medium)', 'Matcha Latte (Medium)');
+UPDATE production_items SET sell_price = 6.20 WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name IN ('Flat White (Large)', 'Cappuccino (Large)', 'Latte (Large)', 'Mocha (Large)', 'Hot Chocolate (Large)', 'Chai Latte (Large)', 'Matcha Latte (Large)');
 
 -- ── 5. MENU ITEM RECIPE LINES ─────────────────────────────────
 -- Milk-based coffee drinks: milk = cup volume - shot yield (30mL/shot).
@@ -104,260 +105,260 @@ UPDATE production_items SET sell_price = 6.20 WHERE org_id = (SELECT org_id FROM
 --   Large (300mL) - 2 shots (60mL) = 240mL
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Flat White (Small)'),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Single Espresso Shot'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Flat White (Small)'),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Single Espresso Shot'),
     1.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Flat White (Small)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Flat White (Small)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     150.0, 1;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Flat White (Medium)'),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Single Espresso Shot'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Flat White (Medium)'),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Single Espresso Shot'),
     1.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Flat White (Medium)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Flat White (Medium)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     210.0, 1;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Flat White (Large)'),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Double Espresso Shot'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Flat White (Large)'),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Double Espresso Shot'),
     1.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Flat White (Large)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Flat White (Large)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     240.0, 1;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Cappuccino (Small)'),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Single Espresso Shot'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Cappuccino (Small)'),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Single Espresso Shot'),
     1.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Cappuccino (Small)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Cappuccino (Small)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     150.0, 1;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Cappuccino (Medium)'),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Single Espresso Shot'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Cappuccino (Medium)'),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Single Espresso Shot'),
     1.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Cappuccino (Medium)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Cappuccino (Medium)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     210.0, 1;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Cappuccino (Large)'),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Double Espresso Shot'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Cappuccino (Large)'),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Double Espresso Shot'),
     1.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Cappuccino (Large)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Cappuccino (Large)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     240.0, 1;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Latte (Small)'),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Single Espresso Shot'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Latte (Small)'),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Single Espresso Shot'),
     1.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Latte (Small)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Latte (Small)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     150.0, 1;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Latte (Medium)'),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Single Espresso Shot'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Latte (Medium)'),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Single Espresso Shot'),
     1.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Latte (Medium)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Latte (Medium)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     210.0, 1;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Latte (Large)'),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Double Espresso Shot'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Latte (Large)'),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Double Espresso Shot'),
     1.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Latte (Large)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Latte (Large)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     240.0, 1;
 
 -- Espresso: unsized, 1 shot, no milk. Sell price intentionally untouched.
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Espresso'),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Single Espresso Shot'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Espresso'),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Single Espresso Shot'),
     1.0, 0;
 
 -- Mocha: coffee + chocolate + milk (milk = cup volume - shot yield, chocolate dissolves).
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mocha (Small)'),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Single Espresso Shot'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Mocha (Small)'),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Single Espresso Shot'),
     1.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mocha (Small)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Drinking Chocolate Powder'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Mocha (Small)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Drinking Chocolate Powder'),
     15.0, 1;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mocha (Small)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Mocha (Small)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     150.0, 2;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mocha (Medium)'),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Single Espresso Shot'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Mocha (Medium)'),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Single Espresso Shot'),
     1.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mocha (Medium)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Drinking Chocolate Powder'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Mocha (Medium)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Drinking Chocolate Powder'),
     15.0, 1;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mocha (Medium)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Mocha (Medium)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     210.0, 2;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, component_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mocha (Large)'),
-    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Double Espresso Shot'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Mocha (Large)'),
+    (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Double Espresso Shot'),
     1.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mocha (Large)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Drinking Chocolate Powder'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Mocha (Large)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Drinking Chocolate Powder'),
     30.0, 1;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Mocha (Large)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Mocha (Large)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     240.0, 2;
 
 -- Hot Chocolate: no coffee, milk fills the full cup.
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Hot Chocolate (Small)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Drinking Chocolate Powder'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Hot Chocolate (Small)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Drinking Chocolate Powder'),
     15.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Hot Chocolate (Small)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Hot Chocolate (Small)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     180.0, 1;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Hot Chocolate (Medium)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Drinking Chocolate Powder'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Hot Chocolate (Medium)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Drinking Chocolate Powder'),
     15.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Hot Chocolate (Medium)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Hot Chocolate (Medium)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     240.0, 1;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Hot Chocolate (Large)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Drinking Chocolate Powder'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Hot Chocolate (Large)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Drinking Chocolate Powder'),
     30.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Hot Chocolate (Large)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Hot Chocolate (Large)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     300.0, 1;
 
 -- Chai Latte: no coffee, milk = cup volume - chai concentrate.
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Chai Latte (Small)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Chai Concentrate'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Chai Latte (Small)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Chai Concentrate'),
     60.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Chai Latte (Small)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Chai Latte (Small)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     120.0, 1;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Chai Latte (Medium)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Chai Concentrate'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Chai Latte (Medium)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Chai Concentrate'),
     60.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Chai Latte (Medium)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Chai Latte (Medium)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     180.0, 1;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Chai Latte (Large)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Chai Concentrate'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Chai Latte (Large)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Chai Concentrate'),
     120.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Chai Latte (Large)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Chai Latte (Large)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     180.0, 1;
 
 -- Matcha Latte: no coffee, milk fills the full cup (powder volume negligible).
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Matcha Latte (Small)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Matcha Powder'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Matcha Latte (Small)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Matcha Powder'),
     2.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Matcha Latte (Small)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Matcha Latte (Small)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     180.0, 1;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Matcha Latte (Medium)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Matcha Powder'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Matcha Latte (Medium)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Matcha Powder'),
     2.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Matcha Latte (Medium)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Matcha Latte (Medium)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     240.0, 1;
 
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Matcha Latte (Large)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Matcha Powder'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Matcha Latte (Large)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Matcha Powder'),
     4.0, 0;
 INSERT INTO recipe_menu_item_lines (org_id, item_id, stock_item_id, qty, sort_order)
-  SELECT (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1),
-    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Matcha Latte (Large)'),
-    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1) AND name = 'Full Cream Milk'),
+  SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1),
+    (SELECT id FROM production_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Matcha Latte (Large)'),
+    (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1) AND name = 'Full Cream Milk'),
     300.0, 1;
 
 -- ── VERIFY ─────────────────────────────────────────────────────
@@ -369,7 +370,7 @@ FROM recipe_components rc
 JOIN recipe_component_lines rcl ON rcl.component_id = rc.id
 LEFT JOIN stock_items si ON si.id = rcl.stock_item_id
 LEFT JOIN recipe_components sub ON sub.id = rcl.sub_component_id
-WHERE rc.org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1)
+WHERE rc.org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1)
   AND rc.name IN ('Single Espresso Shot', 'Double Espresso Shot');
 
 -- Every Coffee & Tea recipe line, for a manual eyeball check. Lines
@@ -385,6 +386,6 @@ FROM production_items pi
 JOIN recipe_menu_item_lines rml ON rml.item_id = pi.id
 LEFT JOIN stock_items si ON si.id = rml.stock_item_id
 LEFT JOIN recipe_components rc ON rc.id = rml.component_id
-WHERE pi.org_id = (SELECT org_id FROM production_sites WHERE name = 'Crown St' LIMIT 1)
+WHERE pi.org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' AND category = 'Coffee & Tea' LIMIT 1)
   AND pi.category = 'Coffee & Tea'
 ORDER BY pi.name, rml.sort_order;
