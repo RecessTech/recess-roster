@@ -383,6 +383,15 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, resolver,
     }
   }
 
+  async function toggleSpecial() {
+    try {
+      await db.updateProductionItem(item.id, { is_special: item.is_special !== true });
+      onRefresh();
+    } catch (err) {
+      toast.error('Failed to update: ' + (err.message || 'unknown error'));
+    }
+  }
+
   async function handlePick({ kind, id }) {
     setShowPicker(false);
     try {
@@ -436,6 +445,17 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, resolver,
           />
           <span className="text-sm text-gray-700">Needs planning in R-Prod</span>
           <span className="text-xs text-gray-400 ml-auto">off = made to order / shelf stock</span>
+        </label>
+
+        <label className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={item.is_special === true}
+            onChange={toggleSpecial}
+            className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-400 cursor-pointer"
+          />
+          <span className="text-sm text-gray-700">Special / no longer on the menu</span>
+          <span className="text-xs text-gray-400 ml-auto">excluded from forecasting & production</span>
         </label>
 
         <div className="grid grid-cols-3 gap-2">
@@ -594,6 +614,16 @@ function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, res
     }
   }
 
+  async function toggleSpecial(item, e) {
+    e.stopPropagation();
+    try {
+      await db.updateProductionItem(item.id, { is_special: item.is_special !== true });
+      onRefresh();
+    } catch (err) {
+      toast.error('Failed to update: ' + (err.message || 'unknown error'));
+    }
+  }
+
   const grouped = useMemo(() => {
     const groups = new Map();
     rows.forEach(r => {
@@ -633,6 +663,7 @@ function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, res
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">GP</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Margin</th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide" title="Whether this item is planned in R-Prod (batch-prepped) vs made to order / shelf stock">R-Prod</th>
+                <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide" title="Limited-time or no longer on the menu -- excluded from forecasting & production planning">Special</th>
                 <th className="px-4 py-2.5"></th>
               </tr>
             </thead>
@@ -640,7 +671,7 @@ function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, res
               {grouped.map(([cat, catRows]) => (
                 <React.Fragment key={cat}>
                   <tr>
-                    <td colSpan={7} className="px-4 pt-3 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wide bg-white">{cat}</td>
+                    <td colSpan={8} className="px-4 pt-3 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wide bg-white">{cat}</td>
                   </tr>
                   {catRows.map(({ item, cogs, price, gp, margin }) => (
                     <tr key={item.id} onClick={() => setShowBuilder(item)} className="border-b border-gray-50 hover:bg-purple-50/40 cursor-pointer transition-colors">
@@ -648,6 +679,9 @@ function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, res
                         <div className="flex items-center gap-2">
                           <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
                           <span className="font-medium text-gray-900">{item.name}</span>
+                          {item.is_special && (
+                            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-amber-600 bg-amber-50 border border-amber-100 rounded-full px-1.5 py-0.5">Special</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{fmtMoney(cogs)}</td>
@@ -661,6 +695,15 @@ function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, res
                           onChange={e => togglePlanning(item, e)}
                           onClick={e => e.stopPropagation()}
                           className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-400 cursor-pointer"
+                        />
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={item.is_special === true}
+                          onChange={e => toggleSpecial(item, e)}
+                          onClick={e => e.stopPropagation()}
+                          className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-400 cursor-pointer"
                         />
                       </td>
                       <td className="px-4 py-2.5 text-right"><ChevronRight size={15} className="text-gray-300 inline" /></td>
