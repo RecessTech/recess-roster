@@ -82,6 +82,19 @@ function useCostResolver(skus, components, componentLines) {
   }, [skus, components, componentLines]);
 }
 
+// A menu item's category-level packaging lines, after its own per-item
+// exclusions -- e.g. every Sandwich gets Tub/Lid/Napkin from the category
+// rule, minus whichever of those this particular item has opted out of.
+// Shaped just like a recipe line (stock_item_id + qty) so the same
+// LineRow/lineUnitCost machinery works for both.
+function effectivePackagingLines(item, categoryPackagingLines, packagingExclusions) {
+  if (!item?.category) return [];
+  const excluded = new Set(
+    packagingExclusions.filter(e => e.item_id === item.id).map(e => e.stock_item_id)
+  );
+  return categoryPackagingLines.filter(l => l.category === item.category && !excluded.has(l.stock_item_id));
+}
+
 // ── Shared bits ──────────────────────────────────────────────────────────────
 
 function Modal({ title, subtitle, onClose, children, maxWidth = 'max-w-lg' }) {
@@ -104,7 +117,7 @@ function Modal({ title, subtitle, onClose, children, maxWidth = 'max-w-lg' }) {
 }
 
 // Searchable SKU-or-component combobox for adding an ingredient line.
-function IngredientPicker({ skus, components, excludeComponentId, onPick, onClose }) {
+function IngredientPicker({ skus, components, excludeComponentId, onPick, onClose, title = 'Add Ingredient', placeholder = 'Search SKUs & components…' }) {
   const [query, setQuery] = useState('');
 
   const skuMatches = skus
@@ -115,7 +128,7 @@ function IngredientPicker({ skus, components, excludeComponentId, onPick, onClos
     .slice(0, 30);
 
   return (
-    <Modal title="Add Ingredient" onClose={onClose} maxWidth="max-w-md">
+    <Modal title={title} onClose={onClose} maxWidth="max-w-md">
       <div className="space-y-3">
         <div className="relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" />
@@ -123,7 +136,7 @@ function IngredientPicker({ skus, components, excludeComponentId, onPick, onClos
             autoFocus
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search SKUs & components…"
+            placeholder={placeholder}
             className="w-full border border-gray-200 rounded-xl pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
           />
         </div>
@@ -351,16 +364,20 @@ function ComponentBuilderModal({ component, skus, components, componentLines, re
 
 // ── Menu item recipe builder ─────────────────────────────────────────────────
 
-function MenuItemBuilderModal({ item, skus, components, menuItemLines, resolver, orgId, onClose, onRefresh }) {
+function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryPackagingLines, packagingExclusions, resolver, orgId, onClose, onRefresh }) {
   const [sellPrice, setSellPrice] = useState(String(item.sell_price ?? ''));
   const [showPicker, setShowPicker] = useState(false);
 
   const lines = menuItemLines.filter(l => l.item_id === item.id);
-  const cogs = lines.reduce((sum, l) => {
+  const categoryLines = categoryPackagingLines.filter(l => l.category === item.category);
+  const packagingLines = effectivePackagingLines(item, categoryPackagingLines, packagingExclusions);
+  const excludedLines = categoryLines.filter(l => !packagingLines.includes(l));
+  const allCostedLines = [...lines, ...packagingLines];
+  const cogs = allCostedLines.reduce((sum, l) => {
     const c = resolver.lineUnitCost(l);
     return c == null ? sum : sum + c * (Number(l.qty) || 0);
   }, 0);
-  const hasUnknown = lines.some(l => resolver.lineUnitCost(l) == null);
+  const hasUnknown = allCostedLines.some(l => resolver.lineUnitCost(l) == null);
   const price = parseFloat(sellPrice) || 0;
   const gp = price - cogs;
   const margin = price > 0 ? gp / price : null;
@@ -426,6 +443,26 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, resolver,
     }
   }
 
+  async function handleExcludePackaging(line) {
+    try {
+      await db.addMenuItemPackagingExclusion(orgId, item.id, line.stock_item_id);
+      onRefresh();
+    } catch (err) {
+      toast.error('Failed to update: ' + (err.message || 'unknown error'));
+    }
+  }
+
+  async function handleIncludePackaging(line) {
+    const exclusion = packagingExclusions.find(e => e.item_id === item.id && e.stock_item_id === line.stock_item_id);
+    if (!exclusion) return;
+    try {
+      await db.removeMenuItemPackagingExclusion(exclusion.id);
+      onRefresh();
+    } catch (err) {
+      toast.error('Failed to update: ' + (err.message || 'unknown error'));
+    }
+  }
+
   return (
     <Modal title={item.name} subtitle="Menu recipe" onClose={onClose} maxWidth="max-w-xl">
       <div className="space-y-4">
@@ -488,6 +525,47 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, resolver,
                 <LineRow key={line.id} line={line} resolver={resolver}
                   onQtyChange={q => handleQtyChange(line, q)}
                   onDelete={() => handleDeleteLine(line)} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Packaging{item.category ? ` — ${item.category} default` : ''}
+          </p>
+          {!item.category ? (
+            <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-xl">Set a category on this item to pick up packaging rules.</p>
+          ) : categoryLines.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-xl">No packaging rule for {item.category} yet — set one up in the Packaging tab.</p>
+          ) : (
+            <div className="bg-gray-50 rounded-xl divide-y divide-gray-100 overflow-hidden">
+              {packagingLines.map(line => (
+                <div key={line.id} className="flex items-center gap-2 px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{resolver.lineName(line)}</p>
+                  </div>
+                  <span className="text-xs text-gray-400">{fmtQty(line.qty)} {resolver.lineUom(line)}</span>
+                  <span className="text-sm font-semibold text-gray-600 w-16 text-right tabular-nums">
+                    {fmtMoney(resolver.lineUnitCost(line) == null ? null : resolver.lineUnitCost(line) * (Number(line.qty) || 0))}
+                  </span>
+                  <button onClick={() => handleExcludePackaging(line)} title="Don't give this item this packaging"
+                    className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+              {excludedLines.map(line => (
+                <div key={line.id} className="flex items-center gap-2 px-3 py-2 opacity-50">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate line-through">{resolver.lineName(line)}</p>
+                  </div>
+                  <span className="text-xs text-gray-400">excluded</span>
+                  <button onClick={() => handleIncludePackaging(line)} title="Give this item this packaging again"
+                    className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors">
+                    <Plus size={13} />
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -588,16 +666,18 @@ function ComponentsTab({ orgId, skus, components, componentLines, resolver, onRe
 
 // ── Menu Recipes tab (doubles as the COGS overview) ─────────────────────────
 
-function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, resolver, onRefresh }) {
+function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, categoryPackagingLines, packagingExclusions, resolver, onRefresh }) {
   const [showBuilder, setShowBuilder] = useState(null);
 
   const rows = menuItems.map(item => {
     const lines = menuItemLines.filter(l => l.item_id === item.id);
-    const cogs = lines.reduce((sum, l) => {
+    const packagingLines = effectivePackagingLines(item, categoryPackagingLines, packagingExclusions);
+    const allLines = [...lines, ...packagingLines];
+    const cogs = allLines.reduce((sum, l) => {
       const c = resolver.lineUnitCost(l);
       return c == null ? sum : sum + c * (Number(l.qty) || 0);
     }, 0);
-    const hasLines = lines.length > 0;
+    const hasLines = allLines.length > 0;
     const price = Number(item.sell_price) || 0;
     const gp = price - cogs;
     const margin = price > 0 ? gp / price : null;
@@ -722,6 +802,8 @@ function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, res
           skus={skus}
           components={components}
           menuItemLines={menuItemLines}
+          categoryPackagingLines={categoryPackagingLines}
+          packagingExclusions={packagingExclusions}
           resolver={resolver}
           orgId={orgId}
           onClose={() => setShowBuilder(null)}
@@ -732,33 +814,146 @@ function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, res
   );
 }
 
+// ── Packaging tab ─────────────────────────────────────────────────────────────
+// One rule per menu category ("every Sandwich gets these") rather than a
+// per-item recipe -- applies automatically to every current and future item
+// in the category. Per-item exclusions/extras are handled from Menu Recipes.
+
+function PackagingTab({ orgId, skus, categories, categoryPackagingLines, resolver, onRefresh }) {
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [showPicker, setShowPicker] = useState(false);
+  const activeCategory = selectedCategory && categories.includes(selectedCategory) ? selectedCategory : categories[0];
+
+  const lines = categoryPackagingLines.filter(l => l.category === activeCategory);
+  const unitCost = lines.reduce((sum, l) => {
+    const c = resolver.lineUnitCost(l);
+    return c == null ? sum : sum + c * (Number(l.qty) || 0);
+  }, 0);
+
+  async function handlePick({ id }) {
+    setShowPicker(false);
+    try {
+      await db.createCategoryPackagingLine(orgId, {
+        category: activeCategory,
+        stock_item_id: id,
+        qty: 1,
+        sort_order: lines.length,
+      });
+      onRefresh();
+    } catch (err) {
+      toast.error('Failed to add packaging item: ' + (err.message || 'unknown error'));
+    }
+  }
+
+  async function handleQtyChange(line, qty) {
+    try {
+      await db.updateCategoryPackagingLine(line.id, { qty });
+      onRefresh();
+    } catch (err) {
+      toast.error('Failed to update quantity: ' + (err.message || 'unknown error'));
+    }
+  }
+
+  async function handleDeleteLine(line) {
+    try {
+      await db.deleteCategoryPackagingLine(line.id);
+      onRefresh();
+    } catch (err) {
+      toast.error('Failed to remove packaging item: ' + (err.message || 'unknown error'));
+    }
+  }
+
+  if (categories.length === 0) {
+    return <p className="text-sm text-gray-400 text-center py-16">No menu categories yet — add menu items in R-Prod first.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500">Every item in a category gets its packaging automatically — exclude one, or add extra for a single item, from that item in Menu Recipes.</p>
+
+      <div className="flex flex-wrap gap-1.5">
+        {categories.map(cat => (
+          <button
+            key={cat}
+            onClick={() => setSelectedCategory(cat)}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${activeCategory === cat ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-gray-900">{activeCategory}</p>
+          <p className="text-xs text-gray-400">Packaging cost/unit <span className="font-semibold text-gray-600">{fmtMoney(unitCost)}</span></p>
+        </div>
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Packaging Items</p>
+          <button onClick={() => setShowPicker(true)} className="flex items-center gap-1.5 text-xs font-semibold text-purple-600 hover:text-purple-700">
+            <Plus size={13} /> Add Packaging Item
+          </button>
+        </div>
+        {lines.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-xl">No packaging assigned to {activeCategory} yet.</p>
+        ) : (
+          <div className="bg-gray-50 rounded-xl divide-y divide-gray-100 overflow-hidden">
+            {lines.map(line => (
+              <LineRow key={line.id} line={line} resolver={resolver}
+                onQtyChange={q => handleQtyChange(line, q)}
+                onDelete={() => handleDeleteLine(line)} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showPicker && (
+        <IngredientPicker
+          skus={skus}
+          components={[]}
+          title={`Add Packaging to ${activeCategory}`}
+          placeholder="Search packaging & other SKUs…"
+          onPick={handlePick}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── Main RecipesApp ──────────────────────────────────────────────────────────
 
 export default function RecipesApp({ org }) {
   const orgId = org?.id;
-  const [activeTab, setActiveTab] = useState('menu'); // 'components' | 'menu'
+  const [activeTab, setActiveTab] = useState('menu'); // 'components' | 'menu' | 'packaging'
   const [skus, setSkus] = useState([]);
   const [components, setComponents] = useState([]);
   const [componentLines, setComponentLines] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
   const [menuItemLines, setMenuItemLines] = useState([]);
+  const [categoryPackagingLines, setCategoryPackagingLines] = useState([]);
+  const [packagingExclusions, setPackagingExclusions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!orgId) return;
     try {
-      const [sk, comp, compLines, items, itemLines] = await Promise.all([
+      const [sk, comp, compLines, items, itemLines, pkgLines, pkgExclusions] = await Promise.all([
         db.getStockItems(orgId),
         db.getRecipeComponents(orgId),
         db.getRecipeComponentLines(orgId),
         db.getProductionItems(orgId),
         db.getRecipeMenuItemLines(orgId),
+        db.getCategoryPackagingLines(orgId),
+        db.getMenuItemPackagingExclusions(orgId),
       ]);
       setSkus(sk);
       setComponents(comp);
       setComponentLines(compLines);
       setMenuItems(items.filter(i => i.active !== false));
       setMenuItemLines(itemLines);
+      setCategoryPackagingLines(pkgLines);
+      setPackagingExclusions(pkgExclusions);
     } catch (err) {
       toast.error('Failed to load recipes: ' + (err.message || 'unknown error'));
     } finally {
@@ -770,9 +965,15 @@ export default function RecipesApp({ org }) {
 
   const resolver = useCostResolver(skus, components, componentLines);
 
+  const menuCategories = useMemo(
+    () => [...new Set(menuItems.map(i => i.category).filter(Boolean))].sort(),
+    [menuItems]
+  );
+
   const TABS = [
     { id: 'components', label: 'Components' },
     { id: 'menu', label: 'Menu Recipes' },
+    { id: 'packaging', label: 'Packaging' },
   ];
 
   if (loading) {
@@ -806,7 +1007,12 @@ export default function RecipesApp({ org }) {
         <ComponentsTab orgId={orgId} skus={skus} components={components} componentLines={componentLines} resolver={resolver} onRefresh={load} />
       )}
       {activeTab === 'menu' && (
-        <MenuRecipesTab orgId={orgId} skus={skus} components={components} menuItems={menuItems} menuItemLines={menuItemLines} resolver={resolver} onRefresh={load} />
+        <MenuRecipesTab orgId={orgId} skus={skus} components={components} menuItems={menuItems} menuItemLines={menuItemLines}
+          categoryPackagingLines={categoryPackagingLines} packagingExclusions={packagingExclusions}
+          resolver={resolver} onRefresh={load} />
+      )}
+      {activeTab === 'packaging' && (
+        <PackagingTab orgId={orgId} skus={skus} categories={menuCategories} categoryPackagingLines={categoryPackagingLines} resolver={resolver} onRefresh={load} />
       )}
     </div>
   );

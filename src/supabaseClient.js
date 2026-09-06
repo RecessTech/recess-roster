@@ -1538,6 +1538,75 @@ export const db = {
     if (error) throw error;
   },
 
+  // ── R-Recipe: category-level packaging rules ────────────────────────────────
+
+  async getCategoryPackagingLines(orgId) {
+    const { data, error } = await supabase
+      .from('category_packaging_lines')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createCategoryPackagingLine(orgId, line) {
+    const { data, error } = await supabase
+      .from('category_packaging_lines')
+      .insert([{ ...line, org_id: orgId }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateCategoryPackagingLine(lineId, updates) {
+    const { data, error } = await supabase
+      .from('category_packaging_lines')
+      .update(updates)
+      .eq('id', lineId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteCategoryPackagingLine(lineId) {
+    const { error } = await supabase
+      .from('category_packaging_lines')
+      .delete()
+      .eq('id', lineId);
+    if (error) throw error;
+  },
+
+  async getMenuItemPackagingExclusions(orgId) {
+    const { data, error } = await supabase
+      .from('menu_item_packaging_exclusions')
+      .select('*')
+      .eq('org_id', orgId);
+    if (error) throw error;
+    return data || [];
+  },
+
+  async addMenuItemPackagingExclusion(orgId, itemId, stockItemId) {
+    const { data, error } = await supabase
+      .from('menu_item_packaging_exclusions')
+      .insert([{ org_id: orgId, item_id: itemId, stock_item_id: stockItemId }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async removeMenuItemPackagingExclusion(exclusionId) {
+    const { error } = await supabase
+      .from('menu_item_packaging_exclusions')
+      .delete()
+      .eq('id', exclusionId);
+    if (error) throw error;
+  },
+
   // ── Crystal Ball: sales history & forecast settings ─────────────────────────
 
   async getSalesHistory(orgId) {
