@@ -40,8 +40,9 @@ function mondayOf(dateStr) {
 // grams-of-each-base-SKU-per-unit instead of a dollar cost -- lets a
 // forecasted item quantity be expanded straight down to ingredient totals.
 
-function useQtyResolver(components, componentLines, menuItemLines) {
+function useQtyResolver(components, componentLines, menuItemLines, items, categoryPackagingLines, packagingExclusions) {
   return useMemo(() => {
+    const itemById = new Map(items.map(i => [i.id, i]));
     const componentById = new Map(components.map(c => [c.id, c]));
     const linesByComponent = new Map();
     componentLines.forEach(l => {
@@ -52,6 +53,19 @@ function useQtyResolver(components, componentLines, menuItemLines) {
     menuItemLines.forEach(l => {
       if (!linesByItem.has(l.item_id)) linesByItem.set(l.item_id, []);
       linesByItem.get(l.item_id).push(l);
+    });
+    // Category-level packaging rules (see R-Recipe's Packaging tab) --
+    // every item in a category is expanded with these SKUs too, unless
+    // this specific item has opted out of one via a packaging exclusion.
+    const packagingByCategory = new Map();
+    categoryPackagingLines.forEach(l => {
+      if (!packagingByCategory.has(l.category)) packagingByCategory.set(l.category, []);
+      packagingByCategory.get(l.category).push(l);
+    });
+    const exclusionsByItem = new Map();
+    packagingExclusions.forEach(e => {
+      if (!exclusionsByItem.has(e.item_id)) exclusionsByItem.set(e.item_id, new Set());
+      exclusionsByItem.get(e.item_id).add(e.stock_item_id);
     });
 
     const compCache = new Map();
@@ -91,11 +105,18 @@ function useQtyResolver(components, componentLines, menuItemLines) {
           });
         }
       });
+      const category = itemById.get(itemId)?.category;
+      const excluded = exclusionsByItem.get(itemId);
+      (packagingByCategory.get(category) || []).forEach(line => {
+        if (excluded?.has(line.stock_item_id)) return;
+        const qty = Number(line.qty) || 0;
+        result.set(line.stock_item_id, (result.get(line.stock_item_id) || 0) + qty);
+      });
       return result;
     }
 
     return { itemExpansion };
-  }, [components, componentLines, menuItemLines]);
+  }, [components, componentLines, menuItemLines, items, categoryPackagingLines, packagingExclusions]);
 }
 
 // ── Sales import ─────────────────────────────────────────────────────────────
@@ -792,6 +813,8 @@ export default function CrystalBallApp({ org }) {
   const [components, setComponents] = useState([]);
   const [componentLines, setComponentLines] = useState([]);
   const [menuItemLines, setMenuItemLines] = useState([]);
+  const [categoryPackagingLines, setCategoryPackagingLines] = useState([]);
+  const [packagingExclusions, setPackagingExclusions] = useState([]);
   const [salesHistory, setSalesHistory] = useState([]);
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -799,12 +822,14 @@ export default function CrystalBallApp({ org }) {
   const load = useCallback(async () => {
     if (!orgId) return;
     try {
-      const [prodItems, stockItems, comps, compLines, itemLines, history, cbSettings] = await Promise.all([
+      const [prodItems, stockItems, comps, compLines, itemLines, pkgLines, pkgExclusions, history, cbSettings] = await Promise.all([
         db.getProductionItems(orgId),
         db.getStockItems(orgId),
         db.getRecipeComponents(orgId),
         db.getRecipeComponentLines(orgId),
         db.getRecipeMenuItemLines(orgId),
+        db.getCategoryPackagingLines(orgId),
+        db.getMenuItemPackagingExclusions(orgId),
         db.getSalesHistory(orgId),
         db.getCrystalBallSettings(orgId),
       ]);
@@ -813,6 +838,8 @@ export default function CrystalBallApp({ org }) {
       setComponents(comps);
       setComponentLines(compLines);
       setMenuItemLines(itemLines);
+      setCategoryPackagingLines(pkgLines);
+      setPackagingExclusions(pkgExclusions);
       setSalesHistory(history);
       setSettings(cbSettings);
     } catch (err) {
@@ -824,7 +851,7 @@ export default function CrystalBallApp({ org }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const resolver = useQtyResolver(components, componentLines, menuItemLines);
+  const resolver = useQtyResolver(components, componentLines, menuItemLines, items, categoryPackagingLines, packagingExclusions);
   const skuById = useMemo(() => new Map(skus.map(s => [s.id, s])), [skus]);
 
   // Items flagged (in R-Recipe) as special/no-longer-on-the-menu --
