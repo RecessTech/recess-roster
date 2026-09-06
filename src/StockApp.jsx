@@ -57,22 +57,39 @@ function formatQty(value, unit) {
 }
 
 function trimNum(n) {
-  return n % 1 === 0 ? String(n) : n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  // 3dp, not 2 -- a gram value divided by 1000 for kg display is exact to
+  // 3 decimals (grams are whole numbers), and 2dp would round e.g. 3g/1000
+  // = 0.003kg down to "0", erasing the very quantity being shown.
+  return n % 1 === 0 ? String(n) : n.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 // Order quantities read better in kg/L than in raw g/ml once they get
 // into the thousands -- purely a display choice, doesn't touch what's
 // actually stored (still g/ml, so R-Recipe/Crystal Ball math is unaffected).
-function humanQtyParts(value, unit) {
-  if (value != null && (unit === 'g' || unit === 'ml') && Math.abs(value) >= 1000) {
-    return { value: trimNum(value / 1000), unit: unit === 'g' ? 'kg' : 'L' };
+//
+// The scale (kg vs g) is chosen from the item's par/reference qty, not
+// from whatever value is being formatted -- an item's natural unit
+// shouldn't flicker between kg and g just because this week's order or
+// on-hand count happens to dip under 1000, and (more importantly) a
+// value that's *wrong* because it was mistakenly entered in the other
+// unit stays small/wrong, which would otherwise keep hiding the very
+// mismatch this is meant to surface.
+function humanScale(basisValue, unit) {
+  if (basisValue != null && (unit === 'g' || unit === 'ml') && Math.abs(basisValue) >= 1000) {
+    return { divisor: 1000, unit: unit === 'g' ? 'kg' : 'L' };
   }
-  return { value, unit };
+  return { divisor: 1, unit };
 }
 
-function formatQtyHuman(value, unit) {
+function humanQtyParts(value, unit, basisValue = value) {
+  const scale = humanScale(basisValue, unit);
+  if (value == null) return { value, unit: scale.unit };
+  return { value: scale.divisor === 1 ? value : trimNum(value / scale.divisor), unit: scale.unit };
+}
+
+function formatQtyHuman(value, unit, basisValue = value) {
   if (value == null) return formatQty(value, unit);
-  const p = humanQtyParts(value, unit);
+  const p = humanQtyParts(value, unit, basisValue);
   return formatQty(p.value, p.unit);
 }
 
@@ -91,13 +108,13 @@ function orderPackCount(value, item) {
   return (Number(value) || 0) / Number(item.pack_size);
 }
 
-function formatOrderQty(value, item) {
-  if (value == null) return formatQtyHuman(value, item?.uom);
+function formatOrderQty(value, item, referenceQty = value) {
+  if (value == null) return formatQtyHuman(value, item?.uom, referenceQty);
   if (usesOrderPack(item)) {
     const n = orderPackCount(value, item);
     return `${trimNum(n)} ${item.order_pack_label}${Math.abs(n) === 1 ? '' : 's'}`;
   }
-  return formatQtyHuman(value, item?.uom);
+  return formatQtyHuman(value, item?.uom, referenceQty);
 }
 
 // Prefers a still-live "ordered today, not yet archived" flag over the
@@ -421,24 +438,25 @@ function SearchInput({ value, onChange, placeholder = 'Search…' }) {
 // item is ordered by the tray/box (item.order_pack_label), this displays
 // and edits a pack count instead of the raw stored gram/ml value --
 // onCommit always still receives the raw value, converted back.
-function EditableQty({ value, isSet, item, onCommit }) {
+function EditableQty({ value, isSet, item, referenceQty, onCommit }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   // How many stored (raw g/ml) units one typed draft unit is worth --
-  // e.g. 1000 while editing "3" meaning 3kg of a gram-uom item. Keeping
-  // this in sync with whatever unit the closed button is showing is the
-  // whole point: editing must never silently switch units on commit.
+  // e.g. 1000 while editing "3" meaning 3kg of a gram-uom item. Scaled
+  // off the item's reference/par qty rather than the value being edited,
+  // so a wrong small value (e.g. 3 g mistakenly entered for "3 kg")
+  // still opens in kg instead of hiding the mismatch by opening in g.
   const [multiplier, setMultiplier] = useState(1);
   const usePack = usesOrderPack(item);
+  const scale = humanScale(referenceQty ?? value, item?.uom);
 
   function start() {
     if (usePack) {
       setDraft(trimNum(orderPackCount(value, item)));
       setMultiplier(Number(item.pack_size));
     } else {
-      const parts = humanQtyParts(value, item?.uom);
-      setDraft(String(parts.value));
-      setMultiplier(parts.unit === item?.uom ? 1 : 1000);
+      setDraft(trimNum(value / scale.divisor));
+      setMultiplier(scale.divisor);
     }
     setEditing(true);
   }
@@ -455,7 +473,7 @@ function EditableQty({ value, isSet, item, onCommit }) {
   if (editing) {
     const editUnit = usePack
       ? `${item.order_pack_label}${draft === '1' ? '' : 's'}`
-      : humanQtyParts(value, item?.uom).unit;
+      : scale.unit;
     return (
       <span className="inline-flex items-center gap-1">
         <input
@@ -478,7 +496,7 @@ function EditableQty({ value, isSet, item, onCommit }) {
       style={isSet ? { backgroundColor: 'color-mix(in srgb, var(--primary) 10%, white)' } : undefined}
       title={usePack ? `Click to set how many ${item.order_pack_label}s to order (${item.pack_size}${item.uom} per ${item.order_pack_label})` : 'Click to set how much to order'}
     >
-      {formatOrderQty(value, item)}
+      {formatOrderQty(value, item, referenceQty)}
     </button>
   );
 }
@@ -723,6 +741,7 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                         value={row.order_qty ?? row.reference_order_qty ?? 0}
                         isSet={row.order_qty !== null && row.order_qty !== undefined}
                         item={row.item}
+                        referenceQty={row.reference_order_qty}
                         onCommit={val => onUpdateOrderQty(row.id, val)}
                       />
                     </td>
@@ -1134,7 +1153,7 @@ function HistoryTab({ items, locations, orderHistory, selectedLocationId, onSele
                               <span className="text-xs text-gray-400 flex-shrink-0">{row.item.sku}</span>
                             </div>
                             <span className="text-gray-500 font-medium flex-shrink-0 ml-3">
-                              {row.order_qty != null ? formatQtyHuman(row.order_qty, row.item.uom) : `— ${row.item.uom}`}
+                              {row.order_qty != null ? formatQtyHuman(row.order_qty, row.item.uom, row.reference_order_qty) : `— ${row.item.uom}`}
                             </span>
                           </div>
                         );
