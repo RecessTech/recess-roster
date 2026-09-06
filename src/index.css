@@ -152,6 +152,29 @@ body {
   --top-border:     #E7E6FA;
 }
 
+/* Transfer Hub theme — a distinct teal so it reads apart from
+   R-Shift's blue, R-Stock's orange, R-Prod's green, R-Recipe's
+   purple and Crystal Ball's indigo */
+[data-theme="transfers"] {
+  --sb-bg:          #0F766E;
+  --sb-icon:        rgba(240, 253, 250, 0.75);
+  --sb-icon-active: #F0FDFA;
+  --sb-active:      rgba(240, 253, 250, 0.2);
+  --sb-hover:       rgba(240, 253, 250, 0.1);
+  --sb-logo-bg:     rgba(240, 253, 250, 0.15);
+  --sb-logo-fg:     #F0FDFA;
+  --sb-tooltip-bg:  #115E59;
+  --sb-tooltip-bd:  rgba(240,253,250,0.15);
+
+  --primary:        #0F766E;
+  --primary-dk:     #115E59;
+  --primary-fg:     white;
+
+  --app-bg:         #F2FBFA;
+  --top-bg:         white;
+  --top-border:     #D7F3EF;
+}
+
 /* Dark theme (logo 3) */
 [data-theme="dark"] {
   --sb-bg:          #171717;
