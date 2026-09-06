@@ -1,6 +1,11 @@
 {
   "routes": [
     { "handle": "filesystem" },
+    { "src": "/hub/(.*)", "dest": "/api/social-preview" },
+    { "src": "/prod/(.*)", "dest": "/api/social-preview" },
+    { "src": "/transfers/(.*)", "dest": "/api/social-preview" },
+    { "src": "/r/(.*)", "dest": "/api/social-preview" },
+    { "src": "/s/(.*)", "dest": "/api/social-preview" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
 }

@@ -14,7 +14,7 @@ export const db = {
   async getOrgForUser(userId) {
     const { data, error } = await supabase
       .from('org_members')
-      .select('org_id, organisations(id, name, timezone, config, plan, plan_staff_limit, trial_ends_at, stripe_customer_id, stripe_subscription_id, public_token, production_public_token, transfer_public_token)')
+      .select('org_id, organisations(id, name, timezone, config, plan, plan_staff_limit, trial_ends_at, stripe_customer_id, stripe_subscription_id, public_token, production_public_token, transfer_public_token, staff_hub_public_token)')
       .eq('user_id', userId)
       .single();
 
@@ -64,6 +64,18 @@ export const db = {
     const { data, error } = await supabase
       .from('organisations')
       .update({ transfer_public_token: crypto.randomUUID() })
+      .eq('id', orgId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  // Rotate the org's public Staff Hub-share token (invalidates any previously shared link).
+  async regenerateOrgStaffHubPublicToken(orgId) {
+    const { data, error } = await supabase
+      .from('organisations')
+      .update({ staff_hub_public_token: crypto.randomUUID() })
       .eq('id', orgId)
       .select()
       .single();

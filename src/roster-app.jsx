@@ -158,6 +158,9 @@ const RosterApp = () => {
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [shareRegenerating, setShareRegenerating] = useState(false);
+  const [showStaffHubModal, setShowStaffHubModal] = useState(false);
+  const [staffHubCopied, setStaffHubCopied] = useState(false);
+  const [staffHubRegenerating, setStaffHubRegenerating] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearTarget, setClearTarget] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
@@ -5894,6 +5897,77 @@ Key things to verify after rebuild:
     );
   };
 
+  const renderStaffHubShareModal = () => {
+    const shareUrl = org?.staff_hub_public_token ? `${window.location.origin}/hub/${org.staff_hub_public_token}` : null;
+
+    const copyLink = () => {
+      if (!shareUrl) return;
+      navigator.clipboard.writeText(shareUrl);
+      setStaffHubCopied(true);
+      setTimeout(() => setStaffHubCopied(false), 2000);
+    };
+
+    const regenerate = async () => {
+      if (!org) return;
+      setStaffHubRegenerating(true);
+      try {
+        const updated = await db.regenerateOrgStaffHubPublicToken(org.id);
+        setOrg(prev => ({ ...prev, staff_hub_public_token: updated.staff_hub_public_token }));
+        setStaffHubCopied(false);
+      } catch (err) {
+        console.error('Error regenerating staff hub link:', err);
+        toast.error('Could not regenerate link.');
+      } finally {
+        setStaffHubRegenerating(false);
+      }
+    };
+
+    return (
+      <div className="modal-overlay">
+        <div className="modal-container max-w-md">
+          <div className="modal-header">
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">Share Staff Hub</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Read-only link — no login required</p>
+            </div>
+            <button onClick={() => setShowStaffHubModal(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X size={16} className="text-gray-400" /></button>
+          </div>
+
+          <div className="p-4">
+            <p className="text-xs text-gray-500 mb-3">
+              One link for every staff member — it's a landing page pointing at the R-Prod plan and Transfer Hub's open requests, so they can check both before moving between sites. Nothing new to build or maintain: it just tracks whatever those two links currently point to.
+            </p>
+
+            <div className="flex items-center gap-2">
+              <input
+                readOnly
+                value={shareUrl || 'Generating link…'}
+                onFocus={e => e.target.select()}
+                className="flex-1 text-xs font-mono bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700"
+              />
+              <button
+                onClick={copyLink}
+                disabled={!shareUrl}
+                className="btn-primary text-xs py-2 px-3 flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+              >
+                {staffHubCopied ? <CheckCircle size={14} /> : <Link2 size={14} />}
+                <span>{staffHubCopied ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+
+            <button
+              onClick={regenerate}
+              disabled={staffHubRegenerating || !org}
+              className="text-xs text-gray-400 hover:text-red-500 mt-3 disabled:opacity-50"
+            >
+              {staffHubRegenerating ? 'Regenerating…' : "Regenerate link (invalidates the old one)"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // renderExportModal is a plain function (not a React component) so it is called
   // inline — this avoids React treating a redefined inner component as a new type
   // and unmounting/remounting the modal on every parent re-render.
@@ -6601,6 +6675,10 @@ Key things to verify after rebuild:
                   <Link2 size={14} />
                   <span>Share Roster</span>
                 </button>
+                <button onClick={() => { setShowStaffHubModal(true); setStaffHubCopied(false); }} className="btn-ghost flex items-center gap-1.5 text-xs py-1.5 px-2.5">
+                  <Link2 size={14} />
+                  <span>Staff Hub</span>
+                </button>
                 <button
                   onClick={() => { setShowTemplateMenu(true); if (templateMode) { setTemplateMode(false); setSelectedTemplate(null); } }}
                   className={`flex items-center gap-1.5 text-xs py-1.5 px-2.5 rounded-lg transition-colors ${templateMode ? 'bg-purple-600 text-white' : 'btn-ghost'}`}
@@ -6963,6 +7041,7 @@ Key things to verify after rebuild:
       {showQuickFillModal && <QuickFillModal />}
       {showExportModal && renderExportModal()}
       {showShareModal && renderShareModal()}
+      {showStaffHubModal && renderStaffHubShareModal()}
       {showClearModal && <ClearConfirmModal />}
       {showTemplateModal && <TemplateModal />}
       {showTemplateMenu && <TemplateMenu />}
