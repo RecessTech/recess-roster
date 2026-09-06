@@ -550,7 +550,12 @@ function ItemsSettings({ orgId, items, onRefresh }) {
               </div>
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
+                  {item.is_special && (
+                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-amber-600 bg-amber-50 border border-amber-100 rounded-full px-1.5 py-0.5">Special</span>
+                  )}
+                </div>
                 {item.category && <p className="text-xs text-gray-400 truncate">{item.category}</p>}
               </div>
               <button onClick={() => { setEditingItem(item); setShowForm(true); }} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
@@ -820,10 +825,11 @@ export default function ProductionApp({ org, user }) {
   const loavesToOrder = Math.ceil(totalLoaves);
 
   // Items flagged (in R-Recipe) as not needing R-Prod planning -- made to
-  // order or shelf stock, e.g. coffee, drinks -- are excluded everywhere
-  // in R-Prod (planner and Insights alike).
+  // order or shelf stock, e.g. coffee, drinks -- or as special/no-longer-
+  // on-the-menu -- limited-time items like a past Birria Toastie -- are
+  // excluded everywhere in R-Prod (planner and Insights alike).
   const planningItems = useMemo(() => {
-    return items.filter(i => i.active !== false && i.needs_prod_planning !== false);
+    return items.filter(i => i.active !== false && i.needs_prod_planning !== false && i.is_special !== true);
   }, [items]);
 
   const activeItems = useMemo(() => {

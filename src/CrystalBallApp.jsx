@@ -827,6 +827,12 @@ export default function CrystalBallApp({ org }) {
   const resolver = useQtyResolver(components, componentLines, menuItemLines);
   const skuById = useMemo(() => new Map(skus.map(s => [s.id, s])), [skus]);
 
+  // Items flagged (in R-Recipe) as special/no-longer-on-the-menu --
+  // limited-time-only items like a past Birria Toastie -- are excluded
+  // from forecasting, but stay in `items` (passed to Sales History) so
+  // their historical sales can still be viewed and re-imported.
+  const forecastableItems = useMemo(() => items.filter(i => i.is_special !== true), [items]);
+
   // Historical day-of-week average qty, per item, PER CHANNEL GROUP -- keeping
   // groups separate (rather than one bucket per item) is what lets them be
   // added together instead of diluting each other into one blended avg.
@@ -906,10 +912,10 @@ export default function CrystalBallApp({ org }) {
       </div>
 
       {activeTab === 'forecast' && (
-        <ForecastTab orgId={orgId} items={items} dowAverages={dowAverages} resolver={resolver} skuById={skuById} settings={settings} onSettingsSaved={load} />
+        <ForecastTab orgId={orgId} items={forecastableItems} dowAverages={dowAverages} resolver={resolver} skuById={skuById} settings={settings} onSettingsSaved={load} />
       )}
       {activeTab === 'weekly' && (
-        <WeeklyConsumptionTab items={items} dowAverages={dowAverages} uplift={uplift} resolver={resolver} skuById={skuById} />
+        <WeeklyConsumptionTab items={forecastableItems} dowAverages={dowAverages} uplift={uplift} resolver={resolver} skuById={skuById} />
       )}
       {activeTab === 'history' && (
         <SalesHistoryTab orgId={orgId} items={items} salesHistory={salesHistory} onRefresh={load} />
