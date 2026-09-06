@@ -424,10 +424,22 @@ function SearchInput({ value, onChange, placeholder = 'Search…' }) {
 function EditableQty({ value, isSet, item, onCommit }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  // How many stored (raw g/ml) units one typed draft unit is worth --
+  // e.g. 1000 while editing "3" meaning 3kg of a gram-uom item. Keeping
+  // this in sync with whatever unit the closed button is showing is the
+  // whole point: editing must never silently switch units on commit.
+  const [multiplier, setMultiplier] = useState(1);
   const usePack = usesOrderPack(item);
 
   function start() {
-    setDraft(usePack ? trimNum(orderPackCount(value, item)) : String(value));
+    if (usePack) {
+      setDraft(trimNum(orderPackCount(value, item)));
+      setMultiplier(Number(item.pack_size));
+    } else {
+      const parts = humanQtyParts(value, item?.uom);
+      setDraft(String(parts.value));
+      setMultiplier(parts.unit === item?.uom ? 1 : 1000);
+    }
     setEditing(true);
   }
 
@@ -435,21 +447,27 @@ function EditableQty({ value, isSet, item, onCommit }) {
     setEditing(false);
     const parsed = parseFloat(draft);
     if (isNaN(parsed) || parsed < 0) return;
-    const newValue = usePack ? parsed * Number(item.pack_size) : parsed;
+    const newValue = parsed * multiplier;
     if (newValue === value) return;
     onCommit(newValue);
   }
 
   if (editing) {
+    const editUnit = usePack
+      ? `${item.order_pack_label}${draft === '1' ? '' : 's'}`
+      : humanQtyParts(value, item?.uom).unit;
     return (
-      <input
-        type="number" min="0" step="any" autoFocus
-        value={draft}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditing(false); }}
-        className="input-base w-20 text-center px-2 py-1"
-      />
+      <span className="inline-flex items-center gap-1">
+        <input
+          type="number" min="0" step="any" autoFocus
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditing(false); }}
+          className="input-base w-20 text-center px-2 py-1"
+        />
+        {editUnit && <span className="text-xs text-gray-400">{editUnit}</span>}
+      </span>
     );
   }
 
