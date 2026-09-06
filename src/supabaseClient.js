@@ -1675,4 +1675,70 @@ export const db = {
     if (error) throw error;
     return data;
   },
+
+  // ── Transfer Hub ─────────────────────────────────────────────────────────────
+  // Deliberately separate from stock_item_sites' "Request Transfer" status --
+  // this is its own worklist, not tied to a stocktake count. SKUs come from
+  // the shared stock_items catalog; sites come from the shared locations
+  // table -- Transfer Hub doesn't own either.
+
+  async getTransferRequests(orgId) {
+    const { data, error } = await supabase
+      .from('transfer_requests')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('requested_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createTransferRequest(orgId, { itemId, locationId, quantity, note, requestedBy }) {
+    const { data, error } = await supabase
+      .from('transfer_requests')
+      .insert([{
+        org_id: orgId,
+        item_id: itemId,
+        requesting_location_id: locationId,
+        quantity,
+        note: note || null,
+        requested_by: requestedBy || null,
+      }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fulfillTransferRequest(requestId, { sourceLocationId, actionedBy }) {
+    const { data, error } = await supabase
+      .from('transfer_requests')
+      .update({
+        status: 'fulfilled',
+        source_location_id: sourceLocationId,
+        actioned_by: actionedBy || null,
+        actioned_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', requestId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async cancelTransferRequest(requestId, actionedBy) {
+    const { data, error } = await supabase
+      .from('transfer_requests')
+      .update({
+        status: 'cancelled',
+        actioned_by: actionedBy || null,
+        actioned_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', requestId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
 };
