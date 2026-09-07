@@ -1099,6 +1099,19 @@ export const db = {
     return data;
   },
 
+  // Dismisses a staff-raised "running low" flag once an admin has reviewed
+  // it -- doesn't touch current_status, that's a separate, deliberate call.
+  async clearStockItemFlag(siteRowId) {
+    const { data, error } = await supabase
+      .from('stock_item_sites')
+      .update({ staff_flagged_low: false, staff_flagged_at: null, staff_flagged_by_name: null, updated_at: new Date().toISOString() })
+      .eq('id', siteRowId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
   async updateSiteItemOrderQty(siteRowId, orderQty) {
     const { data, error } = await supabase
       .from('stock_item_sites')

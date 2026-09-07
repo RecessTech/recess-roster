@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
   ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History, Box, ArrowLeftRight, Search,
-  TrendingUp, ChevronLeft, ChevronRight, Tag, User, Settings, GripVertical, ArrowUpDown, Check,
+  TrendingUp, ChevronLeft, ChevronRight, Tag, User, Settings, GripVertical, ArrowUpDown, Check, Flag,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -606,7 +606,7 @@ function withCategoryDividers(rows) {
 // Pure flagging — status only. Order qty and marking things as ordered
 // live in the Ordering tab, which works off whatever gets flagged here.
 
-function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, onUpdateOrderQty, lastOrderedByKey, pinnedCategory, mySuppliers, onManageSuppliers }) {
+function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateStatus, onUpdateOrderQty, onClearFlag, lastOrderedByKey, pinnedCategory, mySuppliers, onManageSuppliers }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
   const [collapsed, setCollapsed] = useState({});
   const [search, setSearch] = useState('');
@@ -676,6 +676,7 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
 
   const noStock  = siteRows.filter(r => r.current_status === 'no_stock').length;
   const lowStock = siteRows.filter(r => r.current_status === 'low_stock').length;
+  const staffFlagged = siteRows.filter(r => r.staff_flagged_low).length;
 
   if (locations.length === 0) {
     return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
@@ -730,10 +731,23 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                         <span className="text-[15px] font-semibold text-gray-900 truncate block">{row.item.name}</span>
                       </div>
                       <div className="text-xs text-gray-400 truncate mb-1">{row.item.sku} · {row.item.uom}</div>
-                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${LAST_ORDERED_TONE_CLASSES[tone].bg} ${LAST_ORDERED_TONE_CLASSES[tone].text}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone].dot}`} />
-                        {info.label}
-                      </span>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${LAST_ORDERED_TONE_CLASSES[tone].bg} ${LAST_ORDERED_TONE_CLASSES[tone].text}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone].dot}`} />
+                          {info.label}
+                        </span>
+                        {row.staff_flagged_low && (
+                          <button
+                            onClick={() => onClearFlag(row.id)}
+                            title={`Flagged low by ${row.staff_flagged_by_name || 'a staff member'}${row.staff_flagged_at ? ' on ' + new Date(row.staff_flagged_at).toLocaleDateString('en-AU') : ''} -- click to clear`}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap bg-pink-100 text-pink-700 hover:bg-pink-200 transition-colors"
+                          >
+                            <Flag size={9} className="flex-shrink-0" />
+                            Flagged low
+                            <X size={9} className="flex-shrink-0" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-center">
                       <div className="text-[10px] text-gray-400 leading-none mb-1">ref {formatOrderQty(row.reference_order_qty, row.item)}</div>
@@ -791,6 +805,14 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
             <AlertTriangle size={14} className="text-amber-600" />
           </div>
           <span className="text-sm font-medium text-amber-700">{lowStock} item{lowStock !== 1 ? 's' : ''} running low</span>
+        </div>
+      )}
+      {staffFlagged > 0 && (
+        <div className="flex items-center gap-2.5 bg-pink-50 border border-pink-200 rounded-xl px-4 py-3">
+          <div className="w-7 h-7 rounded-full bg-pink-100 flex items-center justify-center flex-shrink-0">
+            <Flag size={14} className="text-pink-600" />
+          </div>
+          <span className="text-sm font-medium text-pink-700">{staffFlagged} item{staffFlagged !== 1 ? 's' : ''} flagged low by staff -- review below</span>
         </div>
       )}
 
@@ -2309,6 +2331,17 @@ export default function StockApp({ user, org }) {
     }
   }
 
+  async function handleClearFlag(siteRowId) {
+    setSites(prev => prev.map(s => s.id === siteRowId ? { ...s, staff_flagged_low: false, staff_flagged_at: null, staff_flagged_by_name: null } : s));
+    try {
+      await db.clearStockItemFlag(siteRowId);
+    } catch (err) {
+      toast.error('Failed to clear flag: ' + (err.message || 'unknown error'));
+      console.error(err);
+      loadData();
+    }
+  }
+
   async function handleOrderQtyUpdate(siteRowId, orderQty) {
     setSites(prev => prev.map(s => s.id === siteRowId ? { ...s, order_qty: orderQty } : s));
     try {
@@ -2409,6 +2442,7 @@ export default function StockApp({ user, org }) {
           onSelectLocation={setSelectedLocationId}
           onUpdateStatus={handleStatusUpdate}
           onUpdateOrderQty={handleOrderQtyUpdate}
+          onClearFlag={handleClearFlag}
           lastOrderedByKey={lastOrderedByKey}
           mySuppliers={mySuppliers}
           onManageSuppliers={() => setShowAssignmentsModal(true)}
@@ -2423,6 +2457,7 @@ export default function StockApp({ user, org }) {
           onSelectLocation={setSelectedLocationId}
           onUpdateStatus={handleStatusUpdate}
           onUpdateOrderQty={handleOrderQtyUpdate}
+          onClearFlag={handleClearFlag}
           lastOrderedByKey={lastOrderedByKey}
           pinnedCategory="PCK"
           mySuppliers={mySuppliers}

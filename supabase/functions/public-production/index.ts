@@ -31,7 +31,7 @@ serve(async (req) => {
     // Look up org by production-plan public token
     const { data: org, error: orgError } = await supabase
       .from('organisations')
-      .select('id, name')
+      .select('id, name, staff_hub_public_token')
       .eq('production_public_token', token)
       .single();
 
@@ -57,6 +57,7 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({
       businessName: settings?.business_name || org.name || 'Production Plan',
+      staffHubToken: org.staff_hub_public_token,
       date: planDate,
       sites: sites || [],
       channels: channels || [],

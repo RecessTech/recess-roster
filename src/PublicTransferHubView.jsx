@@ -57,6 +57,13 @@ export default function PublicTransferHubView({ token }) {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
 
+  const [showFlagForm, setShowFlagForm] = useState(false);
+  const [flagLocationId, setFlagLocationId] = useState(null);
+  const [flagSubject, setFlagSubject] = useState('');
+  const [flagSubmitting, setFlagSubmitting] = useState(false);
+  const [flagError, setFlagError] = useState(null);
+  const [flagSuccess, setFlagSuccess] = useState(null);
+
   const load = useCallback(async (extra) => {
     setError(null);
     try {
@@ -79,6 +86,10 @@ export default function PublicTransferHubView({ token }) {
   useEffect(() => {
     if (!formLocationId && data?.locations?.[0]) setFormLocationId(data.locations[0].id);
   }, [data, formLocationId]);
+
+  useEffect(() => {
+    if (!flagLocationId && data?.locations?.[0]) setFlagLocationId(data.locations[0].id);
+  }, [data, flagLocationId]);
 
   function handleNameChange(v) {
     setName(v);
@@ -106,6 +117,15 @@ export default function PublicTransferHubView({ token }) {
   const totalCount = data?.requests?.length || 0;
   const activeItems = useMemo(() => (data?.items || []).filter(i => i.active !== false), [data]);
   const activeComponents = useMemo(() => (data?.components || []).filter(c => c.active !== false), [data]);
+
+  // Only a SKU actually carried at the chosen site can be flagged -- that's
+  // the stock_item_sites row the flag lives on, and only that row shows up
+  // in the admin's Stocktake for the site in question.
+  const flaggableItems = useMemo(() => {
+    if (!flagLocationId) return [];
+    const carriedIds = new Set((data?.carries || []).filter(c => c.location_id === flagLocationId).map(c => c.item_id));
+    return activeItems.filter(i => carriedIds.has(i.id));
+  }, [activeItems, data, flagLocationId]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -141,6 +161,29 @@ export default function PublicTransferHubView({ token }) {
 
   async function handleFulfill(requestId, sourceLocationId) {
     return load({ action: 'fulfill', requestId, sourceLocationId, name });
+  }
+
+  async function handleFlagSubmit(e) {
+    e.preventDefault();
+    setFlagError(null);
+    if (!flagLocationId || !flagSubject) {
+      setFlagError('Pick a site and a SKU.');
+      return;
+    }
+    const [, id] = flagSubject.split(':');
+    const item = flaggableItems.find(i => i.id === id);
+    setFlagSubmitting(true);
+    try {
+      await load({ action: 'flag_low', itemId: id, locationId: flagLocationId, name });
+      setFlagSubject('');
+      setShowFlagForm(false);
+      setFlagSuccess(`Flagged ${item?.name || 'that SKU'} as low -- an admin will review it.`);
+      setTimeout(() => setFlagSuccess(null), 5000);
+    } catch (e) {
+      setFlagError(e.message || 'Could not flag that SKU.');
+    } finally {
+      setFlagSubmitting(false);
+    }
   }
 
   if (loading) {
@@ -179,8 +222,21 @@ export default function PublicTransferHubView({ token }) {
 
         {/* Header card */}
         <div style={{ background: TEAL, borderRadius: '12px 12px 0 0', padding: '22px 24px' }}>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>
-            {data.businessName}
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              {data.businessName}
+            </div>
+            {data.staffHubToken && (
+              <a
+                href={`/hub/${data.staffHubToken}`}
+                style={{
+                  color: 'white', fontSize: 11, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap',
+                  background: 'rgba(255,255,255,0.18)', padding: '4px 10px', borderRadius: 999, flexShrink: 0,
+                }}
+              >
+                🏠 Home
+              </a>
+            )}
           </div>
           <div style={{ color: '#fff', fontSize: 22, fontWeight: 700, lineHeight: 1.2, marginBottom: 2 }}>
             Transfer Hub
@@ -193,6 +249,12 @@ export default function PublicTransferHubView({ token }) {
         <div style={{ background: '#F0FDFA', borderLeft: '1px solid #99F6E4', borderRight: '1px solid #99F6E4', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <span style={{ fontSize: 12, color: '#115E59', fontWeight: 600 }}>no login required · check, request, or mark fulfilled</span>
         </div>
+
+        {flagSuccess && (
+          <div style={{ background: '#ECFDF5', borderLeft: '1px solid #A7F3D0', borderRight: '1px solid #A7F3D0', padding: '10px 16px', fontSize: 12.5, color: '#065F46', fontWeight: 600 }}>
+            ✓ {flagSuccess}
+          </div>
+        )}
 
         {/* New Request -- kept at the top since it's the most common thing
             someone opens this link to do, not buried below the list */}
@@ -280,6 +342,80 @@ export default function PublicTransferHubView({ token }) {
           )}
         </div>
 
+        {/* Flag Low Stock -- a separate, lighter-weight signal from a full
+            transfer request: "someone should look at this", not "send me
+            X units". Never writes to the admin's own stock status -- it's
+            reviewed and cleared in R-Stock's Stocktake tab. */}
+        <div style={{ background: 'white', border: '1px solid #E2E8F0', borderTop: 'none', overflow: 'hidden' }}>
+          {!showFlagForm ? (
+            <button
+              onClick={() => setShowFlagForm(true)}
+              style={{
+                width: '100%', padding: '14px', background: 'white', border: 'none', cursor: 'pointer',
+                fontSize: 14, fontWeight: 700, color: '#BE185D', fontFamily: 'inherit',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+              }}
+            >
+              🚩 Flag a SKU as Running Low
+            </button>
+          ) : (
+            <form onSubmit={handleFlagSubmit} style={{ padding: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <span style={{ fontSize: 14.5, fontWeight: 800, color: '#1E293B' }}>What's running low?</span>
+                <button type="button" onClick={() => setShowFlagForm(false)} style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              </div>
+
+              <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 0, marginBottom: 12 }}>
+                This just flags it for review -- it doesn't change anything in R-Stock itself, an admin makes the final call.
+              </p>
+
+              <div style={{ marginBottom: 10 }}>
+                <label style={labelStyle}>Which site</label>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {data.locations.map(loc => (
+                    <button
+                      type="button"
+                      key={loc.id}
+                      onClick={() => { setFlagLocationId(loc.id); setFlagSubject(''); }}
+                      style={{
+                        padding: '7px 14px', borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                        border: flagLocationId === loc.id ? 'none' : '1px solid #E2E8F0',
+                        background: flagLocationId === loc.id ? '#BE185D' : 'white',
+                        color: flagLocationId === loc.id ? 'white' : '#475569',
+                      }}
+                    >
+                      {loc.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>SKU</label>
+                <SubjectPicker items={flaggableItems} components={[]} value={flagSubject} onChange={setFlagSubject} placeholder="Search SKUs carried at this site…" />
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>Your name</label>
+                <input value={name} onChange={e => handleNameChange(e.target.value)} placeholder="So the review makes sense later" style={inputStyle} />
+              </div>
+
+              {flagError && <div style={{ fontSize: 12, color: '#DC2626', marginBottom: 10 }}>{flagError}</div>}
+
+              <button
+                type="submit"
+                disabled={flagSubmitting}
+                style={{
+                  width: '100%', padding: '13px', borderRadius: 8, border: 'none', cursor: flagSubmitting ? 'default' : 'pointer',
+                  background: '#BE185D', color: 'white', fontSize: 15, fontWeight: 800, fontFamily: 'inherit', opacity: flagSubmitting ? 0.6 : 1,
+                }}
+              >
+                {flagSubmitting ? 'Flagging…' : '🚩 Flag as Low'}
+              </button>
+            </form>
+          )}
+        </div>
+
         <div style={{ background: 'white', border: '1px solid #E2E8F0', borderTop: 'none', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}>
           {grouped.length === 0 ? (
             <div style={{ padding: '40px 20px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
@@ -311,7 +447,7 @@ export default function PublicTransferHubView({ token }) {
 // painful to hunt through on mobile (long scroll, no filtering on most
 // mobile browsers). This is a small type-to-filter list instead.
 
-function SubjectPicker({ items, components, value, onChange }) {
+function SubjectPicker({ items, components, value, onChange, placeholder = 'Search SKUs & components…' }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
@@ -349,7 +485,7 @@ function SubjectPicker({ items, components, value, onChange }) {
     <div style={{ position: 'relative' }} ref={wrapRef}>
       <input
         style={inputStyle}
-        placeholder="Search SKUs & components…"
+        placeholder={placeholder}
         value={open ? query : (selected ? `${selected.name}${selected.sku ? ' (' + selected.sku + ')' : ' (Component)'}` : '')}
         onChange={e => { setQuery(e.target.value); onChange(''); }}
         onFocus={() => { setOpen(true); setQuery(''); }}
