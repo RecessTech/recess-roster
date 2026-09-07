@@ -10,6 +10,11 @@ import toast from 'react-hot-toast';
 // worklist for "what does a site need right now", not tied to a
 // stocktake count. See supabase_transfer_hub_migration.sql.
 
+// A request's practical unit can differ from the SKU/component's catalog
+// uom (e.g. asking for "2 sleeves" of something costed by the gram) --
+// same fixed list as the public Transfer Hub link.
+const UNIT_OPTIONS = ['Sleeve', 'Units', 'Cans', 'Tins', 'Bunch(s)', 'Dozen', 'kg', 'g'];
+
 function EmptyState({ Icon, title, hint }) {
   return (
     <div className="text-center py-16">
@@ -113,6 +118,7 @@ function RequestTab({ items, components, locations, myOpenRequests, subjectOf, l
   const [locationId, setLocationId] = useState(locations[0]?.id || null);
   const [selection, setSelection] = useState(null);
   const [quantity, setQuantity] = useState('');
+  const [unit, setUnit] = useState(UNIT_OPTIONS[1]);
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -132,10 +138,12 @@ function RequestTab({ items, components, locations, myOpenRequests, subjectOf, l
       componentId: selection.kind === 'component' ? selection.id : null,
       locationId,
       quantity: Number(quantity),
+      quantityUnit: unit,
       note: note.trim(),
     });
     setSelection(null);
     setQuantity('');
+    setUnit(UNIT_OPTIONS[1]);
     setNote('');
     setSubmitting(false);
   }
@@ -166,17 +174,25 @@ function RequestTab({ items, components, locations, myOpenRequests, subjectOf, l
           <ItemPicker items={items} components={components} value={selection} onChange={setSelection} />
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Quantity</label>
-          <input
-            type="number"
-            min="0"
-            step="any"
-            value={quantity}
-            onChange={e => setQuantity(e.target.value)}
-            placeholder="e.g. 4"
-            className="input-base"
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Quantity</label>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={quantity}
+              onChange={e => setQuantity(e.target.value)}
+              placeholder="e.g. 4"
+              className="input-base"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Unit</label>
+            <select value={unit} onChange={e => setUnit(e.target.value)} className="input-base bg-white">
+              {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
         </div>
 
         <div>
@@ -210,7 +226,7 @@ function RequestTab({ items, components, locations, myOpenRequests, subjectOf, l
                   <div className="min-w-0">
                     <div className="font-medium text-gray-900 text-sm truncate">{subject.name}</div>
                     <div className="text-xs text-gray-400 truncate">
-                      {r.quantity} {subject.uom} · {loc?.name} · {timeAgo(r.requested_at)}
+                      {r.quantity} {r.quantity_unit || subject.uom} · {loc?.name} · {timeAgo(r.requested_at)}
                     </div>
                   </div>
                   <button
@@ -249,7 +265,7 @@ function QueueRow({ row, subject, requestingLocation, locations, requesterEmail,
           )}
         </div>
         <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
-          <span>{row.quantity} {subject.uom}</span>
+          <span>{row.quantity} {row.quantity_unit || subject.uom}</span>
           <span>·</span>
           <span className="flex items-center gap-1"><User size={11} />{requesterEmail || 'Unknown'}</span>
           <span>·</span>
@@ -445,7 +461,7 @@ function HistoryTab({ requests, subjectOf, locationById, emailByUserId }) {
                     {subject.name}
                     {subject.kind === 'component' && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Component</span>}
                   </div>
-                  <div className="text-xs text-gray-400">{r.quantity} {subject.uom}</div>
+                  <div className="text-xs text-gray-400">{r.quantity} {r.quantity_unit || subject.uom}</div>
                 </td>
                 <td className="px-4 py-3 text-xs text-gray-500">{emailByUserId.get(r.requested_by) || r.requested_by_name || 'Unknown'}</td>
                 <td className="px-4 py-3 text-xs text-gray-500">{srcLoc?.name || '—'} → {reqLoc?.name || '—'}</td>
@@ -534,9 +550,9 @@ export default function TransferHubApp({ user, org }) {
     [openRequests, user?.id]
   );
 
-  async function handleCreate({ itemId, componentId, locationId, quantity, note }) {
+  async function handleCreate({ itemId, componentId, locationId, quantity, quantityUnit, note }) {
     try {
-      const created = await db.createTransferRequest(org.id, { itemId, componentId, locationId, quantity, note, requestedBy: user?.id });
+      const created = await db.createTransferRequest(org.id, { itemId, componentId, locationId, quantity, quantityUnit, note, requestedBy: user?.id });
       setRequests(prev => [created, ...prev]);
       toast.success('Transfer request sent');
     } catch (err) {

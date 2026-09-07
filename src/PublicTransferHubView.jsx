@@ -4,6 +4,7 @@ import { supabase } from './supabaseClient';
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
 const TEAL = '#0F766E';
 const NAME_STORAGE_KEY = 'transferHub_yourName';
+const UNIT_OPTIONS = ['Sleeve', 'Units', 'Cans', 'Tins', 'Bunch(s)', 'Dozen', 'kg', 'g'];
 
 function timeAgo(iso) {
   if (!iso) return '';
@@ -51,6 +52,7 @@ export default function PublicTransferHubView({ token }) {
   const [formLocationId, setFormLocationId] = useState(null);
   const [formSubject, setFormSubject] = useState('');
   const [formQuantity, setFormQuantity] = useState('');
+  const [formUnit, setFormUnit] = useState(UNIT_OPTIONS[1]);
   const [formNote, setFormNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
@@ -121,11 +123,13 @@ export default function PublicTransferHubView({ token }) {
         itemId: kind === 'item' ? id : null,
         componentId: kind === 'component' ? id : null,
         quantity: Number(formQuantity),
+        quantityUnit: formUnit,
         note: formNote,
         name,
       });
       setFormSubject('');
       setFormQuantity('');
+      setFormUnit(UNIT_OPTIONS[1]);
       setFormNote('');
       setShowForm(false);
     } catch (e) {
@@ -237,9 +241,17 @@ export default function PublicTransferHubView({ token }) {
                 <SubjectPicker items={activeItems} components={activeComponents} value={formSubject} onChange={setFormSubject} />
               </div>
 
-              <div style={{ marginBottom: 10 }}>
-                <label style={labelStyle}>Quantity</label>
-                <input type="number" min="0" step="any" value={formQuantity} onChange={e => setFormQuantity(e.target.value)} placeholder="e.g. 4" style={inputStyle} />
+              <div style={{ marginBottom: 10, display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle}>Quantity</label>
+                  <input type="number" min="0" step="any" value={formQuantity} onChange={e => setFormQuantity(e.target.value)} placeholder="e.g. 4" style={inputStyle} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle}>Unit</label>
+                  <select value={formUnit} onChange={e => setFormUnit(e.target.value)} style={{ ...inputStyle, background: 'white' }}>
+                    {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
               </div>
 
               <div style={{ marginBottom: 10 }}>
@@ -402,7 +414,7 @@ function FulfilRow({ row, locations, onFulfill }) {
           flexShrink: 0, background: '#F0FDFA', color: TEAL, fontWeight: 800, fontSize: 13,
           padding: '4px 10px', borderRadius: 999, whiteSpace: 'nowrap',
         }}>
-          {row.quantity} {row.item.uom}
+          {row.quantity} {row.quantity_unit || row.item.uom}
         </div>
       </div>
 

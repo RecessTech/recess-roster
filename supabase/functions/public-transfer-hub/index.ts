@@ -39,7 +39,7 @@ serve(async (req) => {
     }
 
     if (action === 'create') {
-      const { itemId, componentId, locationId, quantity, note, name } = body;
+      const { itemId, componentId, locationId, quantity, quantityUnit, note, name } = body;
 
       if ((!!itemId) === (!!componentId)) {
         return jsonResponse({ error: 'Pick exactly one SKU or component.' }, 400);
@@ -66,6 +66,7 @@ serve(async (req) => {
         component_id: componentId || null,
         requesting_location_id: locationId,
         quantity: qty,
+        quantity_unit: (quantityUnit || '').trim() || null,
         note: (note || '').trim() || null,
         requested_by_name: (name || '').trim() || null,
       }]);
@@ -109,7 +110,7 @@ serve(async (req) => {
       // something" picker.
       supabase.from('stock_items').select('id, name, sku, uom, active').eq('org_id', org.id).order('sort_order'),
       supabase.from('recipe_components').select('id, name, uom, active').eq('org_id', org.id).order('sort_order'),
-      supabase.from('transfer_requests').select('id, stock_item_id, component_id, requesting_location_id, quantity, note, requested_at, requested_by_name').eq('org_id', org.id).eq('status', 'open').order('requested_at', { ascending: false }),
+      supabase.from('transfer_requests').select('id, stock_item_id, component_id, requesting_location_id, quantity, quantity_unit, note, requested_at, requested_by_name').eq('org_id', org.id).eq('status', 'open').order('requested_at', { ascending: false }),
     ]);
 
     return jsonResponse({
