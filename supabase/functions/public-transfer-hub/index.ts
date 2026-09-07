@@ -30,7 +30,7 @@ serve(async (req) => {
 
     const { data: org, error: orgError } = await supabase
       .from('organisations')
-      .select('id, name')
+      .select('id, name, staff_hub_public_token')
       .eq('transfer_public_token', token)
       .single();
 
@@ -89,6 +89,23 @@ serve(async (req) => {
         updated_at: new Date().toISOString(),
       }).eq('id', requestId);
       if (updateError) return jsonResponse({ error: updateError.message }, 400);
+
+    } else if (action === 'flag_low') {
+      const { itemId, locationId, name } = body;
+
+      // Only a SKU that's actually carried at that site (i.e. has a
+      // stock_item_sites row) can be flagged -- that row is what admin
+      // sees the flag on in Stocktake.
+      const { data: siteRow } = await supabase.from('stock_item_sites').select('id').eq('item_id', itemId).eq('location_id', locationId).eq('org_id', org.id).single();
+      if (!siteRow) return jsonResponse({ error: "That SKU isn't carried at that site." }, 400);
+
+      const { error: flagError } = await supabase.from('stock_item_sites').update({
+        staff_flagged_low: true,
+        staff_flagged_at: new Date().toISOString(),
+        staff_flagged_by_name: (name || '').trim() || null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', siteRow.id);
+      if (flagError) return jsonResponse({ error: flagError.message }, 400);
     }
 
     const { data: settings } = await supabase
@@ -102,7 +119,7 @@ serve(async (req) => {
     // identity beyond whatever free-text name someone typed in -- this
     // link goes to every staff member, so there's no login to attach a
     // real account to.
-    const [{ data: locations }, { data: items }, { data: components }, { data: requests }] = await Promise.all([
+    const [{ data: locations }, { data: items }, { data: components }, { data: requests }, { data: carries }] = await Promise.all([
       supabase.from('locations').select('id, name').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
       // Not filtered to active -- an existing open request may reference an
       // item since deactivated, and it still needs to resolve for display.
@@ -111,14 +128,19 @@ serve(async (req) => {
       supabase.from('stock_items').select('id, name, sku, uom, active').eq('org_id', org.id).order('sort_order'),
       supabase.from('recipe_components').select('id, name, uom, active').eq('org_id', org.id).order('sort_order'),
       supabase.from('transfer_requests').select('id, stock_item_id, component_id, requesting_location_id, quantity, quantity_unit, note, requested_at, requested_by_name').eq('org_id', org.id).eq('status', 'open').order('requested_at', { ascending: false }),
+      // Which SKUs are actually carried at which site -- only those can be
+      // flagged as running low, since flagging writes to this same row.
+      supabase.from('stock_item_sites').select('item_id, location_id').eq('org_id', org.id),
     ]);
 
     return jsonResponse({
       businessName: settings?.business_name || org.name || 'Transfer Hub',
+      staffHubToken: org.staff_hub_public_token,
       locations: locations || [],
       items: items || [],
       components: components || [],
       requests: requests || [],
+      carries: carries || [],
     });
 
   } catch (err) {

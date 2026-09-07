@@ -156,8 +156,21 @@ export default function PublicProductionView({ token }) {
 
         {/* Header card */}
         <div style={{ background: GREEN, borderRadius: '12px 12px 0 0', padding: '22px 24px' }}>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>
-            {data.businessName}
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              {data.businessName}
+            </div>
+            {data.staffHubToken && (
+              <a
+                href={`/hub/${data.staffHubToken}`}
+                style={{
+                  color: 'white', fontSize: 11, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap',
+                  background: 'rgba(255,255,255,0.18)', padding: '4px 10px', borderRadius: 999, flexShrink: 0,
+                }}
+              >
+                🏠 Home
+              </a>
+            )}
           </div>
           <div style={{ color: '#fff', fontSize: 22, fontWeight: 700, lineHeight: 1.2, marginBottom: 2 }}>
             Production Plan
