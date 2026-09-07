@@ -410,12 +410,12 @@ function FulfilRow({ row, locations, onFulfill }) {
         <button
           onClick={() => setExpanded(true)}
           style={{
-            marginTop: 10, padding: '10px 16px', borderRadius: 8, border: 'none', background: TEAL,
-            color: 'white', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
-            display: 'flex', alignItems: 'center', gap: 6, width: '100%', justifyContent: 'center',
+            marginTop: 8, padding: '7px 14px', borderRadius: 7, border: 'none', background: TEAL,
+            color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+            display: 'inline-flex', alignItems: 'center', gap: 5,
           }}
         >
-          <span style={{ fontSize: 15 }}>✓</span> Mark Fulfilled
+          <span style={{ fontSize: 13 }}>✓</span> Mark Fulfilled
         </button>
       ) : (
         <div style={{ marginTop: 10, padding: '10px', background: '#F8FAFC', borderRadius: 8 }}>
