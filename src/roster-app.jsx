@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck, Link2, Package, ChefHat, BookOpen, Sparkles } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
+import { ErrorBoundary } from './ErrorBoundary';
 import { db, supabase } from './supabaseClient';
 import StockApp from './StockApp';
 import ProductionApp from './ProductionApp';
@@ -6788,23 +6789,23 @@ Key things to verify after rebuild:
 
       <div className="flex-1 overflow-hidden view-transition">
       {activeApp === 'stock' ? (
-        <div className="h-full overflow-auto"><StockApp org={org} user={user} /></div>
+        <div className="h-full overflow-auto"><ErrorBoundary><StockApp org={org} user={user} /></ErrorBoundary></div>
       ) : activeApp === 'production' ? (
-        <div className="h-full overflow-hidden"><ProductionApp org={org} user={user} /></div>
+        <div className="h-full overflow-hidden"><ErrorBoundary><ProductionApp org={org} user={user} /></ErrorBoundary></div>
       ) : activeApp === 'recipes' ? (
-        <div className="h-full overflow-auto"><RecipesApp org={org} user={user} /></div>
+        <div className="h-full overflow-auto"><ErrorBoundary><RecipesApp org={org} user={user} /></ErrorBoundary></div>
       ) : activeApp === 'crystalball' ? (
-        <div className="h-full overflow-auto"><CrystalBallApp org={org} user={user} /></div>
+        <div className="h-full overflow-auto"><ErrorBoundary><CrystalBallApp org={org} user={user} /></ErrorBoundary></div>
       ) : activeApp === 'transfers' ? (
-        <div className="h-full overflow-auto"><TransferHubApp org={org} user={user} /></div>
+        <div className="h-full overflow-auto"><ErrorBoundary><TransferHubApp org={org} user={user} /></ErrorBoundary></div>
       ) : activeView === 'analytics' ? (
-        <div className="h-full overflow-auto"><AnalyticsView /></div>
+        <div className="h-full overflow-auto"><ErrorBoundary><AnalyticsView /></ErrorBoundary></div>
       ) : activeView === 'timesheet' ? (
-        <div className="h-full overflow-auto"><TimesheetView /></div>
+        <div className="h-full overflow-auto"><ErrorBoundary><TimesheetView /></ErrorBoundary></div>
       ) : activeView === 'staff-view' ? (
-        <div className="h-full overflow-auto"><StaffRosterView /></div>
+        <div className="h-full overflow-auto"><ErrorBoundary><StaffRosterView /></ErrorBoundary></div>
       ) : activeView === 'availability' ? (
-        <div className="h-full overflow-hidden"><AvailabilityView /></div>
+        <div className="h-full overflow-hidden"><ErrorBoundary><AvailabilityView /></ErrorBoundary></div>
       ) : (
         <div className="h-full flex flex-col p-3">
         {activeStaff.length === 0 && (

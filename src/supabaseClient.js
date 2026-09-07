@@ -276,28 +276,10 @@ export const db = {
       return !newKeys.has(key);
     });
 
-    if (toDelete.length > 0) {
-      const batchSize = 100;
-      for (let i = 0; i < toDelete.length; i += batchSize) {
-        const batch = toDelete.slice(i, i + batchSize);
-        const conditions = batch.map(row =>
-          `and(date_key.eq.${row.date_key},staff_id.eq.${row.staff_id},time_slot.eq.${row.time_slot})`
-        );
-
-        const { error } = await supabase
-          .from('schedules')
-          .delete()
-          .eq('org_id', orgId)
-          .or(conditions.join(','));
-
-        if (error) {
-          console.error('❌ Batch delete error:', error);
-          throw error;
-        }
-      }
-      console.log(`🗑️ Deleted ${toDelete.length} removed slots`);
-    }
-
+    // Upsert the new/changed slots BEFORE deleting stale ones. If a batch
+    // fails partway through, the old rows are still there instead of
+    // already-deleted -- a failed save loses nothing instead of leaving a
+    // silent gap in the roster.
     const batchSize = 500;
     let totalUpserted = 0;
 
@@ -317,6 +299,28 @@ export const db = {
 
       totalUpserted += batch.length;
       console.log(`✅ Batch ${Math.floor(i / batchSize) + 1}: ${batch.length} slots (${totalUpserted}/${scheduleArray.length})`);
+    }
+
+    if (toDelete.length > 0) {
+      const deleteBatchSize = 100;
+      for (let i = 0; i < toDelete.length; i += deleteBatchSize) {
+        const batch = toDelete.slice(i, i + deleteBatchSize);
+        const conditions = batch.map(row =>
+          `and(date_key.eq.${row.date_key},staff_id.eq.${row.staff_id},time_slot.eq.${row.time_slot})`
+        );
+
+        const { error } = await supabase
+          .from('schedules')
+          .delete()
+          .eq('org_id', orgId)
+          .or(conditions.join(','));
+
+        if (error) {
+          console.error('❌ Batch delete error:', error);
+          throw error;
+        }
+      }
+      console.log(`🗑️ Deleted ${toDelete.length} removed slots`);
     }
 
     console.log(`✅ Successfully saved all ${scheduleArray.length} slots`);
@@ -356,6 +360,25 @@ export const db = {
 
     console.log(`💾 Delta save: ${toUpsert.length} upserts, ${toDeleteKeys.length} deletes`);
 
+    // Upsert before delete (see saveSchedules above) so a failed batch
+    // can't leave a gap where a slot was removed but its replacement
+    // never landed.
+    if (toUpsert.length > 0) {
+      const batchSize = 500;
+      for (let i = 0; i < toUpsert.length; i += batchSize) {
+        const batch = toUpsert.slice(i, i + batchSize);
+        const { error } = await supabase
+          .from('schedules')
+          .upsert(batch, { onConflict: 'org_id,date_key,staff_id,time_slot' });
+
+        if (error) {
+          console.error('❌ Batch upsert error:', error);
+          throw error;
+        }
+      }
+      console.log(`✅ Upserted ${toUpsert.length} slots`);
+    }
+
     if (toDeleteKeys.length > 0) {
       const batchSize = 100;
       for (let i = 0; i < toDeleteKeys.length; i += batchSize) {
@@ -377,22 +400,6 @@ export const db = {
         }
       }
       console.log(`🗑️ Deleted ${toDeleteKeys.length} removed slots`);
-    }
-
-    if (toUpsert.length > 0) {
-      const batchSize = 500;
-      for (let i = 0; i < toUpsert.length; i += batchSize) {
-        const batch = toUpsert.slice(i, i + batchSize);
-        const { error } = await supabase
-          .from('schedules')
-          .upsert(batch, { onConflict: 'org_id,date_key,staff_id,time_slot' });
-
-        if (error) {
-          console.error('❌ Batch upsert error:', error);
-          throw error;
-        }
-      }
-      console.log(`✅ Upserted ${toUpsert.length} slots`);
     }
   },
 
