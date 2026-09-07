@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from './supabaseClient';
 
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
@@ -245,19 +245,7 @@ export default function PublicTransferHubView({ token }) {
 
               <div style={{ marginBottom: 10 }}>
                 <label style={labelStyle}>SKU or component</label>
-                <select value={formSubject} onChange={e => setFormSubject(e.target.value)} style={{ ...inputStyle, background: 'white' }}>
-                  <option value="">Select one…</option>
-                  {activeItems.length > 0 && (
-                    <optgroup label="SKUs">
-                      {activeItems.map(i => <option key={i.id} value={`item:${i.id}`}>{i.name} ({i.sku})</option>)}
-                    </optgroup>
-                  )}
-                  {activeComponents.length > 0 && (
-                    <optgroup label="Components">
-                      {activeComponents.map(c => <option key={c.id} value={`component:${c.id}`}>{c.name}</option>)}
-                    </optgroup>
-                  )}
-                </select>
+                <SubjectPicker items={activeItems} components={activeComponents} value={formSubject} onChange={setFormSubject} />
               </div>
 
               <div style={{ marginBottom: 10 }}>
@@ -295,6 +283,81 @@ export default function PublicTransferHubView({ token }) {
           Powered by Recess Roster
         </p>
       </div>
+    </div>
+  );
+}
+
+// Catalogs can run into the hundreds of SKUs, and a native <select> is
+// painful to hunt through on mobile (long scroll, no filtering on most
+// mobile browsers). This is a small type-to-filter list instead.
+
+function SubjectPicker({ items, components, value, onChange }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  const options = useMemo(() => [
+    ...items.map(i => ({ kind: 'item', id: i.id, name: i.name, sku: i.sku, uom: i.uom })),
+    ...components.map(c => ({ kind: 'component', id: c.id, name: c.name, sku: null, uom: c.uom })),
+  ], [items, components]);
+
+  const selected = value ? options.find(o => `${o.kind}:${o.id}` === value) || null : null;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const pool = q
+      ? options.filter(o => o.name.toLowerCase().includes(q) || (o.sku || '').toLowerCase().includes(q))
+      : options;
+    return pool.slice(0, 50);
+  }, [options, query]);
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointerDown(e) {
+      if (wrapRef.current?.contains(e.target)) return;
+      setOpen(false);
+    }
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+    };
+  }, [open]);
+
+  return (
+    <div style={{ position: 'relative' }} ref={wrapRef}>
+      <input
+        style={inputStyle}
+        placeholder="Search SKUs & components…"
+        value={open ? query : (selected ? `${selected.name}${selected.sku ? ' (' + selected.sku + ')' : ' (Component)'}` : '')}
+        onChange={e => { setQuery(e.target.value); onChange(''); }}
+        onFocus={() => { setOpen(true); setQuery(''); }}
+      />
+      {open && (
+        <div style={{
+          position: 'absolute', zIndex: 20, top: '100%', left: 0, right: 0, marginTop: 4,
+          maxHeight: 240, overflowY: 'auto', background: 'white', border: '1px solid #E2E8F0',
+          borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+        }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '10px 12px', fontSize: 12.5, color: '#94A3B8' }}>No matching SKUs or components</div>
+          ) : filtered.map(o => (
+            <button
+              type="button"
+              key={`${o.kind}:${o.id}`}
+              onClick={() => { onChange(`${o.kind}:${o.id}`); setOpen(false); setQuery(''); }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', border: 'none',
+                borderBottom: '1px solid #F1F5F9', background: 'white', cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>{o.name}</div>
+              <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 1 }}>{o.kind === 'component' ? `Component · ${o.uom}` : `${o.sku} · ${o.uom}`}</div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
