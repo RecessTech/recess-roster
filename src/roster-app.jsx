@@ -5936,7 +5936,7 @@ Key things to verify after rebuild:
 
           <div className="p-4">
             <p className="text-xs text-gray-500 mb-3">
-              One link for every staff member — it's a landing page pointing at the R-Prod plan and Transfer Hub's open requests, so they can check both before moving between sites. Nothing new to build or maintain: it just tracks whatever those two links currently point to.
+              One link for every staff member — it opens a landing page pointing at the R-Prod plan and Transfer Hub, and it's the same link those pages themselves accept, so there's nothing else to share. Regenerating it invalidates access to all three at once.
             </p>
 
             <div className="flex items-center gap-2">
@@ -5961,7 +5961,7 @@ Key things to verify after rebuild:
               disabled={staffHubRegenerating || !org}
               className="text-xs text-gray-400 hover:text-red-500 mt-3 disabled:opacity-50"
             >
-              {staffHubRegenerating ? 'Regenerating…' : "Regenerate link (invalidates the old one)"}
+              {staffHubRegenerating ? 'Regenerating…' : "Regenerate link (invalidates the old one everywhere)"}
             </button>
           </div>
         </div>

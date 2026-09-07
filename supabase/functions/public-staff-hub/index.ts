@@ -22,12 +22,13 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    // Look up org by Staff Hub public token. This page carries no data of
-    // its own -- it's just a menu pointing at the other read-only public
-    // links, so all it needs back is the org name and those other tokens.
+    // Look up org by the single staff-surface public token. This page
+    // carries no data of its own -- it's just a menu pointing at the other
+    // read-only public pages, which now share this same token, so all it
+    // needs back is the org name.
     const { data: org, error: orgError } = await supabase
       .from('organisations')
-      .select('id, name, production_public_token, transfer_public_token')
+      .select('id, name')
       .eq('staff_hub_public_token', token)
       .single();
 
@@ -45,8 +46,6 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({
       businessName: settings?.business_name || org.name || 'R-Shift',
-      productionToken: org.production_public_token,
-      transferToken: org.transfer_public_token,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

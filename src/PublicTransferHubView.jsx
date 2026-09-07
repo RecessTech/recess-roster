@@ -254,19 +254,17 @@ export default function PublicTransferHubView({ token }) {
                 Transfer Hub
               </div>
             </div>
-            {data.staffHubToken && (
-              <a
-                href={`/hub/${data.staffHubToken}`}
-                title="Back to Staff Hub"
-                style={{
-                  width: 36, height: 36, borderRadius: 999, background: 'rgba(255,255,255,0.16)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none',
-                  fontSize: 16, flexShrink: 0,
-                }}
-              >
-                🏠
-              </a>
-            )}
+            <a
+              href={`/hub/${token}`}
+              title="Back to Staff Hub"
+              style={{
+                width: 36, height: 36, borderRadius: 999, background: 'rgba(255,255,255,0.16)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none',
+                fontSize: 16, flexShrink: 0,
+              }}
+            >
+              🏠
+            </a>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
             <span style={{
