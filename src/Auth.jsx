@@ -6,18 +6,36 @@ export const useAuth = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let settled = false;
+    const stopLoading = (session) => {
+      if (settled) return;
+      settled = true;
       setUser(session?.user ?? null);
       setLoading(false);
-    });
+    };
+
+    // supabase-js serializes auth calls behind a cross-tab lock, which can
+    // be left stuck (e.g. by a crashed/closed tab) and never release --
+    // getSession() then hangs forever and wedges the app on the loading
+    // screen. Fall back to the signed-out view rather than hang; if the
+    // lock does clear later, onAuthStateChange below still updates user.
+    const timeoutId = setTimeout(() => stopLoading(null), 8000);
+
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => stopLoading(session))
+      .catch(() => stopLoading(null))
+      .finally(() => clearTimeout(timeoutId));
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      stopLoading(session);
       setUser(session?.user ?? null);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(timeoutId);
+      subscription.unsubscribe();
+    };
   }, []);
 
   return { user, loading };
