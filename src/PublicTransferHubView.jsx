@@ -190,41 +190,24 @@ export default function PublicTransferHubView({ token }) {
           <span style={{ fontSize: 12, color: '#115E59', fontWeight: 600 }}>no login required · check, request, or mark fulfilled</span>
         </div>
 
+        {/* New Request -- kept at the top since it's the most common thing
+            someone opens this link to do, not buried below the list */}
         <div style={{ background: 'white', border: '1px solid #E2E8F0', borderTop: 'none', overflow: 'hidden' }}>
-          {grouped.length === 0 ? (
-            <div style={{ padding: '40px 20px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
-              No open transfer requests. All good to go.
-            </div>
-          ) : (
-            grouped.map(([locationName, rows]) => (
-              <div key={locationName}>
-                <div style={{ padding: '10px 16px 6px', fontSize: 10, fontWeight: 700, color: '#0F766E', textTransform: 'uppercase', letterSpacing: '0.06em', background: '#F8FAFC' }}>
-                  {locationName} needs
-                </div>
-                {rows.map(r => (
-                  <FulfilRow key={r.id} row={r} locations={data.locations} onFulfill={handleFulfill} />
-                ))}
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Request form */}
-        <div style={{ background: 'white', border: '1px solid #E2E8F0', borderTop: 'none', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}>
           {!showForm ? (
             <button
               onClick={() => setShowForm(true)}
               style={{
-                width: '100%', padding: '14px 16px', background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: 13.5, fontWeight: 700, color: TEAL, fontFamily: 'inherit',
+                width: '100%', padding: '16px', background: TEAL, border: 'none', cursor: 'pointer',
+                fontSize: 16, fontWeight: 800, color: 'white', fontFamily: 'inherit',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               }}
             >
-              + Request something
+              <span style={{ fontSize: 20, lineHeight: 1 }}>＋</span> New Request
             </button>
           ) : (
             <form onSubmit={handleSubmit} style={{ padding: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 700, color: '#1E293B' }}>What do you need?</span>
+                <span style={{ fontSize: 14.5, fontWeight: 800, color: '#1E293B' }}>What do you need?</span>
                 <button type="button" onClick={() => setShowForm(false)} style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
               </div>
 
@@ -275,13 +258,32 @@ export default function PublicTransferHubView({ token }) {
                 type="submit"
                 disabled={submitting}
                 style={{
-                  width: '100%', padding: '11px', borderRadius: 8, border: 'none', cursor: submitting ? 'default' : 'pointer',
-                  background: TEAL, color: 'white', fontSize: 13.5, fontWeight: 700, fontFamily: 'inherit', opacity: submitting ? 0.6 : 1,
+                  width: '100%', padding: '13px', borderRadius: 8, border: 'none', cursor: submitting ? 'default' : 'pointer',
+                  background: TEAL, color: 'white', fontSize: 15, fontWeight: 800, fontFamily: 'inherit', opacity: submitting ? 0.6 : 1,
                 }}
               >
                 {submitting ? 'Sending…' : 'Send Request'}
               </button>
             </form>
+          )}
+        </div>
+
+        <div style={{ background: 'white', border: '1px solid #E2E8F0', borderTop: 'none', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}>
+          {grouped.length === 0 ? (
+            <div style={{ padding: '40px 20px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
+              No open transfer requests. All good to go.
+            </div>
+          ) : (
+            grouped.map(([locationName, rows]) => (
+              <div key={locationName}>
+                <div style={{ padding: '10px 16px 6px', fontSize: 10, fontWeight: 700, color: '#0F766E', textTransform: 'uppercase', letterSpacing: '0.06em', background: '#F8FAFC' }}>
+                  {locationName} needs
+                </div>
+                {rows.map(r => (
+                  <FulfilRow key={r.id} row={r} locations={data.locations} onFulfill={handleFulfill} />
+                ))}
+              </div>
+            ))
           )}
         </div>
 
@@ -408,38 +410,42 @@ function FulfilRow({ row, locations, onFulfill }) {
         <button
           onClick={() => setExpanded(true)}
           style={{
-            marginTop: 8, padding: '6px 12px', borderRadius: 7, border: '1px solid #D1FAE5', background: 'white',
-            color: TEAL, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+            marginTop: 10, padding: '10px 16px', borderRadius: 8, border: 'none', background: TEAL,
+            color: 'white', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
+            display: 'flex', alignItems: 'center', gap: 6, width: '100%', justifyContent: 'center',
           }}
         >
-          Mark fulfilled
+          <span style={{ fontSize: 15 }}>✓</span> Mark Fulfilled
         </button>
       ) : (
-        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ marginTop: 10, padding: '10px', background: '#F8FAFC', borderRadius: 8 }}>
+          <label style={labelStyle}>Which site is sending it</label>
           <select
             value={sourceLocationId}
             onChange={e => setSourceLocationId(e.target.value)}
-            style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
+            style={{ ...inputStyle, marginBottom: 8 }}
           >
-            {locations.map(l => <option key={l.id} value={l.id}>From {l.name}</option>)}
+            {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
-          <button
-            onClick={confirmFulfil}
-            disabled={submitting}
-            style={{
-              padding: '6px 12px', borderRadius: 7, border: 'none', cursor: submitting ? 'default' : 'pointer',
-              background: TEAL, color: 'white', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', opacity: submitting ? 0.6 : 1,
-            }}
-          >
-            {submitting ? 'Saving…' : 'Confirm'}
-          </button>
-          <button
-            onClick={() => setExpanded(false)}
-            style={{ padding: '6px 10px', borderRadius: 7, border: 'none', background: 'none', color: '#94A3B8', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}
-          >
-            Cancel
-          </button>
-          {rowError && <div style={{ width: '100%', fontSize: 11.5, color: '#DC2626' }}>{rowError}</div>}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={confirmFulfil}
+              disabled={submitting}
+              style={{
+                flex: 1, padding: '10px 12px', borderRadius: 8, border: 'none', cursor: submitting ? 'default' : 'pointer',
+                background: TEAL, color: 'white', fontSize: 14, fontWeight: 800, fontFamily: 'inherit', opacity: submitting ? 0.6 : 1,
+              }}
+            >
+              {submitting ? 'Saving…' : '✓ Confirm Fulfilled'}
+            </button>
+            <button
+              onClick={() => setExpanded(false)}
+              style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: 'white', color: '#64748B', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              Cancel
+            </button>
+          </div>
+          {rowError && <div style={{ marginTop: 8, fontSize: 11.5, color: '#DC2626' }}>{rowError}</div>}
         </div>
       )}
     </div>
