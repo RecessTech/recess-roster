@@ -3,8 +3,14 @@ import { supabase } from './supabaseClient';
 
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
 const TEAL = '#0F766E';
+const TEAL_DK = '#0B5A54';
+const PINK = '#BE185D';
 const NAME_STORAGE_KEY = 'transferHub_yourName';
 const UNIT_OPTIONS = ['Sleeve', 'Units', 'Cans', 'Tins', 'Bunch(s)', 'Dozen', 'kg', 'g'];
+
+const CARD_RADIUS = 16;
+const CARD_SHADOW = '0 1px 2px rgba(15,23,42,0.04), 0 6px 20px -8px rgba(15,23,42,0.10)';
+const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
 function timeAgo(iso) {
   if (!iso) return '';
@@ -33,14 +39,23 @@ function storeName(name) {
 // that's an accessibility regression -- fixing the font size is the correct
 // fix, not a workaround).
 const inputStyle = {
-  width: '100%', fontSize: 16, padding: '10px 11px', borderRadius: 8,
-  border: '1px solid #E2E8F0', color: '#1E293B', fontFamily: 'inherit', boxSizing: 'border-box',
+  width: '100%', fontSize: 16, padding: '11px 12px', borderRadius: 10,
+  border: '1px solid #E5E9EF', color: '#1E293B', fontFamily: 'inherit', boxSizing: 'border-box',
+  background: '#FAFBFC',
 };
-const labelStyle = { fontSize: 10.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5, display: 'block' };
+const labelStyle = { fontSize: 10.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'block' };
+const pillButtonStyle = (active, tint) => ({
+  padding: '8px 15px', borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+  border: active ? 'none' : '1px solid #E5E9EF',
+  background: active ? tint : 'white',
+  color: active ? 'white' : '#475569',
+  transition: 'background 0.15s, color 0.15s',
+});
 
-// Staff-facing, no login: check what's needed, request something, or mark a
-// request fulfilled. See supabase/functions/public-transfer-hub -- writes
-// carry no real identity, just whatever name someone types in below.
+// Staff-facing, no login: check what's needed, request something, flag a
+// SKU as low, or mark a request fulfilled. See
+// supabase/functions/public-transfer-hub -- writes carry no real identity,
+// just whatever name someone types in below.
 
 export default function PublicTransferHubView({ token }) {
   const [data, setData] = useState(null);
@@ -48,7 +63,7 @@ export default function PublicTransferHubView({ token }) {
   const [error, setError] = useState(null);
   const [name, setName] = useState(loadStoredName);
 
-  const [showForm, setShowForm] = useState(false);
+  const [activePanel, setActivePanel] = useState(null); // null | 'request' | 'flag'
   const [formLocationId, setFormLocationId] = useState(null);
   const [formSubject, setFormSubject] = useState('');
   const [formQuantity, setFormQuantity] = useState('');
@@ -57,7 +72,6 @@ export default function PublicTransferHubView({ token }) {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
 
-  const [showFlagForm, setShowFlagForm] = useState(false);
   const [flagLocationId, setFlagLocationId] = useState(null);
   const [flagSubject, setFlagSubject] = useState('');
   const [flagSubmitting, setFlagSubmitting] = useState(false);
@@ -127,6 +141,12 @@ export default function PublicTransferHubView({ token }) {
     return activeItems.filter(i => carriedIds.has(i.id));
   }, [activeItems, data, flagLocationId]);
 
+  function openPanel(panel) {
+    setActivePanel(prev => (prev === panel ? null : panel));
+    setFormError(null);
+    setFlagError(null);
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setFormError(null);
@@ -151,7 +171,7 @@ export default function PublicTransferHubView({ token }) {
       setFormQuantity('');
       setFormUnit(UNIT_OPTIONS[1]);
       setFormNote('');
-      setShowForm(false);
+      setActivePanel(null);
     } catch (e) {
       setFormError(e.message || 'Could not send that request.');
     } finally {
@@ -176,8 +196,8 @@ export default function PublicTransferHubView({ token }) {
     try {
       await load({ action: 'flag_low', itemId: id, locationId: flagLocationId, name });
       setFlagSubject('');
-      setShowFlagForm(false);
-      setFlagSuccess(`Flagged ${item?.name || 'that SKU'} as low -- an admin will review it.`);
+      setActivePanel(null);
+      setFlagSuccess(`Flagged ${item?.name || 'that SKU'} as low — an admin will review it.`);
       setTimeout(() => setFlagSuccess(null), 5000);
     } catch (e) {
       setFlagError(e.message || 'Could not flag that SKU.');
@@ -188,13 +208,13 @@ export default function PublicTransferHubView({ token }) {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ minHeight: '100vh', background: '#F4F6F8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{
-            width: 40, height: 40, border: '3px solid #E2E8F0', borderTopColor: TEAL,
+            width: 36, height: 36, border: '3px solid #E2E8F0', borderTopColor: TEAL,
             borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite'
           }} />
-          <p style={{ color: '#64748B', fontSize: 14, fontFamily: 'system-ui, sans-serif' }}>Loading Transfer Hub…</p>
+          <p style={{ color: '#64748B', fontSize: 14, fontFamily: FONT }}>Loading Transfer Hub…</p>
         </div>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
@@ -203,11 +223,11 @@ export default function PublicTransferHubView({ token }) {
 
   if (error) {
     return (
-      <div style={{ minHeight: '100vh', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div style={{ background: 'white', borderRadius: 12, padding: '32px 24px', maxWidth: 360, textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+      <div style={{ minHeight: '100vh', background: '#F4F6F8', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ background: 'white', borderRadius: 16, padding: '32px 24px', maxWidth: 360, textAlign: 'center', boxShadow: CARD_SHADOW }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
-          <p style={{ color: '#1E293B', fontWeight: 600, marginBottom: 8, fontFamily: 'system-ui, sans-serif' }}>Couldn't load Transfer Hub</p>
-          <p style={{ color: '#64748B', fontSize: 13, fontFamily: 'system-ui, sans-serif' }}>{error}</p>
+          <p style={{ color: '#1E293B', fontWeight: 700, marginBottom: 6, fontFamily: FONT }}>Couldn't load Transfer Hub</p>
+          <p style={{ color: '#64748B', fontSize: 13, fontFamily: FONT }}>{error}</p>
         </div>
       </div>
     );
@@ -216,160 +236,161 @@ export default function PublicTransferHubView({ token }) {
   if (!data) return null;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F1F5F9', padding: '14px 4px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', touchAction: 'manipulation' }}>
+    <div style={{ minHeight: '100vh', background: '#F4F6F8', padding: '16px 12px 32px', fontFamily: FONT, touchAction: 'manipulation' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      <div style={{ maxWidth: 480, margin: '0 auto' }}>
+      <div style={{ maxWidth: 460, margin: '0 auto' }}>
 
-        {/* Header card */}
-        <div style={{ background: TEAL, borderRadius: '12px 12px 0 0', padding: '22px 24px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
-            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-              {data.businessName}
+        {/* Header */}
+        <div style={{
+          background: `linear-gradient(135deg, ${TEAL}, #0D9488)`, borderRadius: CARD_RADIUS,
+          padding: '20px 20px 18px', boxShadow: '0 10px 24px -10px rgba(15,118,110,0.5)', marginBottom: 12,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
+                {data.businessName}
+              </div>
+              <div style={{ color: 'white', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.15 }}>
+                Transfer Hub
+              </div>
             </div>
             {data.staffHubToken && (
               <a
                 href={`/hub/${data.staffHubToken}`}
+                title="Back to Staff Hub"
                 style={{
-                  color: 'white', fontSize: 11, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap',
-                  background: 'rgba(255,255,255,0.18)', padding: '4px 10px', borderRadius: 999, flexShrink: 0,
+                  width: 36, height: 36, borderRadius: 999, background: 'rgba(255,255,255,0.16)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none',
+                  fontSize: 16, flexShrink: 0,
                 }}
               >
-                🏠 Home
+                🏠
               </a>
             )}
           </div>
-          <div style={{ color: '#fff', fontSize: 22, fontWeight: 700, lineHeight: 1.2, marginBottom: 2 }}>
-            Transfer Hub
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+            <span style={{
+              background: totalCount === 0 ? 'rgba(255,255,255,0.16)' : 'white', color: totalCount === 0 ? 'white' : TEAL_DK,
+              fontSize: 12.5, fontWeight: 800, padding: '5px 12px', borderRadius: 999,
+            }}>
+              {totalCount === 0 ? 'All clear' : `${totalCount} item${totalCount !== 1 ? 's' : ''} needed`}
+            </span>
+            <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11.5, fontWeight: 500 }}>No login required</span>
           </div>
-          <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>
-            {totalCount === 0 ? 'Nothing needed right now' : `${totalCount} item${totalCount !== 1 ? 's' : ''} needed`}
-          </div>
-        </div>
-
-        <div style={{ background: '#F0FDFA', borderLeft: '1px solid #99F6E4', borderRight: '1px solid #99F6E4', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontSize: 12, color: '#115E59', fontWeight: 600 }}>no login required · check, request, or mark fulfilled</span>
         </div>
 
         {flagSuccess && (
-          <div style={{ background: '#ECFDF5', borderLeft: '1px solid #A7F3D0', borderRight: '1px solid #A7F3D0', padding: '10px 16px', fontSize: 12.5, color: '#065F46', fontWeight: 600 }}>
-            ✓ {flagSuccess}
+          <div style={{
+            background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 12, padding: '11px 14px',
+            marginBottom: 12, fontSize: 12.5, color: '#065F46', fontWeight: 600, display: 'flex', gap: 7,
+          }}>
+            <span>✓</span> {flagSuccess}
           </div>
         )}
 
-        {/* New Request -- kept at the top since it's the most common thing
-            someone opens this link to do, not buried below the list */}
-        <div style={{ background: 'white', border: '1px solid #E2E8F0', borderTop: 'none', overflow: 'hidden' }}>
-          {!showForm ? (
-            <button
-              onClick={() => setShowForm(true)}
-              style={{
-                width: '100%', padding: '16px', background: TEAL, border: 'none', cursor: 'pointer',
-                fontSize: 16, fontWeight: 800, color: 'white', fontFamily: 'inherit',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              }}
-            >
-              <span style={{ fontSize: 20, lineHeight: 1 }}>＋</span> New Request
-            </button>
-          ) : (
-            <form onSubmit={handleSubmit} style={{ padding: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontSize: 14.5, fontWeight: 800, color: '#1E293B' }}>What do you need?</span>
-                <button type="button" onClick={() => setShowForm(false)} style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+        {/* Actions -- New Request and Flag Low Stock share one card as a
+            compact two-up toolbar; tapping either expands its form in
+            place, closing the other so only one is open at a time. */}
+        <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, marginBottom: 12, overflow: 'hidden' }}>
+          {activePanel === null && (
+            <div style={{ display: 'flex', gap: 1, background: '#EEF1F4' }}>
+              <button
+                onClick={() => openPanel('request')}
+                style={{
+                  flex: 1, padding: '16px 10px', background: 'white', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                }}
+              >
+                <span style={{ fontSize: 19, color: TEAL, lineHeight: 1 }}>＋</span>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#1E293B' }}>New Request</span>
+              </button>
+              <button
+                onClick={() => openPanel('flag')}
+                style={{
+                  flex: 1, padding: '16px 10px', background: 'white', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                }}
+              >
+                <span style={{ fontSize: 16, lineHeight: 1 }}>🚩</span>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#1E293B' }}>Flag Low Stock</span>
+              </button>
+            </div>
+          )}
+
+          {activePanel === 'request' && (
+            <form onSubmit={handleSubmit} style={{ padding: 18 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <span style={{ fontSize: 15, fontWeight: 800, color: '#1E293B' }}>＋ What do you need?</span>
+                <button type="button" onClick={() => setActivePanel(null)} style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
               </div>
 
-              <div style={{ marginBottom: 10 }}>
+              <div style={{ marginBottom: 12 }}>
                 <label style={labelStyle}>Which site needs it</label>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {data.locations.map(loc => (
-                    <button
-                      type="button"
-                      key={loc.id}
-                      onClick={() => setFormLocationId(loc.id)}
-                      style={{
-                        padding: '7px 14px', borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                        border: formLocationId === loc.id ? 'none' : '1px solid #E2E8F0',
-                        background: formLocationId === loc.id ? TEAL : 'white',
-                        color: formLocationId === loc.id ? 'white' : '#475569',
-                      }}
-                    >
+                    <button type="button" key={loc.id} onClick={() => setFormLocationId(loc.id)} style={pillButtonStyle(formLocationId === loc.id, TEAL)}>
                       {loc.name}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div style={{ marginBottom: 10 }}>
+              <div style={{ marginBottom: 12 }}>
                 <label style={labelStyle}>SKU or component</label>
                 <SubjectPicker items={activeItems} components={activeComponents} value={formSubject} onChange={setFormSubject} />
               </div>
 
-              <div style={{ marginBottom: 10, display: 'flex', gap: 8 }}>
+              <div style={{ marginBottom: 12, display: 'flex', gap: 8 }}>
                 <div style={{ flex: 1 }}>
                   <label style={labelStyle}>Quantity</label>
                   <input type="number" min="0" step="any" value={formQuantity} onChange={e => setFormQuantity(e.target.value)} placeholder="e.g. 4" style={inputStyle} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={labelStyle}>Unit</label>
-                  <select value={formUnit} onChange={e => setFormUnit(e.target.value)} style={{ ...inputStyle, background: 'white' }}>
+                  <select value={formUnit} onChange={e => setFormUnit(e.target.value)} style={inputStyle}>
                     {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>
               </div>
 
-              <div style={{ marginBottom: 10 }}>
+              <div style={{ marginBottom: 12 }}>
                 <label style={labelStyle}>Note (optional)</label>
                 <input value={formNote} onChange={e => setFormNote(e.target.value)} placeholder="e.g. Need by tomorrow AM" style={inputStyle} />
               </div>
 
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Your name</label>
                 <input value={name} onChange={e => handleNameChange(e.target.value)} placeholder="So the other site knows who asked" style={inputStyle} />
               </div>
 
-              {formError && <div style={{ fontSize: 12, color: '#DC2626', marginBottom: 10 }}>{formError}</div>}
+              {formError && <div style={{ fontSize: 12, color: '#DC2626', marginBottom: 10, fontWeight: 500 }}>{formError}</div>}
 
               <button
                 type="submit"
                 disabled={submitting}
                 style={{
-                  width: '100%', padding: '13px', borderRadius: 8, border: 'none', cursor: submitting ? 'default' : 'pointer',
+                  width: '100%', padding: '14px', borderRadius: 11, border: 'none', cursor: submitting ? 'default' : 'pointer',
                   background: TEAL, color: 'white', fontSize: 15, fontWeight: 800, fontFamily: 'inherit', opacity: submitting ? 0.6 : 1,
+                  boxShadow: submitting ? 'none' : '0 4px 12px -4px rgba(15,118,110,0.5)',
                 }}
               >
                 {submitting ? 'Sending…' : 'Send Request'}
               </button>
             </form>
           )}
-        </div>
 
-        {/* Flag Low Stock -- a separate, lighter-weight signal from a full
-            transfer request: "someone should look at this", not "send me
-            X units". Never writes to the admin's own stock status -- it's
-            reviewed and cleared in R-Stock's Stocktake tab. */}
-        <div style={{ background: 'white', border: '1px solid #E2E8F0', borderTop: 'none', overflow: 'hidden' }}>
-          {!showFlagForm ? (
-            <button
-              onClick={() => setShowFlagForm(true)}
-              style={{
-                width: '100%', padding: '14px', background: 'white', border: 'none', cursor: 'pointer',
-                fontSize: 14, fontWeight: 700, color: '#BE185D', fontFamily: 'inherit',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-              }}
-            >
-              🚩 Flag a SKU as Running Low
-            </button>
-          ) : (
-            <form onSubmit={handleFlagSubmit} style={{ padding: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontSize: 14.5, fontWeight: 800, color: '#1E293B' }}>What's running low?</span>
-                <button type="button" onClick={() => setShowFlagForm(false)} style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+          {activePanel === 'flag' && (
+            <form onSubmit={handleFlagSubmit} style={{ padding: 18 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 15, fontWeight: 800, color: '#1E293B' }}>🚩 What's running low?</span>
+                <button type="button" onClick={() => setActivePanel(null)} style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
               </div>
 
-              <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 0, marginBottom: 12 }}>
-                This just flags it for review -- it doesn't change anything in R-Stock itself, an admin makes the final call.
+              <p style={{ fontSize: 12, color: '#94A3B8', margin: '0 0 14px', lineHeight: 1.4 }}>
+                This just flags it for review — it doesn't change anything in R-Stock, an admin makes the final call.
               </p>
 
-              <div style={{ marginBottom: 10 }}>
+              <div style={{ marginBottom: 12 }}>
                 <label style={labelStyle}>Which site</label>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {data.locations.map(loc => (
@@ -377,12 +398,7 @@ export default function PublicTransferHubView({ token }) {
                       type="button"
                       key={loc.id}
                       onClick={() => { setFlagLocationId(loc.id); setFlagSubject(''); }}
-                      style={{
-                        padding: '7px 14px', borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                        border: flagLocationId === loc.id ? 'none' : '1px solid #E2E8F0',
-                        background: flagLocationId === loc.id ? '#BE185D' : 'white',
-                        color: flagLocationId === loc.id ? 'white' : '#475569',
-                      }}
+                      style={pillButtonStyle(flagLocationId === loc.id, PINK)}
                     >
                       {loc.name}
                     </button>
@@ -390,52 +406,59 @@ export default function PublicTransferHubView({ token }) {
                 </div>
               </div>
 
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>SKU</label>
-                <SubjectPicker items={flaggableItems} components={[]} value={flagSubject} onChange={setFlagSubject} placeholder="Search SKUs carried at this site…" />
+                <SubjectPicker items={flaggableItems} components={[]} value={flagSubject} onChange={setFlagSubject} placeholder="Search SKUs carried at this site…" accent={PINK} />
               </div>
 
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Your name</label>
                 <input value={name} onChange={e => handleNameChange(e.target.value)} placeholder="So the review makes sense later" style={inputStyle} />
               </div>
 
-              {flagError && <div style={{ fontSize: 12, color: '#DC2626', marginBottom: 10 }}>{flagError}</div>}
+              {flagError && <div style={{ fontSize: 12, color: '#DC2626', marginBottom: 10, fontWeight: 500 }}>{flagError}</div>}
 
               <button
                 type="submit"
                 disabled={flagSubmitting}
                 style={{
-                  width: '100%', padding: '13px', borderRadius: 8, border: 'none', cursor: flagSubmitting ? 'default' : 'pointer',
-                  background: '#BE185D', color: 'white', fontSize: 15, fontWeight: 800, fontFamily: 'inherit', opacity: flagSubmitting ? 0.6 : 1,
+                  width: '100%', padding: '14px', borderRadius: 11, border: 'none', cursor: flagSubmitting ? 'default' : 'pointer',
+                  background: PINK, color: 'white', fontSize: 15, fontWeight: 800, fontFamily: 'inherit', opacity: flagSubmitting ? 0.6 : 1,
+                  boxShadow: flagSubmitting ? 'none' : '0 4px 12px -4px rgba(190,24,93,0.45)',
                 }}
               >
-                {flagSubmitting ? 'Flagging…' : '🚩 Flag as Low'}
+                {flagSubmitting ? 'Flagging…' : 'Flag as Low'}
               </button>
             </form>
           )}
         </div>
 
-        <div style={{ background: 'white', border: '1px solid #E2E8F0', borderTop: 'none', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}>
-          {grouped.length === 0 ? (
-            <div style={{ padding: '40px 20px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
-              No open transfer requests. All good to go.
-            </div>
-          ) : (
-            grouped.map(([locationName, rows]) => (
-              <div key={locationName}>
-                <div style={{ padding: '10px 16px 6px', fontSize: 10, fontWeight: 700, color: '#0F766E', textTransform: 'uppercase', letterSpacing: '0.06em', background: '#F8FAFC' }}>
-                  {locationName} needs
-                </div>
-                {rows.map(r => (
-                  <FulfilRow key={r.id} row={r} locations={data.locations} onFulfill={handleFulfill} />
+        {/* Needs list -- one card per site so each stays visually distinct
+            rather than one long undifferentiated list. */}
+        {grouped.length === 0 ? (
+          <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '44px 20px', textAlign: 'center' }}>
+            <div style={{ fontSize: 30, marginBottom: 8 }}>🎉</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#334155' }}>All caught up</div>
+            <div style={{ fontSize: 12.5, color: '#94A3B8', marginTop: 3 }}>No open transfer requests right now.</div>
+          </div>
+        ) : (
+          grouped.map(([locationName, rows], gi) => (
+            <div key={locationName} style={{ marginBottom: gi < grouped.length - 1 ? 12 : 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, paddingLeft: 2 }}>
+                <span style={{ width: 6, height: 6, borderRadius: 999, background: TEAL, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{locationName}</span>
+                <span style={{ fontSize: 11.5, color: '#94A3B8' }}>· {rows.length} needed</span>
+              </div>
+              <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, overflow: 'hidden' }}>
+                {rows.map((r, ri) => (
+                  <FulfilRow key={r.id} row={r} locations={data.locations} onFulfill={handleFulfill} isLast={ri === rows.length - 1} />
                 ))}
               </div>
-            ))
-          )}
-        </div>
+            </div>
+          ))
+        )}
 
-        <p style={{ textAlign: 'center', color: '#CBD5E1', fontSize: 11, marginTop: 20, marginBottom: 0 }}>
+        <p style={{ textAlign: 'center', color: '#B5BEC9', fontSize: 11, marginTop: 22, marginBottom: 0 }}>
           Powered by Recess Roster
         </p>
       </div>
@@ -447,7 +470,7 @@ export default function PublicTransferHubView({ token }) {
 // painful to hunt through on mobile (long scroll, no filtering on most
 // mobile browsers). This is a small type-to-filter list instead.
 
-function SubjectPicker({ items, components, value, onChange, placeholder = 'Search SKUs & components…' }) {
+function SubjectPicker({ items, components, value, onChange, placeholder = 'Search SKUs & components…', accent = TEAL }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
@@ -484,7 +507,7 @@ function SubjectPicker({ items, components, value, onChange, placeholder = 'Sear
   return (
     <div style={{ position: 'relative' }} ref={wrapRef}>
       <input
-        style={inputStyle}
+        style={{ ...inputStyle, ...(open ? { borderColor: accent, background: 'white' } : {}) }}
         placeholder={placeholder}
         value={open ? query : (selected ? `${selected.name}${selected.sku ? ' (' + selected.sku + ')' : ' (Component)'}` : '')}
         onChange={e => { setQuery(e.target.value); onChange(''); }}
@@ -492,23 +515,23 @@ function SubjectPicker({ items, components, value, onChange, placeholder = 'Sear
       />
       {open && (
         <div style={{
-          position: 'absolute', zIndex: 20, top: '100%', left: 0, right: 0, marginTop: 4,
-          maxHeight: 240, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'white', border: '1px solid #E2E8F0',
-          borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+          position: 'absolute', zIndex: 20, top: '100%', left: 0, right: 0, marginTop: 6,
+          maxHeight: 240, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'white', border: '1px solid #E5E9EF',
+          borderRadius: 12, boxShadow: '0 8px 24px -6px rgba(15,23,42,0.16)',
         }}>
           {filtered.length === 0 ? (
-            <div style={{ padding: '10px 12px', fontSize: 12.5, color: '#94A3B8' }}>No matching SKUs or components</div>
-          ) : filtered.map(o => (
+            <div style={{ padding: '12px 14px', fontSize: 12.5, color: '#94A3B8' }}>No matches</div>
+          ) : filtered.map((o, i) => (
             <button
               type="button"
               key={`${o.kind}:${o.id}`}
               onClick={() => { onChange(`${o.kind}:${o.id}`); setOpen(false); setQuery(''); }}
               style={{
-                display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', border: 'none',
-                borderBottom: '1px solid #F1F5F9', background: 'white', cursor: 'pointer', fontFamily: 'inherit',
+                display: 'block', width: '100%', textAlign: 'left', padding: '11px 14px', border: 'none',
+                borderTop: i === 0 ? 'none' : '1px solid #F1F5F9', background: 'white', cursor: 'pointer', fontFamily: 'inherit',
               }}
             >
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>{o.name}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 600, color: '#1E293B' }}>{o.name}</div>
               <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 1 }}>{o.kind === 'component' ? `Component · ${o.uom}` : `${o.sku} · ${o.uom}`}</div>
             </button>
           ))}
@@ -518,7 +541,7 @@ function SubjectPicker({ items, components, value, onChange, placeholder = 'Sear
   );
 }
 
-function FulfilRow({ row, locations, onFulfill }) {
+function FulfilRow({ row, locations, onFulfill, isLast }) {
   const [expanded, setExpanded] = useState(false);
   const fallbackSource = locations.find(l => l.id !== row.requesting_location_id)?.id || locations[0]?.id || '';
   const [sourceLocationId, setSourceLocationId] = useState(fallbackSource);
@@ -537,18 +560,18 @@ function FulfilRow({ row, locations, onFulfill }) {
   }
 
   return (
-    <div style={{ padding: '10px 16px', borderTop: '1px solid #F1F5F9' }}>
+    <div style={{ padding: '13px 16px', borderBottom: isLast ? 'none' : '1px solid #F1F5F9' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: '#1E293B' }}>{row.item.name}</div>
-          <div style={{ fontSize: 11.5, color: '#94A3B8', marginTop: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#1E293B' }}>{row.item.name}</div>
+          <div style={{ fontSize: 11.5, color: '#94A3B8', marginTop: 2 }}>
             {row.item.sku || 'Component'} · {timeAgo(row.requested_at)}{row.requested_by_name ? ` · ${row.requested_by_name}` : ''}
           </div>
-          {row.note && <div style={{ fontSize: 11.5, color: '#64748B', marginTop: 3, fontStyle: 'italic' }}>&ldquo;{row.note}&rdquo;</div>}
+          {row.note && <div style={{ fontSize: 11.5, color: '#64748B', marginTop: 4, fontStyle: 'italic' }}>&ldquo;{row.note}&rdquo;</div>}
         </div>
         <div style={{
-          flexShrink: 0, background: '#F0FDFA', color: TEAL, fontWeight: 800, fontSize: 13,
-          padding: '4px 10px', borderRadius: 999, whiteSpace: 'nowrap',
+          flexShrink: 0, background: '#F0FDFA', color: TEAL_DK, fontWeight: 800, fontSize: 12.5,
+          padding: '5px 11px', borderRadius: 999, whiteSpace: 'nowrap',
         }}>
           {row.quantity} {row.quantity_unit || row.item.uom}
         </div>
@@ -558,20 +581,20 @@ function FulfilRow({ row, locations, onFulfill }) {
         <button
           onClick={() => setExpanded(true)}
           style={{
-            marginTop: 8, padding: '7px 14px', borderRadius: 7, border: 'none', background: TEAL,
-            color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+            marginTop: 10, padding: '7px 14px', borderRadius: 8, border: 'none', background: TEAL,
+            color: 'white', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
             display: 'inline-flex', alignItems: 'center', gap: 5,
           }}
         >
-          <span style={{ fontSize: 13 }}>✓</span> Mark Fulfilled
+          <span>✓</span> Mark Fulfilled
         </button>
       ) : (
-        <div style={{ marginTop: 10, padding: '10px', background: '#F8FAFC', borderRadius: 8 }}>
+        <div style={{ marginTop: 10, padding: 12, background: '#F8FAFC', borderRadius: 12 }}>
           <label style={labelStyle}>Which site is sending it</label>
           <select
             value={sourceLocationId}
             onChange={e => setSourceLocationId(e.target.value)}
-            style={{ ...inputStyle, marginBottom: 8 }}
+            style={{ ...inputStyle, marginBottom: 10, background: 'white' }}
           >
             {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
@@ -580,20 +603,20 @@ function FulfilRow({ row, locations, onFulfill }) {
               onClick={confirmFulfil}
               disabled={submitting}
               style={{
-                flex: 1, padding: '10px 12px', borderRadius: 8, border: 'none', cursor: submitting ? 'default' : 'pointer',
-                background: TEAL, color: 'white', fontSize: 14, fontWeight: 800, fontFamily: 'inherit', opacity: submitting ? 0.6 : 1,
+                flex: 1, padding: '11px 12px', borderRadius: 9, border: 'none', cursor: submitting ? 'default' : 'pointer',
+                background: TEAL, color: 'white', fontSize: 13.5, fontWeight: 800, fontFamily: 'inherit', opacity: submitting ? 0.6 : 1,
               }}
             >
               {submitting ? 'Saving…' : '✓ Confirm Fulfilled'}
             </button>
             <button
               onClick={() => setExpanded(false)}
-              style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: 'white', color: '#64748B', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+              style={{ padding: '11px 14px', borderRadius: 9, border: '1px solid #E5E9EF', background: 'white', color: '#64748B', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
             >
               Cancel
             </button>
           </div>
-          {rowError && <div style={{ marginTop: 8, fontSize: 11.5, color: '#DC2626' }}>{rowError}</div>}
+          {rowError && <div style={{ marginTop: 8, fontSize: 11.5, color: '#DC2626', fontWeight: 500 }}>{rowError}</div>}
         </div>
       )}
     </div>
