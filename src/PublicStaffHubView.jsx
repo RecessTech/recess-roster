@@ -97,8 +97,6 @@ export default function PublicStaffHubView({ token }) {
 
   if (!data) return null;
 
-  const tokenByKey = { production: data.productionToken, transfer: data.transferToken };
-
   return (
     <div style={{ minHeight: '100vh', background: '#F4F6F8', padding: '16px 12px 32px', fontFamily: FONT }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -128,17 +126,15 @@ export default function PublicStaffHubView({ token }) {
             own colour so it previews what's behind it. */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
           {LINKS.map(link => {
-            const linkToken = tokenByKey[link.key];
-            const href = linkToken ? `${link.path}${linkToken}` : null;
+            const href = `${link.path}${token}`;
             return (
               <a
                 key={link.key}
-                href={href || '#'}
+                href={href}
                 style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 10,
                   background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW,
                   padding: '26px 14px 20px', textDecoration: 'none',
-                  pointerEvents: href ? 'auto' : 'none', opacity: href ? 1 : 0.5,
                 }}
               >
                 <div style={{

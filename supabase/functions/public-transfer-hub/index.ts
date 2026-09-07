@@ -28,10 +28,13 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
+    // Look up org by the single staff-surface public token -- Staff Hub,
+    // the production plan, and Transfer Hub all now share one token, so
+    // there's exactly one link to distribute and regenerate.
     const { data: org, error: orgError } = await supabase
       .from('organisations')
-      .select('id, name, staff_hub_public_token')
-      .eq('transfer_public_token', token)
+      .select('id, name')
+      .eq('staff_hub_public_token', token)
       .single();
 
     if (orgError || !org) {
@@ -135,7 +138,6 @@ serve(async (req) => {
 
     return jsonResponse({
       businessName: settings?.business_name || org.name || 'Transfer Hub',
-      staffHubToken: org.staff_hub_public_token,
       locations: locations || [],
       items: items || [],
       components: components || [],

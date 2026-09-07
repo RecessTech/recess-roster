@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, Trash2, Edit2, X, Settings, ChevronLeft, ChevronRight,
-  ClipboardList, Loader2, ChevronUp, ChevronDown, ChefHat, Link2, CheckCircle, BarChart3, Wheat,
+  ClipboardList, Loader2, ChevronUp, ChevronDown, ChefHat, CheckCircle, BarChart3, Wheat,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -618,68 +618,6 @@ function SettingsModal({ orgId, sites, channels, items, onClose, onRefresh }) {
   );
 }
 
-// ── Share modal (read-only public link, no login required) ───────────────────
-
-function ShareModal({ token, orgId, onClose, onTokenChange }) {
-  const [copied, setCopied] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
-  const shareUrl = token ? `${window.location.origin}/prod/${token}` : null;
-
-  function copyLink() {
-    if (!shareUrl) return;
-    navigator.clipboard.writeText(shareUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  async function regenerate() {
-    setRegenerating(true);
-    try {
-      const updated = await db.regenerateOrgProductionPublicToken(orgId);
-      onTokenChange(updated.production_public_token);
-      setCopied(false);
-    } catch (err) {
-      toast.error('Could not regenerate link: ' + (err.message || 'unknown error'));
-    } finally {
-      setRegenerating(false);
-    }
-  }
-
-  return (
-    <Modal title="Share Production Plan" onClose={onClose} maxWidth="max-w-md">
-      <div className="space-y-3">
-        <p className="text-xs text-gray-500">
-          Anyone with this link can view the production plan for any day — no login required, and it's read-only (they can't change quantities). Good for sharing with a supplier, driver, or another site.
-        </p>
-        <div className="flex items-center gap-2">
-          <input
-            readOnly
-            value={shareUrl || 'Generating link…'}
-            onFocus={e => e.target.select()}
-            className="flex-1 text-xs font-mono bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700"
-          />
-          <button
-            onClick={copyLink}
-            disabled={!shareUrl}
-            className="text-white text-xs py-2 px-3 rounded-lg flex items-center gap-1.5 shrink-0 disabled:opacity-50"
-            style={{ background: 'var(--primary)' }}
-          >
-            {copied ? <CheckCircle size={14} /> : <Link2 size={14} />}
-            <span>{copied ? 'Copied' : 'Copy'}</span>
-          </button>
-        </div>
-        <button
-          onClick={regenerate}
-          disabled={regenerating}
-          className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-50"
-        >
-          {regenerating ? 'Regenerating…' : 'Regenerate link (invalidates the old one)'}
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
 // ── Main ProductionApp ───────────────────────────────────────────────────────
 
 export default function ProductionApp({ org, user }) {
@@ -695,12 +633,8 @@ export default function ProductionApp({ org, user }) {
   const [hideZero, setHideZero] = useState(false);
   const [viewMode, setViewMode] = useState('planner'); // 'planner' | 'insights'
   const [showSettings, setShowSettings] = useState(false);
-  const [showShare, setShowShare] = useState(false);
-  const [productionToken, setProductionToken] = useState(org?.production_public_token ?? null);
   const [dayLock, setDayLock] = useState(null);
   const [finalizing, setFinalizing] = useState(false);
-
-  useEffect(() => { setProductionToken(org?.production_public_token ?? null); }, [org?.production_public_token]);
 
   const loadCatalog = useCallback(async () => {
     if (!orgId) return;
@@ -915,9 +849,6 @@ export default function ProductionApp({ org, user }) {
                 onChange={e => setDate(e.target.value)}
                 className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-500"
               />
-              <button onClick={() => setShowShare(true)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Share a read-only link">
-                <Link2 size={18} />
-              </button>
             </div>
           )}
           <button onClick={() => setShowSettings(true)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Manage sites, channels & items">
@@ -1067,9 +998,6 @@ export default function ProductionApp({ org, user }) {
         <SettingsModal orgId={orgId} sites={sites} channels={channels} items={items} onClose={() => setShowSettings(false)} onRefresh={loadCatalog} />
       )}
 
-      {showShare && (
-        <ShareModal token={productionToken} orgId={orgId} onClose={() => setShowShare(false)} onTokenChange={setProductionToken} />
-      )}
     </div>
   );
 }
