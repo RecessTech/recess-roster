@@ -25,8 +25,14 @@ function storeName(name) {
   try { localStorage.setItem(NAME_STORAGE_KEY, name); } catch { /* private browsing etc. -- fine to skip */ }
 }
 
+// iOS Safari auto-zooms the whole page on focus for any text input/select
+// under 16px, then snaps back on blur -- that jarring zoom-in/out is the
+// "janky" behaviour, not an actual bug in the zoom itself. 16px avoids it
+// without disabling pinch-zoom (which the viewport meta tag could do, but
+// that's an accessibility regression -- fixing the font size is the correct
+// fix, not a workaround).
 const inputStyle = {
-  width: '100%', fontSize: 13.5, padding: '9px 11px', borderRadius: 8,
+  width: '100%', fontSize: 16, padding: '10px 11px', borderRadius: 8,
   border: '1px solid #E2E8F0', color: '#1E293B', fontFamily: 'inherit', boxSizing: 'border-box',
 };
 const labelStyle = { fontSize: 10.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5, display: 'block' };
@@ -163,7 +169,7 @@ export default function PublicTransferHubView({ token }) {
   if (!data) return null;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F1F5F9', padding: '14px 4px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#F1F5F9', padding: '14px 4px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', touchAction: 'manipulation' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <div style={{ maxWidth: 480, margin: '0 auto' }}>
 
@@ -337,7 +343,7 @@ function SubjectPicker({ items, components, value, onChange }) {
       {open && (
         <div style={{
           position: 'absolute', zIndex: 20, top: '100%', left: 0, right: 0, marginTop: 4,
-          maxHeight: 240, overflowY: 'auto', background: 'white', border: '1px solid #E2E8F0',
+          maxHeight: 240, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'white', border: '1px solid #E2E8F0',
           borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
         }}>
           {filtered.length === 0 ? (
@@ -413,7 +419,7 @@ function FulfilRow({ row, locations, onFulfill }) {
           <select
             value={sourceLocationId}
             onChange={e => setSourceLocationId(e.target.value)}
-            style={{ ...inputStyle, width: 'auto', padding: '6px 8px', fontSize: 12 }}
+            style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
           >
             {locations.map(l => <option key={l.id} value={l.id}>From {l.name}</option>)}
           </select>
