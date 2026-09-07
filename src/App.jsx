@@ -6,6 +6,7 @@ import PublicRosterView from './PublicRosterView';
 import PublicProductionView from './PublicProductionView';
 import PublicTransferHubView from './PublicTransferHubView';
 import PublicStaffHubView from './PublicStaffHubView';
+import { ErrorBoundary } from './ErrorBoundary';
 
 // Resolve public routes before auth: /s/<token> (one staff member's shifts),
 // /r/<token> (the whole roster, read-only), /prod/<token> (the daily
@@ -26,33 +27,6 @@ const PUBLIC_TRANSFER_TOKEN = publicTransferMatch ? publicTransferMatch[1] : nul
 
 const publicHubMatch = window.location.pathname.match(/^\/hub\/([^/]+)/);
 const PUBLIC_HUB_TOKEN = publicHubMatch ? publicHubMatch[1] : null;
-
-class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="p-10 font-mono max-w-3xl mx-auto">
-          <h1 className="text-red-600 text-2xl font-bold mb-4">Something went wrong</h1>
-          <pre className="bg-red-50 p-5 rounded-lg overflow-auto whitespace-pre-wrap text-sm">
-            {this.state.error?.toString()}
-            {'\n\n'}
-            {this.state.error?.stack}
-          </pre>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
 
 function AuthenticatedApp() {
   const { user, loading } = useAuth();
