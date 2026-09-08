@@ -33,6 +33,15 @@ const LINKS = [
     tint: '#F0FDFA',
     path: '/transfers/',
   },
+  {
+    key: 'prep',
+    label: 'Prep List',
+    description: "What needs prepping",
+    icon: '🚩',
+    color: '#B45309',
+    tint: '#FFFBEB',
+    path: '/prep/',
+  },
 ];
 
 function greeting() {
