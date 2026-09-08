@@ -7,6 +7,14 @@ const TEAL_DK = '#0B5A54';
 const PINK = '#BE185D';
 const NAME_STORAGE_KEY = 'transferHub_yourName';
 const UNIT_OPTIONS = ['Sleeve', 'Units', 'Cans', 'Tins', 'Bunch(s)', 'Dozen', 'kg', 'g'];
+const PRIORITY_RANK = { high: 0, low: 1 };
+function sortByPriority(rows) {
+  return [...rows].sort((a, b) => {
+    const rankDiff = (PRIORITY_RANK[a.priority] ?? 1) - (PRIORITY_RANK[b.priority] ?? 1);
+    if (rankDiff !== 0) return rankDiff;
+    return new Date(b.requested_at) - new Date(a.requested_at);
+  });
+}
 
 const CARD_RADIUS = 16;
 const CARD_SHADOW = '0 1px 2px rgba(15,23,42,0.04), 0 6px 20px -8px rgba(15,23,42,0.10)';
@@ -68,6 +76,7 @@ export default function PublicTransferHubView({ token }) {
   const [formSubject, setFormSubject] = useState('');
   const [formQuantity, setFormQuantity] = useState('');
   const [formUnit, setFormUnit] = useState(UNIT_OPTIONS[1]);
+  const [formPriority, setFormPriority] = useState('low');
   const [formNote, setFormNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
@@ -125,7 +134,9 @@ export default function PublicTransferHubView({ token }) {
       if (!groups.has(loc.name)) groups.set(loc.name, []);
       groups.get(loc.name).push({ ...r, item: subject });
     }
-    return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+    return [...groups.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, rows]) => [name, sortByPriority(rows)]);
   }, [data]);
 
   const totalCount = data?.requests?.length || 0;
@@ -164,12 +175,14 @@ export default function PublicTransferHubView({ token }) {
         componentId: kind === 'component' ? id : null,
         quantity: Number(formQuantity),
         quantityUnit: formUnit,
+        priority: formPriority,
         note: formNote,
         name,
       });
       setFormSubject('');
       setFormQuantity('');
       setFormUnit(UNIT_OPTIONS[1]);
+      setFormPriority('low');
       setFormNote('');
       setActivePanel(null);
     } catch (e) {
@@ -349,6 +362,14 @@ export default function PublicTransferHubView({ token }) {
                     {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>Priority</label>
+                <select value={formPriority} onChange={e => setFormPriority(e.target.value)} style={inputStyle}>
+                  <option value="low">Low</option>
+                  <option value="high">High</option>
+                </select>
               </div>
 
               <div style={{ marginBottom: 12 }}>
@@ -561,7 +582,17 @@ function FulfilRow({ row, locations, onFulfill, isLast }) {
     <div style={{ padding: '13px 16px', borderBottom: isLast ? 'none' : '1px solid #F1F5F9' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#1E293B' }}>{row.item.name}</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#1E293B', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {row.item.name}
+            {row.priority === 'high' && (
+              <span style={{
+                fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em',
+                color: '#DC2626', background: '#FEF2F2', padding: '2px 7px', borderRadius: 999, flexShrink: 0,
+              }}>
+                High
+              </span>
+            )}
+          </div>
           <div style={{ fontSize: 11.5, color: '#94A3B8', marginTop: 2 }}>
             {row.item.sku || 'Component'} · {timeAgo(row.requested_at)}{row.requested_by_name ? ` · ${row.requested_by_name}` : ''}
           </div>

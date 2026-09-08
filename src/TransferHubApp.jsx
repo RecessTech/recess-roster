@@ -14,6 +14,24 @@ import toast from 'react-hot-toast';
 // same fixed list as the public Transfer Hub link.
 const UNIT_OPTIONS = ['Sleeve', 'Units', 'Cans', 'Tins', 'Bunch(s)', 'Dozen', 'kg', 'g'];
 
+const PRIORITY_RANK = { high: 0, low: 1 };
+function sortByPriority(list) {
+  return [...list].sort((a, b) => {
+    const rankDiff = (PRIORITY_RANK[a.priority] ?? 1) - (PRIORITY_RANK[b.priority] ?? 1);
+    if (rankDiff !== 0) return rankDiff;
+    return new Date(b.requested_at) - new Date(a.requested_at);
+  });
+}
+
+function PriorityBadge({ priority }) {
+  if (priority !== 'high') return null;
+  return (
+    <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">
+      High
+    </span>
+  );
+}
+
 function EmptyState({ Icon, title, hint }) {
   return (
     <div className="text-center py-16">
@@ -118,6 +136,7 @@ function RequestTab({ items, components, locations, myOpenRequests, subjectOf, l
   const [selection, setSelection] = useState(null);
   const [quantity, setQuantity] = useState('');
   const [unit, setUnit] = useState(UNIT_OPTIONS[1]);
+  const [priority, setPriority] = useState('low');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -138,11 +157,13 @@ function RequestTab({ items, components, locations, myOpenRequests, subjectOf, l
       locationId,
       quantity: Number(quantity),
       quantityUnit: unit,
+      priority,
       note: note.trim(),
     });
     setSelection(null);
     setQuantity('');
     setUnit(UNIT_OPTIONS[1]);
+    setPriority('low');
     setNote('');
     setSubmitting(false);
   }
@@ -195,6 +216,14 @@ function RequestTab({ items, components, locations, myOpenRequests, subjectOf, l
         </div>
 
         <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Priority</label>
+          <select value={priority} onChange={e => setPriority(e.target.value)} className="input-base bg-white">
+            <option value="low">Low</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+
+        <div>
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Note (optional)</label>
           <input
             value={note}
@@ -223,7 +252,10 @@ function RequestTab({ items, components, locations, myOpenRequests, subjectOf, l
               return (
                 <div key={r.id} className="px-4 py-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="font-medium text-gray-900 text-sm truncate">{subject.name}</div>
+                    <div className="font-medium text-gray-900 text-sm truncate flex items-center gap-1.5">
+                      {subject.name}
+                      <PriorityBadge priority={r.priority} />
+                    </div>
                     <div className="text-xs text-gray-400 truncate">
                       {r.quantity} {r.quantity_unit || subject.uom} · {loc?.name} · {timeAgo(r.requested_at)}
                     </div>
@@ -259,6 +291,7 @@ function QueueRow({ row, subject, requestingLocation, locations, requesterEmail,
       <div className="min-w-0 flex-1">
         <div className="font-medium text-gray-900 text-sm flex items-center gap-1.5">
           {subject.name}
+          <PriorityBadge priority={row.priority} />
           {subject.kind === 'component' && (
             <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Component</span>
           )}
@@ -310,7 +343,9 @@ function QueueTab({ requests, subjectOf, locationById, locations, emailByUserId,
       if (!loc || !subject) continue;
       (groups[loc.name] = groups[loc.name] || []).push(r);
     }
-    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+    return Object.entries(groups)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, rows]) => [name, sortByPriority(rows)]);
   }, [requests, locationById, subjectOf]);
 
   if (requests.length === 0) {
@@ -378,9 +413,10 @@ function HistoryTab({ requests, subjectOf, locationById, emailByUserId }) {
             return (
               <tr key={r.id} className="border-b border-gray-50 last:border-b-0">
                 <td className="px-4 py-3">
-                  <div className="font-medium text-gray-900">
+                  <div className="font-medium text-gray-900 flex items-center gap-1.5">
                     {subject.name}
-                    {subject.kind === 'component' && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Component</span>}
+                    <PriorityBadge priority={r.priority} />
+                    {subject.kind === 'component' && <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Component</span>}
                   </div>
                   <div className="text-xs text-gray-400">{r.quantity} {r.quantity_unit || subject.uom}</div>
                 </td>
@@ -467,10 +503,10 @@ export default function TransferHubApp({ user, org }) {
     [openRequests, user?.id]
   );
 
-  async function handleCreate({ itemId, componentId, locationId, quantity, quantityUnit, note }) {
+  async function handleCreate({ itemId, componentId, locationId, quantity, quantityUnit, priority, note }) {
     try {
-      const created = await db.createTransferRequest(org.id, { itemId, componentId, locationId, quantity, quantityUnit, note, requestedBy: user?.id });
-      setRequests(prev => [created, ...prev]);
+      const created = await db.createTransferRequest(org.id, { itemId, componentId, locationId, quantity, quantityUnit, priority, note, requestedBy: user?.id });
+      setRequests(prev => sortByPriority([created, ...prev]));
       toast.success('Transfer request sent');
     } catch (err) {
       toast.error('Failed to send request: ' + (err.message || 'unknown error'));
