@@ -1,8 +1,6 @@
 -- ============================================================
--- Prep List: staff can flag a prep component (recipe_components
--- with type='prep' -- sauces, batters, portioned items someone
--- actually batches, not plain costing lines) as running low, for
--- a given site and "today" or "tomorrow". Mirrors the R-Stock
+-- Prep List: staff can flag any R-Recipe component as running low,
+-- for a given site and "today" or "tomorrow". Mirrors the R-Stock
 -- staff-flag pattern (supabase_stock_staff_flag_migration.sql) but
 -- deliberately separate: this never touches stock_item_sites or
 -- stocktake at all -- it's its own list, cleared by ticking it off
@@ -33,8 +31,9 @@ CREATE INDEX idx_component_prep_flags_open   ON component_prep_flags(org_id, sta
 
 -- Components are bulk-prepped, one-off asks -- re-flagging the same
 -- component at the same site while it's already open just refreshes
--- that row (see the edge function's upsert) rather than piling up
--- duplicates on the list.
+-- that row (see the edge function's check-then-write) rather than
+-- piling up duplicates on the list. This index is the race-safety net
+-- behind that.
 CREATE UNIQUE INDEX idx_component_prep_flags_open_unique
   ON component_prep_flags(component_id, location_id)
   WHERE status = 'open';

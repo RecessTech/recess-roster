@@ -44,13 +44,13 @@ serve(async (req) => {
       const { componentId, locationId, neededDate, name } = body;
 
       if (!componentId || !locationId || !neededDate) {
-        return jsonResponse({ error: 'Pick a site, a prep item, and when it is needed.' }, 400);
+        return jsonResponse({ error: 'Pick a site, a component, and when it is needed.' }, 400);
       }
 
-      // Only an active prep-type component can be flagged -- 'recipe' type
-      // components are costing lines only, nobody physically batches them.
-      const { data: comp } = await supabase.from('recipe_components').select('id').eq('id', componentId).eq('org_id', org.id).eq('type', 'prep').single();
-      if (!comp) return jsonResponse({ error: 'Unknown prep item.' }, 400);
+      // Any component in the org's list can be flagged -- both 'recipe' and
+      // 'prep' typed ones, since prep isn't only the type='prep' rows.
+      const { data: comp } = await supabase.from('recipe_components').select('id').eq('id', componentId).eq('org_id', org.id).single();
+      if (!comp) return jsonResponse({ error: 'Unknown component.' }, 400);
 
       const { data: loc } = await supabase.from('locations').select('id').eq('id', locationId).eq('org_id', org.id).single();
       if (!loc) return jsonResponse({ error: 'Unknown site.' }, 400);
@@ -102,14 +102,15 @@ serve(async (req) => {
       .eq('org_id', org.id)
       .single();
 
-    // Dashboard overview: open flags, and the locations/prep components
-    // needed to label them and build the "flag something" form. No
+    // Dashboard overview: open flags, and the locations/components needed
+    // to label them and build the "flag something" form. Every component
+    // in the org's list is flaggable here, not just type='prep' ones. No
     // requester identity beyond whatever free-text name someone typed in --
     // this link goes to every staff member, so there's no login to attach
     // a real account to.
     const [{ data: locations }, { data: components }, { data: flags }] = await Promise.all([
       supabase.from('locations').select('id, name').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
-      supabase.from('recipe_components').select('id, name, uom, active').eq('org_id', org.id).eq('type', 'prep').order('sort_order'),
+      supabase.from('recipe_components').select('id, name, uom, active').eq('org_id', org.id).order('sort_order'),
       supabase.from('component_prep_flags').select('id, component_id, location_id, needed_date, status, flagged_at, flagged_by_name').eq('org_id', org.id).eq('status', 'open').order('needed_date', { ascending: true }).order('flagged_at', { ascending: false }),
     ]);
 

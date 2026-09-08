@@ -65,8 +65,8 @@ const pillButtonStyle = (active, tint) => ({
   transition: 'background 0.15s, color 0.15s',
 });
 
-// Staff-facing, no login: flag a prep component as running low for a site,
-// for today or tomorrow, and tick things off once they're prepped. See
+// Staff-facing, no login: flag any R-Recipe component as running low for a
+// site, for today or tomorrow, and tick things off once they're prepped. See
 // supabase/functions/public-prep-list -- writes carry no real identity,
 // just whatever name someone types in below. Deliberately separate from
 // R-Stock/Stocktake: flagging here never touches stock data at all.
@@ -309,7 +309,7 @@ export default function PublicPrepListView({ token }) {
               </div>
 
               <div style={{ marginBottom: 12 }}>
-                <label style={labelStyle}>Prep item</label>
+                <label style={labelStyle}>Component</label>
                 <select value={formComponentId} onChange={e => setFormComponentId(e.target.value)} style={inputStyle}>
                   <option value="">Select…</option>
                   {data.components.filter(c => c.active !== false).map(c => (
