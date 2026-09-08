@@ -1727,10 +1727,13 @@ export const db = {
   // table -- Transfer Hub doesn't own either.
 
   async getTransferRequests(orgId) {
+    // Priority ascending puts 'high' before 'low' alphabetically -- the
+    // only two values, so this stays correct without a custom order.
     const { data, error } = await supabase
       .from('transfer_requests')
       .select('*')
       .eq('org_id', orgId)
+      .order('priority', { ascending: true })
       .order('requested_at', { ascending: false });
     if (error) throw error;
     return data || [];
@@ -1738,7 +1741,7 @@ export const db = {
 
   // Exactly one of itemId/componentId should be set -- a request is either
   // a raw stock SKU or a prepared recipe component (e.g. "Pickled Onion").
-  async createTransferRequest(orgId, { itemId, componentId, locationId, quantity, quantityUnit, note, requestedBy }) {
+  async createTransferRequest(orgId, { itemId, componentId, locationId, quantity, quantityUnit, priority, note, requestedBy }) {
     const { data, error } = await supabase
       .from('transfer_requests')
       .insert([{
@@ -1748,6 +1751,7 @@ export const db = {
         requesting_location_id: locationId,
         quantity,
         quantity_unit: quantityUnit || null,
+        priority: priority === 'high' ? 'high' : 'low',
         note: note || null,
         requested_by: requestedBy || null,
       }])

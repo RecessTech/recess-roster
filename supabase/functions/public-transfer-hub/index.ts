@@ -42,7 +42,7 @@ serve(async (req) => {
     }
 
     if (action === 'create') {
-      const { itemId, componentId, locationId, quantity, quantityUnit, note, name } = body;
+      const { itemId, componentId, locationId, quantity, quantityUnit, priority, note, name } = body;
 
       if ((!!itemId) === (!!componentId)) {
         return jsonResponse({ error: 'Pick exactly one SKU or component.' }, 400);
@@ -70,6 +70,7 @@ serve(async (req) => {
         requesting_location_id: locationId,
         quantity: qty,
         quantity_unit: (quantityUnit || '').trim() || null,
+        priority: priority === 'high' ? 'high' : 'low',
         note: (note || '').trim() || null,
         requested_by_name: (name || '').trim() || null,
       }]);
@@ -130,7 +131,9 @@ serve(async (req) => {
       // something" picker.
       supabase.from('stock_items').select('id, name, sku, uom, active').eq('org_id', org.id).order('sort_order'),
       supabase.from('recipe_components').select('id, name, uom, active').eq('org_id', org.id).order('sort_order'),
-      supabase.from('transfer_requests').select('id, stock_item_id, component_id, requesting_location_id, quantity, quantity_unit, note, requested_at, requested_by_name').eq('org_id', org.id).eq('status', 'open').order('requested_at', { ascending: false }),
+      // Priority ascending puts 'high' before 'low' alphabetically -- the
+      // only two values, so this stays correct without a custom order.
+      supabase.from('transfer_requests').select('id, stock_item_id, component_id, requesting_location_id, quantity, quantity_unit, priority, note, requested_at, requested_by_name').eq('org_id', org.id).eq('status', 'open').order('priority', { ascending: true }).order('requested_at', { ascending: false }),
       // Which SKUs are actually carried at which site -- only those can be
       // flagged as running low, since flagging writes to this same row.
       supabase.from('stock_item_sites').select('item_id, location_id').eq('org_id', org.id),
