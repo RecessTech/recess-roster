@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
   ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History, Box, ArrowLeftRight, Search,
-  TrendingUp, ChevronLeft, ChevronRight, Tag, User, Settings, GripVertical, ArrowUpDown, Check, Flag,
+  TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Tag, User, Settings, GripVertical, ArrowUpDown, Check, Flag,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -1292,6 +1292,37 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
     return end;
   }, [weekStart]);
 
+  const isCurrentWeek = weekOffset === 0;
+
+  // Cut-off point for this week: for the current (in-progress) week that's
+  // today, since order rows past today don't exist yet anyway; for a fully
+  // elapsed past week it's the week's own end. Used to pull the *matching*
+  // slice of last week rather than its full 7 days, so a Wednesday-afternoon
+  // view compares against last Mon–Wed too, not last week's whole total.
+  const cutoffDate = useMemo(() => {
+    if (!isCurrentWeek) return weekEnd;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  }, [isCurrentWeek, weekEnd]);
+
+  const prevWeekQtyByItem = useMemo(() => {
+    const prevStart = new Date(weekStart);
+    prevStart.setDate(prevStart.getDate() - 7);
+    const prevCutoff = new Date(cutoffDate);
+    prevCutoff.setDate(prevCutoff.getDate() - 7);
+    const startISO = toISODate(prevStart);
+    const endISO = toISODate(prevCutoff);
+    const rows = orderHistory.filter(h =>
+      h.location_id === selectedLocationId && h.ordered_date >= startISO && h.ordered_date <= endISO
+    );
+    const byItem = new Map();
+    for (const row of rows) {
+      byItem.set(row.item_id, (byItem.get(row.item_id) || 0) + (row.order_qty || 0));
+    }
+    return byItem;
+  }, [orderHistory, selectedLocationId, weekStart, cutoffDate]);
+
   const weekVolumes = useMemo(() => {
     const startISO = toISODate(weekStart);
     const endISO = toISODate(weekEnd);
@@ -1307,10 +1338,14 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
       byItem.set(row.item_id, entry);
     }
     return [...byItem.entries()]
-      .map(([itemId, entry]) => ({ item: itemById.get(itemId), ...entry }))
+      .map(([itemId, entry]) => {
+        const prevQty = prevWeekQtyByItem.get(itemId) || 0;
+        const pctChange = prevQty > 0 ? ((entry.qty - prevQty) / prevQty) * 100 : null;
+        return { item: itemById.get(itemId), prevQty, pctChange, ...entry };
+      })
       .filter(r => r.item)
       .sort((a, b) => b.qty - a.qty);
-  }, [orderHistory, selectedLocationId, weekStart, weekEnd, itemById]);
+  }, [orderHistory, selectedLocationId, weekStart, weekEnd, itemById, prevWeekQtyByItem]);
 
   // Grouped by UoM so each item's bar is only ever scaled against other
   // items measured the same way — 12 tins of Tuna and 3kg of Roast Beef
@@ -1331,8 +1366,6 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
       }))
       .sort((a, b) => b.totalQty - a.totalQty);
   }, [weekVolumes]);
-
-  const isCurrentWeek = weekOffset === 0;
 
   if (locations.length === 0) {
     return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
@@ -1395,6 +1428,7 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
           <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
             <TrendingUp size={14} className="text-gray-400" />
             Weekly Volumes
+            <span className="text-xs font-normal text-gray-400">· vs last week, same day</span>
           </h3>
           <div className="flex items-center gap-1.5">
             <button onClick={() => setWeekOffset(o => o - 1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">
@@ -1437,6 +1471,16 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
                           {disp.value}{isPackUnit(disp.unit) ? ' x' : ''} <span className="font-normal text-gray-400 text-xs">{disp.unit}</span>
                         </div>
                         <div className="w-10 flex-shrink-0 text-right text-xs text-gray-400">{r.times}×</div>
+                        <div className="w-14 flex-shrink-0 text-right">
+                          {r.pctChange == null ? (
+                            <span className="text-[10px] font-medium text-blue-500">New</span>
+                          ) : (
+                            <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${r.pctChange >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                              {r.pctChange >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+                              {Math.abs(r.pctChange).toFixed(0)}%
+                            </span>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
