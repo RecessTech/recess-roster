@@ -1218,6 +1218,15 @@ function formatWeekRange(start) {
   return `${start.toLocaleDateString('en-AU', opts)} – ${end.toLocaleDateString('en-AU', opts)}`;
 }
 
+function sumQtyByItem(orderHistory, locationId, startISO, endISO) {
+  const byItem = new Map();
+  for (const row of orderHistory) {
+    if (row.location_id !== locationId || row.ordered_date < startISO || row.ordered_date > endISO) continue;
+    byItem.set(row.item_id, (byItem.get(row.item_id) || 0) + (row.order_qty || 0));
+  }
+  return byItem;
+}
+
 // Simple dark tooltip shared by both charts below — matches the pattern
 // used in BusinessDashboard.jsx (ChartTooltip) but scoped to this file
 // since these charts are single-series and need less machinery.
@@ -1311,17 +1320,21 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
     prevStart.setDate(prevStart.getDate() - 7);
     const prevCutoff = new Date(cutoffDate);
     prevCutoff.setDate(prevCutoff.getDate() - 7);
-    const startISO = toISODate(prevStart);
-    const endISO = toISODate(prevCutoff);
-    const rows = orderHistory.filter(h =>
-      h.location_id === selectedLocationId && h.ordered_date >= startISO && h.ordered_date <= endISO
-    );
-    const byItem = new Map();
-    for (const row of rows) {
-      byItem.set(row.item_id, (byItem.get(row.item_id) || 0) + (row.order_qty || 0));
-    }
-    return byItem;
+    return sumQtyByItem(orderHistory, selectedLocationId, toISODate(prevStart), toISODate(prevCutoff));
   }, [orderHistory, selectedLocationId, weekStart, cutoffDate]);
+
+  // Full previous week (not narrowed to the matching cut-off) — used only
+  // to tell a genuinely new SKU apart from one that simply hasn't been
+  // ordered *yet* at this point in the week, e.g. it's always ordered on a
+  // Thursday and today is only Tuesday. Both read as zero in the narrowed
+  // comparison above, but only the first one is actually "new".
+  const prevWeekFullQtyByItem = useMemo(() => {
+    const prevStart = new Date(weekStart);
+    prevStart.setDate(prevStart.getDate() - 7);
+    const prevEnd = new Date(weekEnd);
+    prevEnd.setDate(prevEnd.getDate() - 7);
+    return sumQtyByItem(orderHistory, selectedLocationId, toISODate(prevStart), toISODate(prevEnd));
+  }, [orderHistory, selectedLocationId, weekStart, weekEnd]);
 
   const weekVolumes = useMemo(() => {
     const startISO = toISODate(weekStart);
@@ -1341,11 +1354,16 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
       .map(([itemId, entry]) => {
         const prevQty = prevWeekQtyByItem.get(itemId) || 0;
         const pctChange = prevQty > 0 ? ((entry.qty - prevQty) / prevQty) * 100 : null;
-        return { item: itemById.get(itemId), prevQty, pctChange, ...entry };
+        // prevQty > 0: normal % change. prevQty === 0 but the item did have
+        // orders somewhere in the full previous week: it just hasn't come
+        // up yet at this point in the current week ('pending'), not new.
+        // Only a total absence last week counts as genuinely new.
+        const comparisonState = prevQty > 0 ? 'value' : (prevWeekFullQtyByItem.get(itemId) ? 'pending' : 'new');
+        return { item: itemById.get(itemId), prevQty, pctChange, comparisonState, ...entry };
       })
       .filter(r => r.item)
       .sort((a, b) => b.qty - a.qty);
-  }, [orderHistory, selectedLocationId, weekStart, weekEnd, itemById, prevWeekQtyByItem]);
+  }, [orderHistory, selectedLocationId, weekStart, weekEnd, itemById, prevWeekQtyByItem, prevWeekFullQtyByItem]);
 
   // Grouped by UoM so each item's bar is only ever scaled against other
   // items measured the same way — 12 tins of Tuna and 3kg of Roast Beef
@@ -1472,13 +1490,15 @@ function InsightsTab({ items, sites, locations, orderHistory, selectedLocationId
                         </div>
                         <div className="w-10 flex-shrink-0 text-right text-xs text-gray-400">{r.times}×</div>
                         <div className="w-14 flex-shrink-0 text-right">
-                          {r.pctChange == null ? (
-                            <span className="text-[10px] font-medium text-blue-500">New</span>
-                          ) : (
+                          {r.comparisonState === 'value' ? (
                             <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${r.pctChange >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                               {r.pctChange >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
                               {Math.abs(r.pctChange).toFixed(0)}%
                             </span>
+                          ) : r.comparisonState === 'pending' ? (
+                            <span className="text-[10px] font-medium text-gray-400" title="Ordered last week, just not yet at this point in the week">–</span>
+                          ) : (
+                            <span className="text-[10px] font-medium text-blue-500" title="No orders in the previous week">New</span>
                           )}
                         </div>
                       </div>
