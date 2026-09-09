@@ -44,6 +44,26 @@ function computeTotalPieces(platterSize, piecesPerPerson) {
   if (!p || !pp) return null;
   return Math.round(p * pp);
 }
+// Splits a whole number of pieces evenly across n menu items, remainder
+// going to the first few items -- so the shares always sum back to total.
+function distributeEvenly(total, n) {
+  if (!total || !n) return Array(n).fill(0);
+  const rounded = Math.round(total);
+  const base = Math.floor(rounded / n);
+  const remainder = rounded - base * n;
+  return Array.from({ length: n }, (_, i) => base + (i < remainder ? 1 : 0));
+}
+function piecesPerUnitFor(packaging) {
+  return (PACKAGING_TYPES.find(p => p.key === packaging) || PACKAGING_TYPES[0]).piecesPerUnit;
+}
+// Converts a menu item's individual pieces into how many rolls/slabs/etc
+// to actually make, based on its packaging type.
+function computeUnitQty(pieces, packaging) {
+  const ppu = piecesPerUnitFor(packaging);
+  const n = Number(pieces);
+  if (!n || !ppu) return '';
+  return Math.round((n / ppu) * 100) / 100;
+}
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -64,6 +84,14 @@ const COMMON_MENU_ITEMS = [
 ];
 
 const DEFAULT_PIECES_PER_PERSON = 3.5;
+
+// How many individual pieces make up one "unit" of each packaging style --
+// drives the roll/slab quantity calculated from an item's piece count.
+const PACKAGING_TYPES = [
+  { key: 'none', label: 'Pieces', piecesPerUnit: 1 },
+  { key: 'roll',  label: 'Roll',  piecesPerUnit: 3 },
+  { key: 'slab',  label: 'Slab',  piecesPerUnit: 20 },
+];
 
 const DIETARY_FIELDS = [
   { key: 'gf_ppl',         label: 'GF' },
@@ -200,53 +228,114 @@ function DietaryToggle({ label, value, onChange }) {
 
 // ── Menu item breakdown editor ───────────────────────────────────────────────
 
-function MenuItemsEditor({ items, onChange }) {
-  function updateRow(idx, field, value) {
-    onChange(items.map((it, i) => (i === idx ? { ...it, [field]: value } : it)));
+function emptyMenuItem() {
+  return { name: '', pieces: '', packaging: 'none', unit_qty: '' };
+}
+
+function MenuItemsEditor({ items, totalPieces, onChange }) {
+  // Redistributes totalPieces evenly across every row, keeping each row's
+  // own packaging conversion in sync -- used on add/remove and via the
+  // explicit "Split Evenly" button. Rows stay freely editable afterwards.
+  function splitEvenly(list) {
+    if (!totalPieces || list.length === 0) return list;
+    const shares = distributeEvenly(totalPieces, list.length);
+    return list.map((it, i) => ({ ...it, pieces: shares[i], unit_qty: computeUnitQty(shares[i], it.packaging) }));
+  }
+
+  function updateRow(idx, patch) {
+    onChange(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  }
+  function handlePiecesChange(idx, value) {
+    updateRow(idx, { pieces: value, unit_qty: computeUnitQty(value, items[idx].packaging) });
+  }
+  function handlePackagingChange(idx, value) {
+    updateRow(idx, { packaging: value, unit_qty: computeUnitQty(items[idx].pieces, value) });
   }
   function addRow() {
-    onChange([...items, { name: '', qty: '' }]);
+    onChange(splitEvenly([...items, emptyMenuItem()]));
   }
   function removeRow(idx) {
-    onChange(items.filter((_, i) => i !== idx));
+    onChange(splitEvenly(items.filter((_, i) => i !== idx)));
   }
-  const total = items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
+
+  const pieceTotal = items.reduce((s, it) => s + (Number(it.pieces) || 0), 0);
+  const target = totalPieces != null ? Math.round(totalPieces) : null;
+  const mismatch = target != null && items.length > 0 && pieceTotal !== target;
 
   return (
     <div className="space-y-2">
       <datalist id="menu-item-suggestions">
         {COMMON_MENU_ITEMS.map(n => <option key={n} value={n} />)}
       </datalist>
+
+      {items.length > 0 && (
+        <div className="flex items-center gap-1.5 text-[10px] font-medium text-gray-400 uppercase tracking-wide px-0.5">
+          <span className="flex-1">Item</span>
+          <span className="w-14 text-center">Pieces</span>
+          <span className="w-20 text-center">Packaging</span>
+          <span className="w-14 text-center">Units</span>
+          <span className="w-6" />
+        </div>
+      )}
       {items.length === 0 && (
         <p className="text-xs text-gray-400 py-1">No menu items added yet.</p>
       )}
       {items.map((it, idx) => (
-        <div key={idx} className="flex items-center gap-2">
+        <div key={idx} className="flex items-center gap-1.5">
           <input
             list="menu-item-suggestions"
             value={it.name}
-            onChange={e => updateRow(idx, 'name', e.target.value)}
+            onChange={e => updateRow(idx, { name: e.target.value })}
             placeholder="e.g. Chicken Avo Wrap"
-            className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
+            className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
           />
           <input
             type="number"
             min="0"
-            value={it.qty}
-            onChange={e => updateRow(idx, 'qty', e.target.value)}
-            placeholder="Qty"
-            className="w-16 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-gray-200"
+            value={it.pieces}
+            onChange={e => handlePiecesChange(idx, e.target.value)}
+            className="w-14 shrink-0 border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-gray-200"
+          />
+          <select
+            value={it.packaging || 'none'}
+            onChange={e => handlePackagingChange(idx, e.target.value)}
+            className="w-20 shrink-0 border border-gray-200 rounded-lg px-1 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-gray-200"
+          >
+            {PACKAGING_TYPES.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+          </select>
+          <input
+            type="number"
+            min="0"
+            step="0.5"
+            value={it.unit_qty}
+            onChange={e => updateRow(idx, { unit_qty: e.target.value })}
+            title="Calculated from pieces -- edit to override"
+            className="w-14 shrink-0 border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-gray-200"
           />
           <button onClick={() => removeRow(idx)} className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0">
             <Trash2 size={14} />
           </button>
         </div>
       ))}
-      <div className="flex items-center justify-between pt-0.5">
-        <button onClick={addRow} className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-          <Plus size={13} /> Add menu item
-        </button>
-        {total > 0 && <span className="text-xs text-gray-400 pr-1">Breakdown total: <span className="font-semibold text-gray-600">{total}</span></span>}
+      <div className="flex items-center justify-between pt-0.5 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <button onClick={addRow} className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
+            <Plus size={13} /> Add menu item
+          </button>
+          <button
+            onClick={() => onChange(splitEvenly(items))}
+            disabled={!totalPieces || items.length === 0}
+            title={totalPieces ? 'Redistribute total pieces evenly across every item' : 'Set Platter Size and Pieces / Person first'}
+            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            Split Evenly
+          </button>
+        </div>
+        {items.length > 0 && (
+          <span className={`text-xs pr-1 ${mismatch ? 'text-amber-600' : 'text-gray-400'}`}>
+            Breakdown total: <span className="font-semibold">{pieceTotal}</span>{target != null && ` / ${target}`}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -278,7 +367,13 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
     breakfast_ppl: job.breakfast_ppl ?? '', coffee_ppl: job.coffee_ppl ?? '',
     gf_ppl: job.gf_ppl ?? '', vego_ppl: job.vego_ppl ?? '', pb_ppl: job.pb_ppl ?? '',
     dairy_free_ppl: job.dairy_free_ppl ?? '', halal_ppl: job.halal_ppl ?? '',
-    gross_rev: job.gross_rev ?? '', items: job.items || [],
+    gross_rev: job.gross_rev ?? '',
+    items: (job.items || []).map(it => ({
+      name: it.name ?? '',
+      pieces: it.pieces ?? it.qty ?? '',
+      packaging: it.packaging || 'none',
+      unit_qty: it.unit_qty ?? '',
+    })),
   } : emptyJob(date));
   const [saving, setSaving] = useState(false);
 
@@ -287,6 +382,22 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
   }
 
   const totalPieces = computeTotalPieces(draft.platter_size, draft.pieces_per_person);
+
+  // If Platter Size / Pieces-per-Person changes (or is set) after menu items
+  // were already added with no pieces filled in yet, split the new total
+  // across them automatically -- covers building the item list first and
+  // setting the platter size after, same as the more common other way round.
+  useEffect(() => {
+    if (!totalPieces) return;
+    setDraft(prev => {
+      if (!prev.items || prev.items.length === 0) return prev;
+      const allEmpty = prev.items.every(it => it.pieces === '' || it.pieces == null || Number(it.pieces) === 0);
+      if (!allEmpty) return prev;
+      const shares = distributeEvenly(totalPieces, prev.items.length);
+      return { ...prev, items: prev.items.map((it, i) => ({ ...it, pieces: shares[i], unit_qty: computeUnitQty(shares[i], it.packaging) })) };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalPieces]);
 
   async function handleSave() {
     setSaving(true);
@@ -317,7 +428,12 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
         notes: draft.notes.trim() || null,
         items: (draft.items || [])
           .filter(it => it.name.trim())
-          .map(it => ({ name: it.name.trim(), qty: toNumOrNull(it.qty) ?? 0 })),
+          .map(it => ({
+            name: it.name.trim(),
+            pieces: toNumOrNull(it.pieces) ?? 0,
+            packaging: it.packaging || 'none',
+            unit_qty: toNumOrNull(it.unit_qty),
+          })),
       };
       if (job?.id) {
         await db.updateCateringJob(job.id, userId, payload);
@@ -418,7 +534,7 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
         {/* Menu item breakdown */}
         <div>
           <SectionLabel>Menu Item Breakdown</SectionLabel>
-          <MenuItemsEditor items={draft.items} onChange={v => set('items', v)} />
+          <MenuItemsEditor items={draft.items} totalPieces={totalPieces} onChange={v => set('items', v)} />
         </div>
 
         {/* Notes */}
@@ -493,7 +609,7 @@ function JobCard({ job, expanded, onToggle, onEdit, onDelete, onToggleFlag }) {
   const dotColor = TYPE_DOT[job.job_type] || TYPE_DOT.Other;
   const totalPieces = computeTotalPieces(job.platter_size, job.pieces_per_person);
   const dietaryTags = DIETARY_FIELDS.filter(f => job[f.key] > 0);
-  const itemsTotal = (job.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0);
+  const itemsTotal = (job.items || []).reduce((s, it) => s + (Number(it.pieces ?? it.qty) || 0), 0);
   const summary = summarizeQty(job, totalPieces);
 
   return (
@@ -535,12 +651,20 @@ function JobCard({ job, expanded, onToggle, onEdit, onDelete, onToggleFlag }) {
           {job.items && job.items.length > 0 && (
             <div className="rounded-lg border border-gray-100 divide-y divide-gray-50 overflow-hidden">
               <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400 bg-gray-50">Menu Breakdown</div>
-              {job.items.map((it, i) => (
-                <div key={i} className="flex items-center justify-between px-3 py-1.5 text-sm">
-                  <span className="text-gray-700">{it.name}</span>
-                  <span className="font-semibold tabular-nums text-gray-900">{it.qty}</span>
-                </div>
-              ))}
+              {job.items.map((it, i) => {
+                const pieces = it.pieces ?? it.qty ?? 0;
+                const packagingLabel = PACKAGING_TYPES.find(p => p.key === it.packaging)?.label;
+                const showUnits = it.packaging && it.packaging !== 'none' && it.unit_qty !== '' && it.unit_qty != null;
+                return (
+                  <div key={i} className="flex items-center justify-between px-3 py-1.5 text-sm">
+                    <span className="text-gray-700">{it.name}</span>
+                    <span className="flex items-baseline gap-2">
+                      {showUnits && <span className="text-xs text-gray-400">{it.unit_qty} {packagingLabel.toLowerCase()}{it.unit_qty === 1 ? '' : 's'}</span>}
+                      <span className="font-semibold tabular-nums text-gray-900">{pieces}</span>
+                    </span>
+                  </div>
+                );
+              })}
               <div className="flex items-center justify-between px-3 py-1.5 text-sm bg-gray-50">
                 <span className="font-medium text-gray-500">Total pieces</span>
                 <span className="font-bold tabular-nums text-gray-900">{itemsTotal}</span>
