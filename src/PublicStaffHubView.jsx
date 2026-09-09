@@ -51,6 +51,15 @@ const LINKS = [
     tint: '#FDF2F8',
     path: '/cater/',
   },
+  {
+    key: 'builds',
+    label: 'Build Guides',
+    description: 'How to assemble each item',
+    icon: '🧱',
+    color: '#0891B2',
+    tint: '#ECFEFF',
+    path: '/builds/',
+  },
 ];
 
 function greeting() {
