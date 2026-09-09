@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 // ── Build guide data + illustrated exploded-diagram visual ──────────────────
 // Shared between the admin R-Builds app (BuildsApp.jsx) and the staff-facing
 // public view (PublicBuildsView.jsx) so both render the exact same guide
@@ -258,49 +260,56 @@ export function seededRand(seed) {
 }
 
 const MIX_COLORS = {
-  'Chicken Avo Mix': '#AEBD63',
-  'Tuna Mix': '#D98A82',
-  'Curried Egg Mix': '#E0A83E',
+  'Chicken Avo Mix': '#C9A854',
+  'Tuna Mix': '#D9A08C',
+  'Curried Egg Mix': '#DDA83E',
   'Club Mix': '#C99A5E',
-  'Chickpea Mix': '#CDBE8A',
-  'Pesto Chicken': '#7E9A5A',
+  'Chickpea Mix': '#CBB27E',
+  'Pesto Chicken': '#8A9D5E',
 };
 const SAUCE_COLORS = {
-  'Mayo': '#F2ECD9', 'Vegan Mayo': '#F2ECD9', 'Vegan Chilli Mayo': '#E8734A',
-  'Chilli Mayo': '#E8734A', 'Mustard Mayo': '#E0B62E', 'Horseradish Mayo': '#EFE6D2',
-  'Tomato Chutney': '#A6392E', 'Honey': '#DFA320', 'Chilli Crisp': '#C0301E',
-  'American Mustard': '#E0B620',
+  'Mayo': '#EDE4C8', 'Vegan Mayo': '#EDE4C8', 'Vegan Chilli Mayo': '#E1663D',
+  'Chilli Mayo': '#E1663D', 'Mustard Mayo': '#DDAA2A', 'Horseradish Mayo': '#EDE4C8',
+  'Tomato Chutney': '#9E3226', 'Honey': '#DB9A16', 'Chilli Crisp': '#B92A1B',
+  'American Mustard': '#DDAA2A',
 };
 const GARNISH_COLORS = {
-  'Chives': '#3E7A4A', 'Dill': '#2E5C3A', 'Seasoning': '#4A4438',
-  'Parmesan': '#E9D98A', 'Crispy Shallots': '#C99A3E',
+  'Chives': '#3E7A4A', 'Dill': '#2E5C3A', 'Seasoning': '#5C4A2E',
+  'Parmesan': '#DFC96A', 'Crispy Shallots': '#B5842E',
 };
 
+// Flat, clean icon set -- one consistent stroke weight, minimal texture,
+// no hand-drawn wobble. Drawn to sit inside a roughly -50..50 box so each
+// reads clearly at the small "medallion" size the compact list uses.
+
 function Bread({ seed, toasted }) {
-  const marks = [-58, -18, 22, 62];
   return (
     <g>
-      <path d="M -104 12 Q -108 -30 -58 -35 Q 0 -42 58 -35 Q 108 -30 104 12 Q 100 36 55 38 Q 0 42 -55 38 Q -100 36 -104 12 Z"
-        fill="#EFC077" stroke="#5C3A18" strokeWidth="4" strokeLinejoin="round" />
-      <path d="M -82 -16 Q 0 -28 82 -16" fill="none" stroke="#FBE3AE" strokeWidth="6" strokeLinecap="round" opacity="0.7" />
-      {toasted && marks.map((x, i) => (
-        <path key={i} d={`M ${x - 13 + (seededRand(seed + i) - 0.5) * 6} -20 L ${x + 13 + (seededRand(seed + i + 9) - 0.5) * 6} 24`}
-          stroke="#6B3B14" strokeWidth="7" strokeLinecap="round" opacity="0.55" />
-      ))}
+      <path d="M -44 16 Q -48 -14 -22 -20 Q 0 -24 22 -20 Q 48 -14 44 16 Q 40 26 0 27 Q -40 26 -44 16 Z"
+        fill="#EFC077" stroke="#7A5222" strokeWidth="3" strokeLinejoin="round" />
+      {toasted ? (
+        <>
+          <path d="M -22 -12 L -10 18" stroke="#8A5A24" strokeWidth="3.5" strokeLinecap="round" opacity="0.6" />
+          <path d="M 0 -14 L 6 18" stroke="#8A5A24" strokeWidth="3.5" strokeLinecap="round" opacity="0.6" />
+          <path d="M 22 -12 L 20 18" stroke="#8A5A24" strokeWidth="3.5" strokeLinecap="round" opacity="0.6" />
+        </>
+      ) : (
+        <path d="M -32 -6 Q 0 -14 32 -6" fill="none" stroke="#FBE3AE" strokeWidth="4" strokeLinecap="round" opacity="0.8" />
+      )}
     </g>
   );
 }
 
 function Cheese({ seed }) {
-  const holes = Array.from({ length: 5 }, (_, i) => ({
-    r: 5 + seededRand(seed + i) * 6,
-    x: -66 + seededRand(seed + i * 2) * 132,
-    y: -16 + seededRand(seed + i * 3) * 32,
-  }));
+  const holes = [
+    { x: -12, y: -6, r: 4.5 + seededRand(seed) * 2 },
+    { x: 10, y: 6, r: 4 + seededRand(seed + 1) * 2 },
+    { x: -2, y: 12, r: 3 + seededRand(seed + 2) * 1.5 },
+  ];
   return (
     <g>
-      <path d="M -94 22 L -58 -26 L 96 -18 L 60 28 Z" fill="#FFDE6E" stroke="#8A6A16" strokeWidth="3.5" strokeLinejoin="round" />
-      {holes.map((h, i) => <circle key={i} cx={h.x} cy={h.y} r={h.r} fill="#FFF6D9" stroke="#C9A227" strokeWidth="1.5" />)}
+      <path d="M -34 20 L -18 -22 L 36 -14 L 20 24 Z" fill="#FFD966" stroke="#A9821E" strokeWidth="3" strokeLinejoin="round" />
+      {holes.map((h, i) => <circle key={i} cx={h.x} cy={h.y} r={h.r} fill="#FFF3CC" stroke="#C9A227" strokeWidth="1.5" />)}
     </g>
   );
 }
@@ -308,27 +317,27 @@ function Cheese({ seed }) {
 function Meat() {
   return (
     <g>
-      <path d="M -100 6 Q -70 -22 -30 -4 Q 10 -24 50 -2 Q 85 -20 102 4 Q 85 30 40 20 Q 0 32 -40 18 Q -80 30 -100 6 Z"
-        fill="#E8998D" stroke="#9C4A3C" strokeWidth="3.5" strokeLinejoin="round" />
-      <path d="M -70 0 Q -40 -10 -10 2" stroke="#FBD9D2" strokeWidth="4" fill="none" strokeLinecap="round" opacity="0.75" />
-      <path d="M 20 4 Q 50 -6 80 6" stroke="#FBD9D2" strokeWidth="4" fill="none" strokeLinecap="round" opacity="0.75" />
+      <path d="M -40 -6 Q -20 -18 0 -6 Q 20 -18 40 -6 Q 40 8 20 14 Q 0 20 -20 14 Q -40 8 -40 -6 Z"
+        fill="#DD9385" stroke="#8A4234" strokeWidth="3" strokeLinejoin="round" />
+      <path d="M -26 -2 Q 0 -10 26 -2" stroke="#F6D2C8" strokeWidth="3" fill="none" strokeLinecap="round" opacity="0.8" />
     </g>
   );
 }
 
-function Shredded({ seed, color }) {
-  const strokes = Array.from({ length: 16 }, (_, i) => ({
-    x: -92 + (i / 16) * 184 + (seededRand(seed + i) - 0.5) * 14,
-    y: (seededRand(seed + i * 2) - 0.5) * 44,
-    rot: seededRand(seed + i * 3) * 70 - 35,
-    len: 14 + seededRand(seed + i * 4) * 12,
-  }));
+// The one this feedback round is fixing: a scoop of chunky filling (chicken
+// avo, tuna, curried egg, chickpea...), not a scatter of confetti dashes --
+// a mounded dome with a scalloped top edge and a couple of solid chunks so
+// it reads as protein/salad, not sprinkles.
+function Mix({ color }) {
+  const dark = 'color-mix(in srgb, ' + color + ' 55%, #3A2F1C)';
   return (
     <g>
-      {strokes.map((s, i) => (
-        <path key={i} d={`M 0 0 q ${s.len / 2} -4 ${s.len} 2`} stroke={color} strokeWidth="5" fill="none" strokeLinecap="round"
-          transform={`translate(${s.x},${s.y}) rotate(${s.rot})`} />
-      ))}
+      <path d="M -38 18 Q -44 -8 -20 -18 Q 0 -26 20 -18 Q 44 -8 38 18 Q 20 26 0 26 Q -20 26 -38 18 Z"
+        fill={color} stroke={dark} strokeWidth="3" strokeLinejoin="round" />
+      <path d="M -30 -8 Q -22 -16 -12 -9 Q -2 -17 8 -9 Q 18 -17 28 -8"
+        fill="none" stroke={dark} strokeWidth="2.5" strokeLinecap="round" opacity="0.55" />
+      <ellipse cx="-10" cy="4" rx="7" ry="4.5" fill={dark} opacity="0.4" />
+      <ellipse cx="13" cy="9" rx="6" ry="4" fill={dark} opacity="0.35" />
     </g>
   );
 }
@@ -336,21 +345,18 @@ function Shredded({ seed, color }) {
 function Pickle({ seed, isOnion }) {
   if (isOnion) {
     return (
-      <g>
-        {[36, 25, 14].map((r, i) => (
-          <circle key={i} cx="0" cy="0" r={r} fill="none" stroke={i % 2 ? '#C97BC9' : '#EBB3EB'} strokeWidth="7" />
-        ))}
+      <g fill="none" strokeWidth="5">
+        <circle r="26" stroke="#E4B8E4" />
+        <circle r="15" stroke="#C97BC9" />
       </g>
     );
   }
   return (
     <g>
-      {[-46, 8, 58].map((x, i) => (
-        <g key={i} transform={`translate(${x},${(seededRand(seed + i) - 0.5) * 14}) rotate(${(seededRand(seed + i * 2) - 0.5) * 20})`}>
-          <ellipse rx="26" ry="15" fill="#C9DE8A" stroke="#5C7A28" strokeWidth="3" />
-          <ellipse rx="18" ry="9" fill="none" stroke="#8FAE4A" strokeWidth="2" />
-          <circle cx="-6" cy="-2" r="1.6" fill="#4A5C1C" />
-          <circle cx="4" cy="3" r="1.6" fill="#4A5C1C" />
+      {[-14, 14].map((x, i) => (
+        <g key={i} transform={`translate(${x},${(seededRand(seed + i) - 0.5) * 6})`}>
+          <ellipse rx="20" ry="13" fill="#CFE29C" stroke="#5C7A28" strokeWidth="2.5" />
+          <ellipse rx="13" ry="7" fill="none" stroke="#8FAE4A" strokeWidth="1.5" />
         </g>
       ))}
     </g>
@@ -361,34 +367,34 @@ function Tomato({ seed, dried }) {
   if (dried) {
     return (
       <g>
-        {[-50, 0, 50].map((x, i) => (
-          <path key={i} d="M -22 -8 Q 0 -14 22 -8 Q 26 0 22 8 Q 0 14 -22 8 Q -26 0 -22 -8 Z"
+        {[-14, 14].map((x, i) => (
+          <path key={i} d="M -20 -7 Q 0 -12 20 -7 Q 23 0 20 7 Q 0 12 -20 7 Q -23 0 -20 -7 Z"
             fill="#A6392E" stroke="#5C1F19" strokeWidth="2.5"
-            transform={`translate(${x},${(seededRand(seed + i) - 0.5) * 16}) rotate(${(seededRand(seed + i * 3) - 0.5) * 40})`} />
+            transform={`translate(${x},${(seededRand(seed + i) - 0.5) * 8}) rotate(${(seededRand(seed + i * 3) - 0.5) * 24})`} />
         ))}
       </g>
     );
   }
   return (
     <g>
-      <circle r="38" fill="#E8776A" stroke="#8A2B20" strokeWidth="3.5" />
-      <circle r="30" fill="none" stroke="#F4A99B" strokeWidth="2" />
-      {[0, 60, 120, 180, 240, 300].map((deg, i) => (
-        <ellipse key={i} cx="0" cy="-16" rx="4" ry="9" fill="#FBDCD3" transform={`rotate(${deg})`} />
+      <circle r="30" fill="#E8776A" stroke="#8A2B20" strokeWidth="3" />
+      <circle r="22" fill="none" stroke="#F4A99B" strokeWidth="2" />
+      {[0, 72, 144, 216, 288].map((deg, i) => (
+        <ellipse key={i} cx="0" cy="-12" rx="3.2" ry="6.5" fill="#FBDCD3" transform={`rotate(${deg})`} />
       ))}
     </g>
   );
 }
 
-function Veg({ seed, cucumber }) {
+function Veg({ cucumber }) {
   if (cucumber) {
     return (
       <g>
-        {[-40, 24].map((x, i) => (
+        {[-14, 14].map((x, i) => (
           <g key={i} transform={`translate(${x},0)`}>
-            <circle r="24" fill="#CDE29A" stroke="#5C7A28" strokeWidth="3" />
-            <circle r="17" fill="none" stroke="#9BC24A" strokeWidth="2" />
-            <circle r="9" fill="#EAF4C8" />
+            <circle r="19" fill="#CDE29A" stroke="#5C7A28" strokeWidth="2.5" />
+            <circle r="13" fill="none" stroke="#9BC24A" strokeWidth="1.5" />
+            <circle r="6" fill="#EAF4C8" />
           </g>
         ))}
       </g>
@@ -396,9 +402,9 @@ function Veg({ seed, cucumber }) {
   }
   return (
     <g>
-      <path d="M -100 10 Q -60 -30 0 -8 Q 60 -34 100 6 Q 60 26 0 14 Q -60 30 -100 10 Z"
-        fill="#8FCB6B" stroke="#3E6B22" strokeWidth="3.5" strokeLinejoin="round" />
-      <path d="M -70 6 Q 0 -6 70 4" stroke="#4E7A2C" strokeWidth="3" fill="none" opacity="0.6" />
+      <path d="M -38 8 Q -18 -18 6 -4 Q 26 -20 40 4 Q 22 16 4 8 Q -18 18 -38 8 Z"
+        fill="#8FCB6B" stroke="#3E6B22" strokeWidth="3" strokeLinejoin="round" />
+      <path d="M -22 4 Q 0 -4 22 2" stroke="#4E7A2C" strokeWidth="2" fill="none" opacity="0.6" />
     </g>
   );
 }
@@ -406,39 +412,39 @@ function Veg({ seed, cucumber }) {
 function Avocado() {
   return (
     <g>
-      <path d="M -60 40 Q -80 -10 -30 -38 Q 40 -46 65 0 Q 60 34 0 42 Q -35 46 -60 40 Z"
-        fill="#7FA84A" stroke="#3E5A20" strokeWidth="3.5" strokeLinejoin="round" />
-      <path d="M -45 30 Q -60 -6 -22 -28 Q 32 -34 52 4 Q 46 26 -4 32 Q -28 34 -45 30 Z" fill="#C7DE8E" />
-      <circle cx="30" cy="6" r="14" fill="#B8935A" stroke="#7A5A2E" strokeWidth="2" />
+      <path d="M -30 22 Q -40 -6 -14 -20 Q 20 -24 32 0 Q 30 20 0 24 Q -18 26 -30 22 Z"
+        fill="#7FA84A" stroke="#3E5A20" strokeWidth="3" strokeLinejoin="round" />
+      <path d="M -22 16 Q -30 -4 -10 -14 Q 16 -18 24 2 Q 22 14 -2 17 Q -14 18 -22 16 Z" fill="#C7DE8E" />
+      <circle cx="14" cy="2" r="8" fill="#B8935A" stroke="#7A5A2E" strokeWidth="1.5" />
     </g>
   );
 }
 
 function Squiggle({ color }) {
-  return <path d="M -90 6 Q -60 -22 -30 6 T 30 6 T 90 -6" fill="none" stroke={color} strokeWidth="9" strokeLinecap="round" />;
+  return <path d="M -34 4 Q -20 -12 -6 4 T 22 4 T 36 -6" fill="none" stroke={color} strokeWidth="7" strokeLinecap="round" />;
 }
 
 function Butter() {
   return (
     <g>
-      <rect x="-55" y="-18" width="110" height="36" rx="10" fill="#FCE79A" stroke="#B8901E" strokeWidth="3" />
-      <path d="M -40 -8 L 40 -8" stroke="#FFF6D5" strokeWidth="5" strokeLinecap="round" opacity="0.85" />
+      <rect x="-26" y="-9" width="52" height="18" rx="5" fill="#FCE79A" stroke="#B8901E" strokeWidth="2.5" />
+      <path d="M -18 -3 L 18 -3" stroke="#FFF6D5" strokeWidth="3" strokeLinecap="round" opacity="0.9" />
     </g>
   );
 }
 
 function Garnish({ seed, color, kind }) {
-  const n = 10;
+  const n = 7;
   return (
     <g>
       {Array.from({ length: n }, (_, i) => {
-        const x = -80 + (i / n) * 160 + (seededRand(seed + i) - 0.5) * 10;
+        const x = -22 + (i / (n - 1)) * 44 + (seededRand(seed + i) - 0.5) * 8;
         const y = (seededRand(seed + i * 2) - 0.5) * 20;
         if (kind === 'dash') {
-          return <path key={i} d="M -6 0 L 6 0" stroke={color} strokeWidth="3" strokeLinecap="round"
+          return <path key={i} d="M -4 0 L 4 0" stroke={color} strokeWidth="3" strokeLinecap="round"
             transform={`translate(${x},${y}) rotate(${seededRand(seed + i * 3) * 180})`} />;
         }
-        return <circle key={i} cx={x} cy={y} r={2 + seededRand(seed + i * 4) * 2} fill={color} />;
+        return <circle key={i} cx={x} cy={y} r={1.6 + seededRand(seed + i * 4) * 1.6} fill={color} />;
       })}
     </g>
   );
@@ -450,10 +456,10 @@ function ingredientArt(l, seed) {
     case 'bread': return <Bread seed={seed} toasted={l.toasted} />;
     case 'cheese': return <Cheese seed={seed} />;
     case 'meat': return <Meat />;
-    case 'mix': return <Shredded seed={seed} color={MIX_COLORS[l.name] || '#B08A52'} />;
+    case 'mix': return <Mix color={MIX_COLORS[l.name] || '#B08A52'} />;
     case 'pickle': return <Pickle seed={seed} isOnion={n.includes('onion')} />;
     case 'tomato': return <Tomato seed={seed} dried={n.includes('dried')} />;
-    case 'veg': return <Veg seed={seed} cucumber={n.includes('cucumber')} />;
+    case 'veg': return <Veg cucumber={n.includes('cucumber')} />;
     case 'avocado': return <Avocado />;
     case 'garnish': return (
       <Garnish seed={seed} color={GARNISH_COLORS[l.name] || '#4A7A5A'}
@@ -461,65 +467,77 @@ function ingredientArt(l, seed) {
     );
     case 'sauce':
       if (n === 'butter') return <Butter />;
-      return <Squiggle color={SAUCE_COLORS[l.name] || '#E8C24A'} />;
-    default: return <circle r="30" fill="#D8D2C4" stroke="#8C8175" strokeWidth="3" />;
+      return <Squiggle color={SAUCE_COLORS[l.name] || '#DDAA2A'} />;
+    default: return <circle r="24" fill="#D8D2C4" stroke="#8C8175" strokeWidth="2.5" />;
   }
 }
 
-// Compact by design: earlier rounds landed at BAND 116 / full-scale artwork,
-// which meant even a 7-layer sandwich ran taller than a phone screen before
-// you reached the stack-order list underneath it. Shrinking the band, the
-// artwork scale and the type sizes together keeps the whole diagram --
-// labels included -- roughly in view alongside its instructions.
-export function ExplodedDiagram({ guide, activeIndex, onHover, tint, maxWidth = 460 }) {
-  const BAND = 82;
-  const WIDTH = 760;
-  const PAD = 34;
-  const ART_SCALE = 0.72;
-  const height = guide.layers.length * BAND + PAD * 2;
+const FONT = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
+// A tight vertical build-order list, not a spread-out illustration: each
+// layer is one compact row -- an icon medallion, the name in large type,
+// and its quantity underneath -- strung along a single connector line.
+// Earlier rounds spent a whole band's height on a wide alternating-side
+// layout with long curved call-out arrows, which read as decorative and
+// left a lot of dead space between layers; this keeps every layer's own
+// height close to the icon's, so even a 12-layer sandwich stays condensed
+// and every label can afford to be large and legible.
+export function ExplodedDiagram({ guide, tint, maxWidth = 420 }) {
+  const [hovered, setHovered] = useState(null);
   const isToastie = guide.category === 'Toasties';
 
   return (
-    <svg viewBox={`0 0 ${WIDTH} ${height}`} style={{ width: '100%', maxWidth, display: 'block', margin: '0 auto' }}>
-      <defs>
-        <marker id="builds-arrowhead" markerWidth="8" markerHeight="8" refX="5.5" refY="4" orient="auto">
-          <path d="M0,0 L8,4 L0,8 Z" fill="#2B2420" />
-        </marker>
-      </defs>
+    <div style={{ width: '100%', maxWidth, margin: '0 auto', fontFamily: FONT }}>
       {guide.layers.map((l, i) => {
-        const cy = PAD + i * BAND + BAND / 2;
-        const cx = WIDTH / 2;
-        const side = i % 2 === 0 ? 'left' : 'right';
-        const jitter = (seededRand(i * 7 + 3) - 0.5) * 10;
-        const labelX = side === 'left' ? 18 : WIDTH - 18;
-        const arrowStartX = side === 'left' ? 128 : WIDTH - 128;
-        const arrowEndX = side === 'left' ? cx - 74 : cx + 74;
-        const isActive = activeIndex === i;
-        const arcH = 20 + seededRand(i * 13 + 1) * 9;
-        const path = `M ${arrowStartX} ${cy + jitter} Q ${(arrowStartX + arrowEndX) / 2} ${cy - arcH} ${arrowEndX} ${cy}`;
+        const isActive = hovered === i;
+        const isLast = i === guide.layers.length - 1;
         return (
-          <g key={i} onMouseEnter={() => onHover(i)} onMouseLeave={() => onHover(null)} style={{ cursor: 'pointer' }}>
-            <path d={path} fill="none" stroke={isActive ? tint : '#B8AE9F'} strokeWidth={isActive ? 2.5 : 1.6}
-              markerEnd="url(#builds-arrowhead)" opacity={isActive ? 1 : 0.6} />
-            <g transform={`translate(${cx},${cy}) scale(${(isActive ? 1.08 : 1) * ART_SCALE})`} style={{ transition: 'transform 0.15s ease' }}>
-              {ingredientArt({ ...l, toasted: isToastie && l.type === 'bread' }, i)}
-            </g>
-            <text x={labelX} y={cy - 4} textAnchor={side === 'left' ? 'start' : 'end'}
-              fontFamily="'Kalam', cursive" fontWeight="700" fontSize="15.5"
-              fill={isActive ? tint : '#2B2420'}>
-              {l.name}
-            </text>
-            {l.qty && (
-              <text x={labelX} y={cy + 12} textAnchor={side === 'left' ? 'start' : 'end'}
-                fontFamily="'Work Sans', sans-serif" fontSize="10" fill="#8C8175">
-                {l.qty}
-              </text>
-            )}
-          </g>
+          <div
+            key={i}
+            onMouseEnter={() => setHovered(i)}
+            onMouseLeave={() => setHovered(null)}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 4px', cursor: 'default' }}
+          >
+            <div style={{ position: 'relative', width: 12, alignSelf: 'stretch', flexShrink: 0 }}>
+              {!isLast && (
+                <div style={{ position: 'absolute', left: 5, top: 30, bottom: -5, width: 2, background: '#E7E2D8' }} />
+              )}
+              <div style={{
+                position: 'absolute', left: 0, top: 14, width: 12, height: 12, borderRadius: '50%',
+                background: l.edge ? tint : '#D8D2C4', boxShadow: '0 0 0 3px white',
+              }} />
+            </div>
+
+            <div style={{
+              width: 46, height: 46, borderRadius: 12, flexShrink: 0,
+              background: isActive ? `color-mix(in srgb, ${tint} 10%, #F7F5F0)` : '#F7F5F0',
+              border: `1px solid ${isActive ? tint : '#EDE9E1'}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'background 0.12s ease, border-color 0.12s ease',
+            }}>
+              <svg width="36" height="36" viewBox="-50 -50 100 100">
+                {ingredientArt({ ...l, toasted: isToastie && l.type === 'bread' }, i)}
+              </svg>
+            </div>
+
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+                {l.edge && (
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.05em', color: tint, flexShrink: 0 }}>
+                    {l.edge === 'top' ? 'TOP' : 'BASE'}
+                  </span>
+                )}
+                <span style={{ fontSize: 16.5, fontWeight: 700, color: '#221C14', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {l.name}
+                </span>
+              </div>
+              {l.qty && (
+                <span style={{ fontSize: 12, color: '#948C7C', flexShrink: 0, whiteSpace: 'nowrap' }}>{l.qty}</span>
+              )}
+            </div>
+          </div>
         );
       })}
-    </svg>
+    </div>
   );
 }
-
-export const DIAGRAM_STYLES = `@import url('https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap');`;
