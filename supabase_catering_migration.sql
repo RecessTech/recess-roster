@@ -26,7 +26,7 @@ CREATE TABLE catering_jobs (
   ready_by          TEXT,          -- freeform: times are often ranges ("11:30-12:00") or TBC
   delivery_method   TEXT,          -- Pick-up / Courier / CW / etc.
 
-  sambos_ppl        INTEGER,
+  platter_size      INTEGER,       -- number of people the sandwich platter serves
   pieces_per_person NUMERIC,
   salads            TEXT,          -- freeform: box sizes/counts vary ("2 x Large")
   breakfast_ppl     INTEGER,

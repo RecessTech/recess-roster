@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, X, ChevronLeft, ChevronRight, Trash2, Edit2, Loader2, ChevronDown, ChevronUp,
-  MapPin, Clock, Truck, DollarSign, StickyNote, User, Building2, UtensilsCrossed,
+  MapPin, Truck, DollarSign, StickyNote, User, Building2, UtensilsCrossed,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -37,16 +37,25 @@ function getMonthGrid(year, month) {
     return d;
   });
 }
+// Total sandwich/wrap pieces to make: platter size (people) × pieces per person.
+function computeTotalPieces(platterSize, piecesPerPerson) {
+  const p = Number(platterSize);
+  const pp = Number(piecesPerPerson);
+  if (!p || !pp) return null;
+  return Math.round(p * pp);
+}
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const TYPE_OPTIONS = ['Breakfast', 'Morning Tea', 'Lunch', 'Afternoon Tea', 'Other'];
-const TYPE_COLORS = {
-  'Breakfast':     { bg: '#FEF3C7', fg: '#92400E' },
-  'Morning Tea':   { bg: '#DBEAFE', fg: '#1E40AF' },
-  'Lunch':         { bg: '#FCE7F3', fg: '#9D174D' },
-  'Afternoon Tea': { bg: '#EDE9FE', fg: '#5B21B6' },
-  'Other':         { bg: '#F1F5F9', fg: '#475569' },
+// Muted, single-hue-per-type dots -- used as small indicators, never as
+// full background fills, so several job types on screen at once stay calm.
+const TYPE_DOT = {
+  'Breakfast':     '#D97706',
+  'Morning Tea':   '#2563EB',
+  'Lunch':         '#BE185D',
+  'Afternoon Tea': '#7C3AED',
+  'Other':         '#64748B',
 };
 const COMMON_MENU_ITEMS = [
   'Chicken Avo Wrap', 'Recess Club', 'Chickpea Smash', 'BLT', 'Pastrami', 'Curried Egg',
@@ -54,12 +63,14 @@ const COMMON_MENU_ITEMS = [
   'Chicken & Greens Salad', 'Veg & Grains Salad', 'Herby Greens Salad',
 ];
 
+const DEFAULT_PIECES_PER_PERSON = 3.5;
+
 const DIETARY_FIELDS = [
-  { key: 'gf_ppl',         label: 'GF',    color: '#B45309', bg: '#FEF3C7' },
-  { key: 'vego_ppl',       label: 'Vego',  color: '#15803D', bg: '#DCFCE7' },
-  { key: 'pb_ppl',         label: 'PB',    color: '#7C3AED', bg: '#EDE9FE' },
-  { key: 'dairy_free_ppl', label: 'DF',    color: '#0F766E', bg: '#CCFBF1' },
-  { key: 'halal_ppl',      label: 'Halal', color: '#BE185D', bg: '#FCE7F3' },
+  { key: 'gf_ppl',         label: 'GF' },
+  { key: 'vego_ppl',       label: 'Vego' },
+  { key: 'pb_ppl',         label: 'Plant-Based' },
+  { key: 'dairy_free_ppl', label: 'Dairy Free' },
+  { key: 'halal_ppl',      label: 'Halal' },
 ];
 
 const CHECKBOX_FIELDS = [
@@ -90,13 +101,17 @@ function Modal({ title, onClose, children, maxWidth = 'max-w-lg' }) {
 function Field({ label, children }) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{label}</label>
+      <label className="block text-xs font-medium text-gray-500 mb-1.5">{label}</label>
       {children}
     </div>
   );
 }
 
-const inputCls = "w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300";
+function SectionLabel({ children }) {
+  return <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">{children}</p>;
+}
+
+const inputCls = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300";
 
 // ── Mini month calendar ──────────────────────────────────────────────────────
 
@@ -105,19 +120,19 @@ function MiniCalendar({ year, month, onMonthChange, selectedDate, onSelectDate, 
   const todayKey = todayStr();
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-3 shadow-sm">
+    <div className="bg-white rounded-2xl border border-gray-100 p-3">
       <div className="flex items-center justify-between mb-2 px-1">
         <button onClick={() => onMonthChange(-1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
           <ChevronLeft size={16} />
         </button>
-        <span className="text-sm font-bold text-gray-900">{monthLabel(year, month)}</span>
+        <span className="text-sm font-semibold text-gray-900">{monthLabel(year, month)}</span>
         <button onClick={() => onMonthChange(1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
           <ChevronRight size={16} />
         </button>
       </div>
       <div className="grid grid-cols-7 gap-0.5 mb-1">
         {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-          <div key={i} className="text-center text-[10px] font-semibold text-gray-400 py-1">{d}</div>
+          <div key={i} className="text-center text-[10px] font-medium text-gray-400 py-1">{d}</div>
         ))}
       </div>
       <div className="grid grid-cols-7 gap-0.5">
@@ -134,14 +149,14 @@ function MiniCalendar({ year, month, onMonthChange, selectedDate, onSelectDate, 
               className="relative aspect-square flex flex-col items-center justify-center rounded-lg text-xs transition-colors"
               style={{
                 color: !inMonth ? '#D1D5DB' : isSelected ? 'white' : isToday ? 'var(--primary-dk)' : '#374151',
-                background: isSelected ? 'var(--primary)' : isToday ? 'color-mix(in srgb, var(--primary) 12%, white)' : 'transparent',
-                fontWeight: isToday || isSelected ? 700 : 500,
+                background: isSelected ? 'var(--primary)' : isToday ? 'color-mix(in srgb, var(--primary) 10%, white)' : 'transparent',
+                fontWeight: isToday || isSelected ? 700 : 400,
               }}
             >
               {d.getDate()}
               {count > 0 && (
                 <span
-                  className="absolute bottom-0.5 w-1 h-1 rounded-full"
+                  className="absolute bottom-1 w-1 h-1 rounded-full"
                   style={{ background: isSelected ? 'white' : 'var(--primary)' }}
                 />
               )}
@@ -149,6 +164,36 @@ function MiniCalendar({ year, month, onMonthChange, selectedDate, onSelectDate, 
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ── Dietary checkbox + inline quantity ───────────────────────────────────────
+
+function DietaryToggle({ label, value, onChange }) {
+  const checked = value !== '' && value !== null && value !== undefined;
+  return (
+    <div className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 ${checked ? 'border-gray-300 bg-gray-50' : 'border-gray-200'}`}>
+      <label className="flex-1 flex items-center gap-1.5 text-sm text-gray-700 select-none cursor-pointer truncate">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={e => onChange(e.target.checked ? '1' : '')}
+          className="rounded shrink-0"
+        />
+        <span className="truncate">{label}</span>
+      </label>
+      {checked && (
+        <input
+          type="number"
+          min="0"
+          autoFocus
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onFocus={e => e.target.select()}
+          className="w-12 shrink-0 border border-gray-200 rounded-md px-1 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-gray-200"
+        />
+      )}
     </div>
   );
 }
@@ -165,6 +210,7 @@ function MenuItemsEditor({ items, onChange }) {
   function removeRow(idx) {
     onChange(items.filter((_, i) => i !== idx));
   }
+  const total = items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
 
   return (
     <div className="space-y-2">
@@ -181,7 +227,7 @@ function MenuItemsEditor({ items, onChange }) {
             value={it.name}
             onChange={e => updateRow(idx, 'name', e.target.value)}
             placeholder="e.g. Chicken Avo Wrap"
-            className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300"
+            className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
           />
           <input
             type="number"
@@ -189,16 +235,19 @@ function MenuItemsEditor({ items, onChange }) {
             value={it.qty}
             onChange={e => updateRow(idx, 'qty', e.target.value)}
             placeholder="Qty"
-            className="w-20 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-pink-300"
+            className="w-16 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-gray-200"
           />
-          <button onClick={() => removeRow(idx)} className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+          <button onClick={() => removeRow(idx)} className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0">
             <Trash2 size={14} />
           </button>
         </div>
       ))}
-      <button onClick={addRow} className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-        <Plus size={13} /> Add menu item
-      </button>
+      <div className="flex items-center justify-between pt-0.5">
+        <button onClick={addRow} className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
+          <Plus size={13} /> Add menu item
+        </button>
+        {total > 0 && <span className="text-xs text-gray-400 pr-1">Breakdown total: <span className="font-semibold text-gray-600">{total}</span></span>}
+      </div>
     </div>
   );
 }
@@ -208,8 +257,8 @@ function MenuItemsEditor({ items, onChange }) {
 function emptyJob(date) {
   return {
     job_date: date, company: '', contact: '', job_type: 'Lunch', address: '', ready_by: '',
-    delivery_method: '', sambos_ppl: '', pieces_per_person: '', salads: '', breakfast_ppl: '',
-    coffee_ppl: '', gf_ppl: '', vego_ppl: '', pb_ppl: '', dairy_free_ppl: '', halal_ppl: '',
+    delivery_method: '', platter_size: '', pieces_per_person: DEFAULT_PIECES_PER_PERSON, salads: '',
+    breakfast_ppl: '', coffee_ppl: '', gf_ppl: '', vego_ppl: '', pb_ppl: '', dairy_free_ppl: '', halal_ppl: '',
     confirmed: false, invoiced: false, bread_ordered: false, delivery_booked: false,
     gross_rev: '', notes: '', items: [],
   };
@@ -225,7 +274,7 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
   const [draft, setDraft] = useState(() => job ? {
     ...emptyJob(date),
     ...job,
-    sambos_ppl: job.sambos_ppl ?? '', pieces_per_person: job.pieces_per_person ?? '',
+    platter_size: job.platter_size ?? '', pieces_per_person: job.pieces_per_person ?? DEFAULT_PIECES_PER_PERSON,
     breakfast_ppl: job.breakfast_ppl ?? '', coffee_ppl: job.coffee_ppl ?? '',
     gf_ppl: job.gf_ppl ?? '', vego_ppl: job.vego_ppl ?? '', pb_ppl: job.pb_ppl ?? '',
     dairy_free_ppl: job.dairy_free_ppl ?? '', halal_ppl: job.halal_ppl ?? '',
@@ -236,6 +285,8 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
   function set(field, value) {
     setDraft(prev => ({ ...prev, [field]: value }));
   }
+
+  const totalPieces = computeTotalPieces(draft.platter_size, draft.pieces_per_person);
 
   async function handleSave() {
     setSaving(true);
@@ -248,7 +299,7 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
         address: draft.address.trim() || null,
         ready_by: draft.ready_by.trim() || null,
         delivery_method: draft.delivery_method.trim() || null,
-        sambos_ppl: toNumOrNull(draft.sambos_ppl),
+        platter_size: toNumOrNull(draft.platter_size),
         pieces_per_person: toNumOrNull(draft.pieces_per_person),
         salads: draft.salads.trim() || null,
         breakfast_ppl: toNumOrNull(draft.breakfast_ppl),
@@ -286,47 +337,62 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
 
   return (
     <Modal title={job ? 'Edit Catering Job' : 'Add Catering Job'} onClose={onClose} maxWidth="max-w-2xl">
-      <div className="space-y-5">
+      <div className="space-y-6">
         {/* Basics */}
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Date">
-            <input type="date" value={draft.job_date} onChange={e => set('job_date', e.target.value)} className={inputCls} />
-          </Field>
-          <Field label="Type">
-            <select value={draft.job_type} onChange={e => set('job_type', e.target.value)} className={inputCls + ' bg-white'}>
-              {TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </Field>
-          <Field label="Company">
-            <input value={draft.company} onChange={e => set('company', e.target.value)} placeholder="e.g. Betashares" className={inputCls} />
-          </Field>
-          <Field label="Contact">
-            <input value={draft.contact} onChange={e => set('contact', e.target.value)} placeholder="e.g. Karyne" className={inputCls} />
-          </Field>
-          <Field label="Address / Location">
-            <input value={draft.address} onChange={e => set('address', e.target.value)} placeholder="Delivery address or Pick-up" className={inputCls} />
-          </Field>
-          <Field label="Ready By">
-            <input value={draft.ready_by} onChange={e => set('ready_by', e.target.value)} placeholder="e.g. 11:30 or 11:30-12:00" className={inputCls} />
-          </Field>
-          <Field label="Delivery Method">
-            <input value={draft.delivery_method} onChange={e => set('delivery_method', e.target.value)} placeholder="Pick-up / Courier / CW" className={inputCls} />
-          </Field>
-          <Field label="Gross Revenue $">
-            <input type="number" min="0" step="0.01" value={draft.gross_rev} onChange={e => set('gross_rev', e.target.value)} placeholder="0.00" className={inputCls} />
-          </Field>
+        <div>
+          <SectionLabel>Job Details</SectionLabel>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Date">
+              <input type="date" value={draft.job_date} onChange={e => set('job_date', e.target.value)} className={inputCls} />
+            </Field>
+            <Field label="Type">
+              <select value={draft.job_type} onChange={e => set('job_type', e.target.value)} className={inputCls + ' bg-white'}>
+                {TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
+            <Field label="Company">
+              <input value={draft.company} onChange={e => set('company', e.target.value)} placeholder="e.g. Betashares" className={inputCls} />
+            </Field>
+            <Field label="Contact">
+              <input value={draft.contact} onChange={e => set('contact', e.target.value)} placeholder="e.g. Karyne" className={inputCls} />
+            </Field>
+            <Field label="Address / Location">
+              <input value={draft.address} onChange={e => set('address', e.target.value)} placeholder="Delivery address or Pick-up" className={inputCls} />
+            </Field>
+            <Field label="Ready By">
+              <input value={draft.ready_by} onChange={e => set('ready_by', e.target.value)} placeholder="e.g. 11:30 or 11:30-12:00" className={inputCls} />
+            </Field>
+            <Field label="Delivery Method">
+              <input value={draft.delivery_method} onChange={e => set('delivery_method', e.target.value)} placeholder="Pick-up / Courier / CW" className={inputCls} />
+            </Field>
+            <Field label="Gross Revenue $">
+              <input type="number" min="0" step="0.01" value={draft.gross_rev} onChange={e => set('gross_rev', e.target.value)} placeholder="0.00" className={inputCls} />
+            </Field>
+          </div>
         </div>
 
-        {/* Headcounts */}
+        {/* Platter */}
         <div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Quantities</p>
+          <SectionLabel>Sandwich Platter</SectionLabel>
           <div className="grid grid-cols-3 gap-3">
-            <Field label="Sambos (ppl)">
-              <input type="number" min="0" value={draft.sambos_ppl} onChange={e => set('sambos_ppl', e.target.value)} className={inputCls} />
+            <Field label="Platter Size (ppl)">
+              <input type="number" min="0" value={draft.platter_size} onChange={e => set('platter_size', e.target.value)} className={inputCls} />
             </Field>
             <Field label="Pieces / Person">
-              <input type="number" min="0" step="0.5" value={draft.pieces_per_person} onChange={e => set('pieces_per_person', e.target.value)} placeholder="e.g. 3" className={inputCls} />
+              <input type="number" min="0" step="0.5" value={draft.pieces_per_person} onChange={e => set('pieces_per_person', e.target.value)} className={inputCls} />
             </Field>
+            <Field label="Total Pieces">
+              <div className="w-full rounded-lg px-3 py-2 text-sm font-bold tabular-nums text-center" style={{ background: 'color-mix(in srgb, var(--primary) 8%, white)', color: 'var(--primary-dk)' }}>
+                {totalPieces ?? '—'}
+              </div>
+            </Field>
+          </div>
+        </div>
+
+        {/* Other quantities */}
+        <div>
+          <SectionLabel>Other Quantities</SectionLabel>
+          <div className="grid grid-cols-3 gap-3">
             <Field label="Salads">
               <input value={draft.salads} onChange={e => set('salads', e.target.value)} placeholder="e.g. 2 x Large" className={inputCls} />
             </Field>
@@ -341,19 +407,17 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
 
         {/* Dietaries */}
         <div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Dietaries (headcount)</p>
-          <div className="grid grid-cols-5 gap-3">
+          <SectionLabel>Dietaries</SectionLabel>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {DIETARY_FIELDS.map(f => (
-              <Field key={f.key} label={f.label}>
-                <input type="number" min="0" value={draft[f.key]} onChange={e => set(f.key, e.target.value)} className={inputCls} />
-              </Field>
+              <DietaryToggle key={f.key} label={f.label} value={draft[f.key]} onChange={v => set(f.key, v)} />
             ))}
           </div>
         </div>
 
         {/* Menu item breakdown */}
         <div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Menu Item Breakdown</p>
+          <SectionLabel>Menu Item Breakdown</SectionLabel>
           <MenuItemsEditor items={draft.items} onChange={v => set('items', v)} />
         </div>
 
@@ -370,7 +434,7 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
 
         {/* Admin checkboxes */}
         <div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Status</p>
+          <SectionLabel>Status</SectionLabel>
           <div className="flex flex-wrap gap-4">
             {CHECKBOX_FIELDS.map(f => (
               <label key={f.key} className="flex items-center gap-1.5 text-sm text-gray-700 select-none cursor-pointer">
@@ -396,119 +460,129 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
 
 // ── Job card (day list) ──────────────────────────────────────────────────────
 
-function QtyPill({ icon, label }) {
+function StatTile({ label, value, highlight }) {
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full bg-gray-100 text-gray-600">
-      {icon} {label}
+    <div
+      className={`rounded-lg px-3 py-2 text-center ${highlight ? '' : 'border border-gray-100'}`}
+      style={highlight ? { background: 'color-mix(in srgb, var(--primary) 8%, white)' } : {}}
+    >
+      <div className="text-[10px] font-medium uppercase tracking-wide text-gray-400 mb-0.5">{label}</div>
+      <div className="text-base font-bold tabular-nums" style={{ color: highlight ? 'var(--primary-dk)' : '#111827' }}>{value}</div>
+    </div>
+  );
+}
+
+function Tag({ children }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md bg-gray-100 text-gray-600 whitespace-nowrap">
+      {children}
     </span>
   );
 }
 
-function JobCard({ job, expanded, onToggle, onEdit, onDelete, onToggleFlag }) {
-  const typeColor = TYPE_COLORS[job.job_type] || TYPE_COLORS.Other;
-  const qtyPills = [];
-  if (job.sambos_ppl) qtyPills.push({ key: 'sambos', label: `🥪 ${job.sambos_ppl} ppl${job.pieces_per_person ? ` @ ${job.pieces_per_person}pc` : ''}` });
-  if (job.breakfast_ppl) qtyPills.push({ key: 'breakfast', label: `🍳 ${job.breakfast_ppl} ppl` });
-  if (job.coffee_ppl) qtyPills.push({ key: 'coffee', label: `☕ ${job.coffee_ppl} ppl` });
-  if (job.salads) qtyPills.push({ key: 'salads', label: `🥗 ${job.salads}` });
+function summarizeQty(job, totalPieces) {
+  const parts = [];
+  if (job.platter_size) parts.push(`${job.platter_size} ppl${totalPieces ? ` · ${totalPieces} pcs` : ''}`);
+  if (job.breakfast_ppl) parts.push(`${job.breakfast_ppl} ppl breakfast`);
+  if (job.coffee_ppl) parts.push(`${job.coffee_ppl} coffees`);
+  if (job.salads) parts.push(job.salads);
+  return parts.join(' · ');
+}
 
-  const dietaryBadges = DIETARY_FIELDS.filter(f => job[f.key] > 0);
+function JobCard({ job, expanded, onToggle, onEdit, onDelete, onToggleFlag }) {
+  const dotColor = TYPE_DOT[job.job_type] || TYPE_DOT.Other;
+  const totalPieces = computeTotalPieces(job.platter_size, job.pieces_per_person);
+  const dietaryTags = DIETARY_FIELDS.filter(f => job[f.key] > 0);
   const itemsTotal = (job.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0);
+  const summary = summarizeQty(job, totalPieces);
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      <button onClick={onToggle} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors">
-        <div className="w-16 shrink-0 text-xs font-bold text-gray-500 flex items-center gap-1">
-          <Clock size={12} className="text-gray-300" /> {job.ready_by || '—'}
-        </div>
-        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full" style={{ background: typeColor.bg, color: typeColor.fg }}>
-          {job.job_type || 'Other'}
-        </span>
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <button onClick={onToggle} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50/70 transition-colors">
+        <div className="w-14 shrink-0 text-xs font-medium text-gray-500 tabular-nums">{job.ready_by || '—'}</div>
+        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} title={job.job_type} />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-gray-900 truncate">{job.company || 'Untitled job'}</p>
-          {job.contact && <p className="text-xs text-gray-400 truncate">{job.contact}</p>}
+          <p className="text-xs text-gray-400 truncate">{[job.contact, job.job_type].filter(Boolean).join(' · ')}</p>
         </div>
-        <div className="hidden sm:flex items-center gap-1.5 flex-wrap justify-end max-w-xs">
-          {qtyPills.slice(0, 2).map(p => <QtyPill key={p.key} label={p.label} />)}
-        </div>
-        {job.confirmed ? (
-          <span className="shrink-0 text-[10px] font-bold uppercase px-2 py-1 rounded-full bg-green-50 text-green-700">Confirmed</span>
-        ) : (
-          <span className="shrink-0 text-[10px] font-bold uppercase px-2 py-1 rounded-full bg-amber-50 text-amber-700">Pending</span>
-        )}
+        {summary && <div className="hidden sm:block text-xs text-gray-500 whitespace-nowrap">{summary}</div>}
+        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: job.confirmed ? '#16A34A' : '#D97706' }} title={job.confirmed ? 'Confirmed' : 'Pending'} />
         {expanded ? <ChevronUp size={16} className="text-gray-300 shrink-0" /> : <ChevronDown size={16} className="text-gray-300 shrink-0" />}
       </button>
 
       {expanded && (
         <div className="border-t border-gray-100 px-4 py-4 space-y-4">
-          {/* For the kitchen */}
-          <div className="rounded-xl p-3" style={{ background: 'color-mix(in srgb, var(--primary) 6%, white)' }}>
-            <p className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--primary-dk)' }}>For the Kitchen</p>
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              {qtyPills.length > 0 ? qtyPills.map(p => <QtyPill key={p.key} label={p.label} />) : (
-                <span className="text-xs text-gray-400">No quantities recorded yet.</span>
-              )}
-              {dietaryBadges.map(f => (
-                <span key={f.key} className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full" style={{ background: f.bg, color: f.color }}>
-                  {f.label}: {job[f.key]}
-                </span>
+
+          {job.platter_size ? (
+            <div className="grid grid-cols-3 gap-2">
+              <StatTile label="Platter Size" value={`${job.platter_size} ppl`} />
+              <StatTile label="Pieces / Person" value={job.pieces_per_person ?? '—'} />
+              <StatTile label="Total Pieces" value={totalPieces ?? '—'} highlight />
+            </div>
+          ) : null}
+
+          {(job.breakfast_ppl || job.coffee_ppl || job.salads || dietaryTags.length > 0) && (
+            <div className="flex flex-wrap gap-1.5">
+              {job.breakfast_ppl > 0 && <Tag>Breakfast: {job.breakfast_ppl} ppl</Tag>}
+              {job.coffee_ppl > 0 && <Tag>Coffee: {job.coffee_ppl} ppl</Tag>}
+              {job.salads && <Tag>Salads: {job.salads}</Tag>}
+              {dietaryTags.map(f => (
+                <Tag key={f.key}>{f.label}: <span className="font-bold text-gray-800">{job[f.key]}</span></Tag>
               ))}
             </div>
+          )}
 
-            {job.items && job.items.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-100 divide-y divide-gray-50 overflow-hidden mb-2">
-                {job.items.map((it, i) => (
-                  <div key={i} className="flex items-center justify-between px-3 py-1.5 text-sm">
-                    <span className="text-gray-700">{it.name}</span>
-                    <span className="font-bold tabular-nums text-gray-900">{it.qty}</span>
-                  </div>
-                ))}
-                <div className="flex items-center justify-between px-3 py-1.5 text-sm bg-gray-50">
-                  <span className="font-semibold text-gray-500">Total pieces</span>
-                  <span className="font-extrabold tabular-nums" style={{ color: 'var(--primary-dk)' }}>{itemsTotal}</span>
+          {job.items && job.items.length > 0 && (
+            <div className="rounded-lg border border-gray-100 divide-y divide-gray-50 overflow-hidden">
+              <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400 bg-gray-50">Menu Breakdown</div>
+              {job.items.map((it, i) => (
+                <div key={i} className="flex items-center justify-between px-3 py-1.5 text-sm">
+                  <span className="text-gray-700">{it.name}</span>
+                  <span className="font-semibold tabular-nums text-gray-900">{it.qty}</span>
                 </div>
+              ))}
+              <div className="flex items-center justify-between px-3 py-1.5 text-sm bg-gray-50">
+                <span className="font-medium text-gray-500">Total pieces</span>
+                <span className="font-bold tabular-nums text-gray-900">{itemsTotal}</span>
               </div>
-            )}
-
-            <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
-              {job.address && <div className="flex items-center gap-1.5"><MapPin size={12} className="text-gray-400 shrink-0" /> {job.address}</div>}
-              {job.delivery_method && <div className="flex items-center gap-1.5"><Truck size={12} className="text-gray-400 shrink-0" /> {job.delivery_method}</div>}
-              {job.contact && <div className="flex items-center gap-1.5"><User size={12} className="text-gray-400 shrink-0" /> {job.contact}</div>}
-              {job.company && <div className="flex items-center gap-1.5"><Building2 size={12} className="text-gray-400 shrink-0" /> {job.company}</div>}
             </div>
+          )}
 
-            {job.notes && (
-              <div className="flex items-start gap-1.5 mt-2 text-xs text-gray-600 bg-white rounded-lg border border-gray-100 px-3 py-2">
-                <StickyNote size={12} className="text-gray-400 shrink-0 mt-0.5" />
-                <span className="whitespace-pre-wrap">{job.notes}</span>
-              </div>
-            )}
+          <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-gray-500">
+            {job.company && <div className="flex items-center gap-1.5"><Building2 size={12} className="text-gray-300 shrink-0" /> {job.company}</div>}
+            {job.contact && <div className="flex items-center gap-1.5"><User size={12} className="text-gray-300 shrink-0" /> {job.contact}</div>}
+            {job.address && <div className="flex items-center gap-1.5"><MapPin size={12} className="text-gray-300 shrink-0" /> {job.address}</div>}
+            {job.delivery_method && <div className="flex items-center gap-1.5"><Truck size={12} className="text-gray-300 shrink-0" /> {job.delivery_method}</div>}
           </div>
 
-          {/* Admin */}
-          <div className="rounded-xl border border-gray-100 p-3">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Admin</p>
-              {job.gross_rev != null && (
-                <span className="inline-flex items-center gap-1 text-xs font-bold text-gray-600">
-                  <DollarSign size={12} /> {Number(job.gross_rev).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              )}
+          {job.notes && (
+            <div className="flex items-start gap-1.5 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2">
+              <StickyNote size={12} className="text-gray-400 shrink-0 mt-0.5" />
+              <span className="whitespace-pre-wrap">{job.notes}</span>
             </div>
-            <div className="flex flex-wrap gap-3 mb-3">
+          )}
+
+          {/* Admin */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-100">
+            <div className="flex flex-wrap gap-3">
               {CHECKBOX_FIELDS.map(f => (
-                <label key={f.key} className="flex items-center gap-1.5 text-xs text-gray-600 select-none cursor-pointer">
+                <label key={f.key} className="flex items-center gap-1.5 text-xs text-gray-500 select-none cursor-pointer">
                   <input type="checkbox" checked={!!job[f.key]} onChange={e => onToggleFlag(f.key, e.target.checked)} className="rounded" />
                   {f.label}
                 </label>
               ))}
             </div>
-            <div className="flex gap-2">
-              <button onClick={onEdit} className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-                <Edit2 size={12} /> Edit
+            <div className="flex items-center gap-1">
+              {job.gross_rev != null && (
+                <span className="flex items-center gap-0.5 text-xs font-semibold text-gray-500 mr-2">
+                  <DollarSign size={12} /> {Number(job.gross_rev).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              )}
+              <button onClick={onEdit} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" title="Edit">
+                <Edit2 size={13} />
               </button>
-              <button onClick={onDelete} className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors">
-                <Trash2 size={12} /> Delete
+              <button onClick={onDelete} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                <Trash2 size={13} />
               </button>
             </div>
           </div>
@@ -613,21 +687,19 @@ export default function CateringApp({ org, user }) {
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => stepDay(-1)}
-            className="p-2.5 rounded-lg transition-colors hover:brightness-95 active:brightness-90"
-            style={{ background: 'color-mix(in srgb, var(--primary) 12%, white)', color: 'var(--primary-dk)' }}
+            className="p-2 rounded-lg transition-colors hover:bg-gray-100 text-gray-500"
           >
-            <ChevronLeft size={20} strokeWidth={2.5} />
+            <ChevronLeft size={18} strokeWidth={2.5} />
           </button>
           <div className="text-center min-w-[150px]">
-            <div className="text-sm font-bold text-gray-900 leading-tight tracking-tight">{dayLabel(selectedDate)}</div>
+            <div className="text-sm font-semibold text-gray-900 leading-tight tracking-tight">{dayLabel(selectedDate)}</div>
             <div className="text-xs text-gray-400">{fmtDateShort(selectedDate)}</div>
           </div>
           <button
             onClick={() => stepDay(1)}
-            className="p-2.5 rounded-lg transition-colors hover:brightness-95 active:brightness-90"
-            style={{ background: 'color-mix(in srgb, var(--primary) 12%, white)', color: 'var(--primary-dk)' }}
+            className="p-2 rounded-lg transition-colors hover:bg-gray-100 text-gray-500"
           >
-            <ChevronRight size={20} strokeWidth={2.5} />
+            <ChevronRight size={18} strokeWidth={2.5} />
           </button>
           {selectedDate !== todayStr() && (
             <button onClick={goToday} className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors ml-1">
@@ -664,7 +736,7 @@ export default function CateringApp({ org, user }) {
             </div>
           ) : jobsForDay.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
-              <UtensilsCrossed size={32} className="mx-auto mb-2 opacity-40" />
+              <UtensilsCrossed size={28} className="mx-auto mb-2 opacity-40" />
               <p className="text-sm mb-3">No catering jobs on this day.</p>
               <button
                 onClick={() => { setEditingJob(null); setShowForm(true); }}
@@ -675,7 +747,7 @@ export default function CateringApp({ org, user }) {
               </button>
             </div>
           ) : (
-            <div className="space-y-2.5 max-w-3xl mx-auto">
+            <div className="space-y-2 max-w-3xl mx-auto">
               {jobsForDay.map(job => (
                 <JobCard
                   key={job.id}
