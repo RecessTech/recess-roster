@@ -358,11 +358,19 @@ function toNumOrNull(v) {
   const n = Number(v);
   return isNaN(n) ? null : n;
 }
+// Saved jobs can carry `null` for any optional text field -- trim() would
+// throw directly on that, so route every text field through this first.
+function trimOrEmpty(v) {
+  return (v ?? '').toString().trim();
+}
 
 function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
   const [draft, setDraft] = useState(() => job ? {
     ...emptyJob(date),
     ...job,
+    company: job.company ?? '', contact: job.contact ?? '', job_type: job.job_type ?? 'Lunch',
+    address: job.address ?? '', ready_by: job.ready_by ?? '', delivery_method: job.delivery_method ?? '',
+    salads: job.salads ?? '', notes: job.notes ?? '',
     platter_size: job.platter_size ?? '', pieces_per_person: job.pieces_per_person ?? DEFAULT_PIECES_PER_PERSON,
     breakfast_ppl: job.breakfast_ppl ?? '', coffee_ppl: job.coffee_ppl ?? '',
     gf_ppl: job.gf_ppl ?? '', vego_ppl: job.vego_ppl ?? '', pb_ppl: job.pb_ppl ?? '',
@@ -404,15 +412,15 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
     try {
       const payload = {
         job_date: draft.job_date,
-        company: draft.company.trim() || null,
-        contact: draft.contact.trim() || null,
+        company: trimOrEmpty(draft.company) || null,
+        contact: trimOrEmpty(draft.contact) || null,
         job_type: draft.job_type || null,
-        address: draft.address.trim() || null,
-        ready_by: draft.ready_by.trim() || null,
-        delivery_method: draft.delivery_method.trim() || null,
+        address: trimOrEmpty(draft.address) || null,
+        ready_by: trimOrEmpty(draft.ready_by) || null,
+        delivery_method: trimOrEmpty(draft.delivery_method) || null,
         platter_size: toNumOrNull(draft.platter_size),
         pieces_per_person: toNumOrNull(draft.pieces_per_person),
-        salads: draft.salads.trim() || null,
+        salads: trimOrEmpty(draft.salads) || null,
         breakfast_ppl: toNumOrNull(draft.breakfast_ppl),
         coffee_ppl: toNumOrNull(draft.coffee_ppl),
         gf_ppl: toNumOrNull(draft.gf_ppl),
@@ -425,11 +433,11 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
         bread_ordered: !!draft.bread_ordered,
         delivery_booked: !!draft.delivery_booked,
         gross_rev: toNumOrNull(draft.gross_rev),
-        notes: draft.notes.trim() || null,
+        notes: trimOrEmpty(draft.notes) || null,
         items: (draft.items || [])
-          .filter(it => it.name.trim())
+          .filter(it => trimOrEmpty(it.name))
           .map(it => ({
-            name: it.name.trim(),
+            name: trimOrEmpty(it.name),
             pieces: toNumOrNull(it.pieces) ?? 0,
             packaging: it.packaging || 'none',
             unit_qty: toNumOrNull(it.unit_qty),
