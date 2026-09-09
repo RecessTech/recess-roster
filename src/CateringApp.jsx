@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, X, ChevronLeft, ChevronRight, Trash2, Edit2, Loader2, ChevronDown, ChevronUp,
-  MapPin, Truck, DollarSign, StickyNote, User, Building2, UtensilsCrossed,
+  MapPin, Truck, DollarSign, StickyNote, User, Building2, UtensilsCrossed, Clock, Send,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -345,7 +345,7 @@ function MenuItemsEditor({ items, totalPieces, onChange }) {
 
 function emptyJob(date) {
   return {
-    job_date: date, company: '', contact: '', job_type: 'Lunch', address: '', ready_by: '',
+    job_date: date, company: '', contact: '', job_type: 'Lunch', address: '', ready_by: '', deliver_by: '',
     delivery_method: '', platter_size: '', pieces_per_person: DEFAULT_PIECES_PER_PERSON, salads: '',
     breakfast_ppl: '', coffee_ppl: '', gf_ppl: '', vego_ppl: '', pb_ppl: '', dairy_free_ppl: '', halal_ppl: '',
     confirmed: false, invoiced: false, bread_ordered: false, delivery_booked: false,
@@ -369,7 +369,7 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
     ...emptyJob(date),
     ...job,
     company: job.company ?? '', contact: job.contact ?? '', job_type: job.job_type ?? 'Lunch',
-    address: job.address ?? '', ready_by: job.ready_by ?? '', delivery_method: job.delivery_method ?? '',
+    address: job.address ?? '', ready_by: job.ready_by ?? '', deliver_by: job.deliver_by ?? '', delivery_method: job.delivery_method ?? '',
     salads: job.salads ?? '', notes: job.notes ?? '',
     platter_size: job.platter_size ?? '', pieces_per_person: job.pieces_per_person ?? DEFAULT_PIECES_PER_PERSON,
     breakfast_ppl: job.breakfast_ppl ?? '', coffee_ppl: job.coffee_ppl ?? '',
@@ -417,6 +417,7 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
         job_type: draft.job_type || null,
         address: trimOrEmpty(draft.address) || null,
         ready_by: trimOrEmpty(draft.ready_by) || null,
+        deliver_by: trimOrEmpty(draft.deliver_by) || null,
         delivery_method: trimOrEmpty(draft.delivery_method) || null,
         platter_size: toNumOrNull(draft.platter_size),
         pieces_per_person: toNumOrNull(draft.pieces_per_person),
@@ -483,8 +484,11 @@ function JobFormModal({ orgId, userId, date, job, onClose, onSaved }) {
             <Field label="Address / Location">
               <input value={draft.address} onChange={e => set('address', e.target.value)} placeholder="Delivery address or Pick-up" className={inputCls} />
             </Field>
-            <Field label="Ready By">
+            <Field label="Pick-Up Time">
               <input value={draft.ready_by} onChange={e => set('ready_by', e.target.value)} placeholder="e.g. 11:30 or 11:30-12:00" className={inputCls} />
+            </Field>
+            <Field label="Deliver By">
+              <input value={draft.deliver_by} onChange={e => set('deliver_by', e.target.value)} placeholder="Time requested by the customer" className={inputCls} />
             </Field>
             <Field label="Delivery Method">
               <input value={draft.delivery_method} onChange={e => set('delivery_method', e.target.value)} placeholder="Pick-up / Courier / CW" className={inputCls} />
@@ -685,6 +689,8 @@ function JobCard({ job, expanded, onToggle, onEdit, onDelete, onToggleFlag }) {
             {job.contact && <div className="flex items-center gap-1.5"><User size={12} className="text-gray-300 shrink-0" /> {job.contact}</div>}
             {job.address && <div className="flex items-center gap-1.5"><MapPin size={12} className="text-gray-300 shrink-0" /> {job.address}</div>}
             {job.delivery_method && <div className="flex items-center gap-1.5"><Truck size={12} className="text-gray-300 shrink-0" /> {job.delivery_method}</div>}
+            {job.ready_by && <div className="flex items-center gap-1.5"><Clock size={12} className="text-gray-300 shrink-0" /> Pick-Up Time: {job.ready_by}</div>}
+            {job.deliver_by && <div className="flex items-center gap-1.5"><Send size={12} className="text-gray-300 shrink-0" /> Deliver By: {job.deliver_by}</div>}
           </div>
 
           {job.notes && (
