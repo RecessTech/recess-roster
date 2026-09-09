@@ -175,6 +175,29 @@ body {
   --top-border:     #D7F3EF;
 }
 
+/* Catering theme — a distinct rose so it reads apart from
+   R-Shift's blue, R-Stock's orange, R-Prod's green, R-Recipe's
+   purple, Crystal Ball's indigo and Transfer Hub's teal */
+[data-theme="catering"] {
+  --sb-bg:          #BE185D;
+  --sb-icon:        rgba(253, 242, 248, 0.75);
+  --sb-icon-active: #FDF2F8;
+  --sb-active:      rgba(253, 242, 248, 0.2);
+  --sb-hover:       rgba(253, 242, 248, 0.1);
+  --sb-logo-bg:     rgba(253, 242, 248, 0.15);
+  --sb-logo-fg:     #FDF2F8;
+  --sb-tooltip-bg:  #9D174D;
+  --sb-tooltip-bd:  rgba(253,242,248,0.15);
+
+  --primary:        #BE185D;
+  --primary-dk:     #9D174D;
+  --primary-fg:     white;
+
+  --app-bg:         #FDF2F8;
+  --top-bg:         white;
+  --top-border:     #FBCFE8;
+}
+
 /* Dark theme (logo 3) */
 [data-theme="dark"] {
   --sb-bg:          #171717;

@@ -1793,4 +1793,50 @@ export const db = {
     if (error) throw error;
     return data;
   },
+
+  // ── Catering (R-Cater) ───────────────────────────────────────────────────────
+
+  // Every job whose date falls within [startDate, endDate] -- used to fill in
+  // the calendar's "has a job" dots for a visible month at a time.
+  async getCateringJobsRange(orgId, startDate, endDate) {
+    const { data, error } = await supabase
+      .from('catering_jobs')
+      .select('*')
+      .eq('org_id', orgId)
+      .gte('job_date', startDate)
+      .lte('job_date', endDate)
+      .order('ready_by', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createCateringJob(orgId, userId, job) {
+    const { data, error } = await supabase
+      .from('catering_jobs')
+      .insert([{ ...job, org_id: orgId, created_by: userId, updated_by: userId }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateCateringJob(jobId, userId, updates) {
+    const { data, error } = await supabase
+      .from('catering_jobs')
+      .update({ ...updates, updated_by: userId, updated_at: new Date().toISOString() })
+      .eq('id', jobId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteCateringJob(jobId) {
+    const { error } = await supabase
+      .from('catering_jobs')
+      .delete()
+      .eq('id', jobId);
+    if (error) throw error;
+  },
 };

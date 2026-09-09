@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck, Link2, Package, ChefHat, BookOpen, Sparkles } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck, Link2, Package, ChefHat, BookOpen, Sparkles, UtensilsCrossed } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { ErrorBoundary } from './ErrorBoundary';
 import { db, supabase } from './supabaseClient';
@@ -8,6 +8,7 @@ import ProductionApp from './ProductionApp';
 import RecipesApp from './RecipesApp';
 import CrystalBallApp from './CrystalBallApp';
 import TransferHubApp from './TransferHubApp';
+import CateringApp from './CateringApp';
 import { isoWeekLabel } from './isoWeek';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -97,7 +98,7 @@ const RosterApp = () => {
   });
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', activeApp === 'stock' ? 'stock' : activeApp === 'production' ? 'production' : activeApp === 'recipes' ? 'recipes' : activeApp === 'crystalball' ? 'crystalball' : activeApp === 'transfers' ? 'transfers' : 'blue');
+    document.documentElement.setAttribute('data-theme', activeApp === 'stock' ? 'stock' : activeApp === 'production' ? 'production' : activeApp === 'recipes' ? 'recipes' : activeApp === 'crystalball' ? 'crystalball' : activeApp === 'transfers' ? 'transfers' : activeApp === 'catering' ? 'catering' : 'blue');
     try { localStorage.setItem('rshift_active_app', activeApp); } catch {}
   }, [activeApp]);
 
@@ -6556,6 +6557,7 @@ Key things to verify after rebuild:
             { app: 'recipes',    icon: <BookOpen size={18} />,     label: 'R-Recipe' },
             { app: 'crystalball',icon: <Sparkles size={18} />,     label: 'Crystal Ball' },
             { app: 'transfers',  icon: <ArrowLeftRight size={18} />, label: 'Transfer Hub' },
+            { app: 'catering',   icon: <UtensilsCrossed size={18} />, label: 'R-Cater'  },
           ].map(({ app, icon, label }) => (
             <button key={app} onClick={() => setActiveApp(app)}
               className={`sb-btn group w-full flex justify-center ${activeApp === app ? 'active' : ''}`}
@@ -6638,6 +6640,14 @@ Key things to verify after rebuild:
                   <h1 className="text-base font-bold text-gray-900 tracking-tight">{businessSettings.businessName || org?.name}</h1>
                   <span className="text-gray-300">|</span>
                   <span className="text-sm text-gray-400">Transfer Hub</span>
+                </div>
+              </div>
+            ) : activeApp === 'catering' ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-base font-bold text-gray-900 tracking-tight">{businessSettings.businessName || org?.name}</h1>
+                  <span className="text-gray-300">|</span>
+                  <span className="text-sm text-gray-400">R-Cater</span>
                 </div>
               </div>
             ) : (
@@ -6798,6 +6808,8 @@ Key things to verify after rebuild:
         <div className="h-full overflow-auto"><ErrorBoundary><CrystalBallApp org={org} user={user} /></ErrorBoundary></div>
       ) : activeApp === 'transfers' ? (
         <div className="h-full overflow-auto"><ErrorBoundary><TransferHubApp org={org} user={user} /></ErrorBoundary></div>
+      ) : activeApp === 'catering' ? (
+        <div className="h-full overflow-hidden"><ErrorBoundary><CateringApp org={org} user={user} /></ErrorBoundary></div>
       ) : activeView === 'analytics' ? (
         <div className="h-full overflow-auto"><ErrorBoundary><AnalyticsView /></ErrorBoundary></div>
       ) : activeView === 'timesheet' ? (
