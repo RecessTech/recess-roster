@@ -245,204 +245,277 @@ const BUILD_GUIDES = {
   },
 };
 
-// Per-mix hue variety, so the chunky "mix" layers don't all read identical.
-const MIX_HUES = {
-  'Chicken Avo Mix': '#B7C77A',
-  'Tuna Mix': '#E3A9A0',
-  'Curried Egg Mix': '#E8B44D',
-  'Club Mix': '#D9B27C',
-  'Chickpea Mix': '#D8CDA6',
-  'Pesto Chicken': '#8FAE6E',
+// ── Illustrated exploded-diagram visual ──────────────────────────────────────
+// A flat, hand-drawn-style illustration per ingredient (ink outline + flat
+// colour + a highlight stroke), laid out top-to-base with curved arrow
+// callouts alternating left/right -- modelled on the team's own reference
+// diagram rather than any generic 3D effect.
+
+function seededRand(seed) {
+  const x = Math.sin(seed * 999.7) * 10000;
+  return x - Math.floor(x);
+}
+
+const MIX_COLORS = {
+  'Chicken Avo Mix': '#AEBD63',
+  'Tuna Mix': '#D98A82',
+  'Curried Egg Mix': '#E0A83E',
+  'Club Mix': '#C99A5E',
+  'Chickpea Mix': '#CDBE8A',
+  'Pesto Chicken': '#7E9A5A',
+};
+const SAUCE_COLORS = {
+  'Mayo': '#F2ECD9', 'Vegan Mayo': '#F2ECD9', 'Vegan Chilli Mayo': '#E8734A',
+  'Chilli Mayo': '#E8734A', 'Mustard Mayo': '#E0B62E', 'Horseradish Mayo': '#EFE6D2',
+  'Tomato Chutney': '#A6392E', 'Honey': '#DFA320', 'Chilli Crisp': '#C0301E',
+  'American Mustard': '#E0B620',
+};
+const GARNISH_COLORS = {
+  'Chives': '#3E7A4A', 'Dill': '#2E5C3A', 'Seasoning': '#4A4438',
+  'Parmesan': '#E9D98A', 'Crispy Shallots': '#C99A3E',
 };
 
-const TYPE_STYLE = {
-  bread:   { kind: 'slab',    height: 30, w: 200, h: 130, from: '#F3D08A', to: '#D9A64E', label: '#5C4419' },
-  cheese:  { kind: 'slab',    height: 12, w: 168, h: 108, from: '#FFE58A', to: '#F6C744', label: '#6B5416' },
-  meat:    { kind: 'slab',    height: 18, w: 172, h: 100, from: '#E8A79A', to: '#C97363', label: '#5C2B22' },
-  veg:     { kind: 'scallop', height: 14, w: 182, h: 104, from: '#9BCB6E', to: '#6FA847', label: '#2E4A1C' },
-  sauce:   { kind: 'ellipse', height: 8,  w: 150, h: 66,  from: 'rgba(255,250,235,0.92)', to: 'rgba(255,231,168,0.85)', label: '#7A5A1E' },
-  pickle:  { kind: 'cluster', height: 12, w: 150, h: 60,  from: '#CDE29A', to: '#A9C96C', label: '#425A20' },
-  tomato:  { kind: 'cluster', height: 12, w: 150, h: 60,  from: '#E8776A', to: '#C6473A', label: '#6B1F17' },
-  avocado: { kind: 'moon',    height: 14, w: 150, h: 90,  from: '#CBE0A0', to: '#9CC46B', label: '#2E4A1C' },
-  mix:     { kind: 'blob',    height: 22, w: 178, h: 108, from: '#D8CDA6', to: '#B7A15E', label: '#4A3E20' },
-  garnish: { kind: 'fleck',   height: 5,  w: 130, h: 40,  from: '#EAF7F4', to: '#C9EDE4', label: '#2C5C50' },
-};
-
-function styleFor(l) {
-  const base = TYPE_STYLE[l.type] || TYPE_STYLE.garnish;
-  if (l.type === 'mix' && MIX_HUES[l.name]) {
-    return { ...base, from: MIX_HUES[l.name], to: MIX_HUES[l.name] };
-  }
-  return base;
-}
-
-// ── Holographic exploded-stack visual ────────────────────────────────────────
-
-function HoloShape({ visual, tint }) {
-  const grad = `linear-gradient(155deg, ${visual.from}, ${visual.to})`;
-  const common = {
-    width: visual.w, height: visual.h, background: grad,
-    boxShadow: `0 0 18px ${tint}55, 0 10px 0 -2px rgba(0,0,0,0.18), 0 3px 6px rgba(0,0,0,0.25)`,
-    border: `1px solid ${tint}77`,
-  };
-  if (visual.kind === 'scallop') {
-    return <div style={{ ...common, borderRadius: '50%', clipPath: 'polygon(0% 20%,10% 5%,20% 22%,30% 4%,40% 20%,50% 3%,60% 20%,70% 4%,80% 22%,90% 5%,100% 20%,100% 100%,0% 100%)' }} />;
-  }
-  if (visual.kind === 'moon') {
-    return <div style={{ ...common, borderRadius: '50% 50% 50% 8%' }} />;
-  }
-  if (visual.kind === 'blob') {
-    return <div style={{ ...common, borderRadius: '61% 39% 47% 53% / 44% 51% 49% 56%' }} />;
-  }
-  if (visual.kind === 'ellipse') {
-    return (
-      <div style={{ ...common, borderRadius: '50%', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(120deg, rgba(255,255,255,0.6), transparent 55%)' }} />
-      </div>
-    );
-  }
-  if (visual.kind === 'cluster' || visual.kind === 'fleck') {
-    const n = visual.kind === 'fleck' ? 6 : 5;
-    return (
-      <div style={{ width: visual.w, height: visual.h, position: 'relative' }}>
-        {Array.from({ length: n }, (_, i) => {
-          const size = visual.kind === 'fleck' ? 6 + (i % 3) * 2 : 22 + (i % 3) * 6;
-          const left = (i / n) * (visual.w - size) + (i % 2 ? 6 : -4);
-          const top = (visual.h - size) / 2 + (i % 2 === 0 ? -6 : 8);
-          return (
-            <div key={i} style={{
-              position: 'absolute', left, top, width: size, height: size, borderRadius: '50%',
-              background: grad, boxShadow: `0 0 10px ${tint}55, 0 3px 4px rgba(0,0,0,0.25)`,
-              border: `1px solid ${tint}66`,
-            }} />
-          );
-        })}
-      </div>
-    );
-  }
-  // slab (default)
-  return <div style={{ ...common, borderRadius: 26 }} />;
-}
-
-// Vertical spacing between layers is deliberately larger than any shape's
-// own rendered thickness -- this is an exploded view, not a literal
-// cross-section, so garnish/sauce layers need room to read as their own
-// distinct, clearly-labelled slice rather than disappearing behind bread.
-function gapFor(l) {
-  return l.type === 'bread' ? 50 : 34;
-}
-
-function HoloStack({ guide, activeIndex, onHover, tint }) {
-  const ordered = useMemo(() => [...guide.layers].reverse(), [guide.layers]); // base first (bottom) -> top last
-  let cumulative = 0;
-  const positioned = ordered.map((l, i) => {
-    const visual = styleFor(l);
-    const y = cumulative;
-    cumulative += gapFor(l);
-    return { ...l, visual, y, renderIndex: i, sourceIndex: guide.layers.length - 1 - i };
-  });
-  const totalHeight = cumulative;
-
+function Bread({ seed, toasted }) {
+  const marks = [-58, -18, 22, 62];
   return (
-    <div className="holo-stage" style={{ '--tint': tint }}>
-      <div className="holo-spinner">
-        {positioned.map((l) => {
-          const isActive = activeIndex === l.sourceIndex;
-          return (
-            <div
-              key={l.sourceIndex}
-              className={`holo-layer${isActive ? ' is-active' : ''}`}
-              style={{ transform: `translate(-50%, calc(-1 * ${l.y - totalHeight / 2}px))` }}
-              onMouseEnter={() => onHover(l.sourceIndex)}
-              onMouseLeave={() => onHover(null)}
-            >
-              <HoloShape visual={l.visual} tint={tint} />
-              <div className="holo-label">
-                <span className="holo-label-name">{l.name}</span>
-                {l.qty && <span className="holo-label-qty">{l.qty}</span>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="holo-base-glow" />
-    </div>
+    <g>
+      <path d="M -104 12 Q -108 -30 -58 -35 Q 0 -42 58 -35 Q 108 -30 104 12 Q 100 36 55 38 Q 0 42 -55 38 Q -100 36 -104 12 Z"
+        fill="#EFC077" stroke="#5C3A18" strokeWidth="4" strokeLinejoin="round" />
+      <path d="M -82 -16 Q 0 -28 82 -16" fill="none" stroke="#FBE3AE" strokeWidth="6" strokeLinecap="round" opacity="0.7" />
+      {toasted && marks.map((x, i) => (
+        <path key={i} d={`M ${x - 13 + (seededRand(seed + i) - 0.5) * 6} -20 L ${x + 13 + (seededRand(seed + i + 9) - 0.5) * 6} 24`}
+          stroke="#6B3B14" strokeWidth="7" strokeLinecap="round" opacity="0.55" />
+      ))}
+    </g>
   );
 }
 
-const HOLO_STYLES = `
-@property --holo-spin { syntax: '<angle>'; inherits: true; initial-value: 0deg; }
-
-.holo-stage {
-  position: relative;
-  height: 480px;
-  perspective: 1100px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.holo-spinner {
-  position: relative;
-  width: 0;
-  height: 0;
-  transform-style: preserve-3d;
-  transform: rotateX(50deg) rotateZ(var(--holo-spin));
-  animation: holo-spin 22s linear infinite;
-}
-.holo-stage:hover .holo-spinner { animation-play-state: paused; }
-@keyframes holo-spin { from { --holo-spin: 0deg; } to { --holo-spin: 360deg; } }
-@media (prefers-reduced-motion: reduce) {
-  .holo-spinner { animation: none; transform: rotateX(50deg) rotateZ(-28deg); }
+function Cheese({ seed }) {
+  const holes = Array.from({ length: 5 }, (_, i) => ({
+    r: 5 + seededRand(seed + i) * 6,
+    x: -66 + seededRand(seed + i * 2) * 132,
+    y: -16 + seededRand(seed + i * 3) * 32,
+  }));
+  return (
+    <g>
+      <path d="M -94 22 L -58 -26 L 96 -18 L 60 28 Z" fill="#FFDE6E" stroke="#8A6A16" strokeWidth="3.5" strokeLinejoin="round" />
+      {holes.map((h, i) => <circle key={i} cx={h.x} cy={h.y} r={h.r} fill="#FFF6D9" stroke="#C9A227" strokeWidth="1.5" />)}
+    </g>
+  );
 }
 
-.holo-layer {
-  position: absolute;
-  left: 0; top: 0;
-  transform-style: preserve-3d;
-  transition: filter 0.15s ease;
+function Meat() {
+  return (
+    <g>
+      <path d="M -100 6 Q -70 -22 -30 -4 Q 10 -24 50 -2 Q 85 -20 102 4 Q 85 30 40 20 Q 0 32 -40 18 Q -80 30 -100 6 Z"
+        fill="#E8998D" stroke="#9C4A3C" strokeWidth="3.5" strokeLinejoin="round" />
+      <path d="M -70 0 Q -40 -10 -10 2" stroke="#FBD9D2" strokeWidth="4" fill="none" strokeLinecap="round" opacity="0.75" />
+      <path d="M 20 4 Q 50 -6 80 6" stroke="#FBD9D2" strokeWidth="4" fill="none" strokeLinecap="round" opacity="0.75" />
+    </g>
+  );
 }
-.holo-label {
-  position: absolute;
-  left: 50%; top: 50%;
-  transform: translate(-50%, -50%) rotateZ(calc(-1 * var(--holo-spin))) rotateX(-50deg);
-  white-space: nowrap;
-  text-align: center;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  font-size: 11px;
-  line-height: 1.3;
+
+function Shredded({ seed, color }) {
+  const strokes = Array.from({ length: 16 }, (_, i) => ({
+    x: -92 + (i / 16) * 184 + (seededRand(seed + i) - 0.5) * 14,
+    y: (seededRand(seed + i * 2) - 0.5) * 44,
+    rot: seededRand(seed + i * 3) * 70 - 35,
+    len: 14 + seededRand(seed + i * 4) * 12,
+  }));
+  return (
+    <g>
+      {strokes.map((s, i) => (
+        <path key={i} d={`M 0 0 q ${s.len / 2} -4 ${s.len} 2`} stroke={color} strokeWidth="5" fill="none" strokeLinecap="round"
+          transform={`translate(${s.x},${s.y}) rotate(${s.rot})`} />
+      ))}
+    </g>
+  );
 }
-.holo-layer.is-active .holo-label,
-.holo-layer:hover .holo-label { opacity: 1; }
-.holo-label-name {
-  display: block;
-  font-weight: 700;
-  color: var(--tint);
-  text-shadow: 0 0 6px color-mix(in srgb, var(--tint) 70%, white), 0 1px 2px rgba(0,0,0,0.5);
+
+function Pickle({ seed, isOnion }) {
+  if (isOnion) {
+    return (
+      <g>
+        {[36, 25, 14].map((r, i) => (
+          <circle key={i} cx="0" cy="0" r={r} fill="none" stroke={i % 2 ? '#C97BC9' : '#EBB3EB'} strokeWidth="7" />
+        ))}
+      </g>
+    );
+  }
+  return (
+    <g>
+      {[-46, 8, 58].map((x, i) => (
+        <g key={i} transform={`translate(${x},${(seededRand(seed + i) - 0.5) * 14}) rotate(${(seededRand(seed + i * 2) - 0.5) * 20})`}>
+          <ellipse rx="26" ry="15" fill="#C9DE8A" stroke="#5C7A28" strokeWidth="3" />
+          <ellipse rx="18" ry="9" fill="none" stroke="#8FAE4A" strokeWidth="2" />
+          <circle cx="-6" cy="-2" r="1.6" fill="#4A5C1C" />
+          <circle cx="4" cy="3" r="1.6" fill="#4A5C1C" />
+        </g>
+      ))}
+    </g>
+  );
 }
-.holo-label-qty {
-  display: block;
-  font-size: 9.5px;
-  color: #E0FBFF;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+
+function Tomato({ seed, dried }) {
+  if (dried) {
+    return (
+      <g>
+        {[-50, 0, 50].map((x, i) => (
+          <path key={i} d="M -22 -8 Q 0 -14 22 -8 Q 26 0 22 8 Q 0 14 -22 8 Q -26 0 -22 -8 Z"
+            fill="#A6392E" stroke="#5C1F19" strokeWidth="2.5"
+            transform={`translate(${x},${(seededRand(seed + i) - 0.5) * 16}) rotate(${(seededRand(seed + i * 3) - 0.5) * 40})`} />
+        ))}
+      </g>
+    );
+  }
+  return (
+    <g>
+      <circle r="38" fill="#E8776A" stroke="#8A2B20" strokeWidth="3.5" />
+      <circle r="30" fill="none" stroke="#F4A99B" strokeWidth="2" />
+      {[0, 60, 120, 180, 240, 300].map((deg, i) => (
+        <ellipse key={i} cx="0" cy="-16" rx="4" ry="9" fill="#FBDCD3" transform={`rotate(${deg})`} />
+      ))}
+    </g>
+  );
 }
-.holo-layer.is-active > div:first-child {
-  filter: drop-shadow(0 0 14px var(--tint));
+
+function Veg({ seed, cucumber }) {
+  if (cucumber) {
+    return (
+      <g>
+        {[-40, 24].map((x, i) => (
+          <g key={i} transform={`translate(${x},0)`}>
+            <circle r="24" fill="#CDE29A" stroke="#5C7A28" strokeWidth="3" />
+            <circle r="17" fill="none" stroke="#9BC24A" strokeWidth="2" />
+            <circle r="9" fill="#EAF4C8" />
+          </g>
+        ))}
+      </g>
+    );
+  }
+  return (
+    <g>
+      <path d="M -100 10 Q -60 -30 0 -8 Q 60 -34 100 6 Q 60 26 0 14 Q -60 30 -100 10 Z"
+        fill="#8FCB6B" stroke="#3E6B22" strokeWidth="3.5" strokeLinejoin="round" />
+      <path d="M -70 6 Q 0 -6 70 4" stroke="#4E7A2C" strokeWidth="3" fill="none" opacity="0.6" />
+    </g>
+  );
 }
-.holo-base-glow {
-  position: absolute;
-  bottom: 18%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 220px;
-  height: 40px;
-  background: radial-gradient(ellipse, var(--tint) 0%, transparent 72%);
-  opacity: 0.25;
-  filter: blur(4px);
-  pointer-events: none;
+
+function Avocado() {
+  return (
+    <g>
+      <path d="M -60 40 Q -80 -10 -30 -38 Q 40 -46 65 0 Q 60 34 0 42 Q -35 46 -60 40 Z"
+        fill="#7FA84A" stroke="#3E5A20" strokeWidth="3.5" strokeLinejoin="round" />
+      <path d="M -45 30 Q -60 -6 -22 -28 Q 32 -34 52 4 Q 46 26 -4 32 Q -28 34 -45 30 Z" fill="#C7DE8E" />
+      <circle cx="30" cy="6" r="14" fill="#B8935A" stroke="#7A5A2E" strokeWidth="2" />
+    </g>
+  );
 }
-`;
+
+function Squiggle({ color }) {
+  return <path d="M -90 6 Q -60 -22 -30 6 T 30 6 T 90 -6" fill="none" stroke={color} strokeWidth="9" strokeLinecap="round" />;
+}
+
+function Butter() {
+  return (
+    <g>
+      <rect x="-55" y="-18" width="110" height="36" rx="10" fill="#FCE79A" stroke="#B8901E" strokeWidth="3" />
+      <path d="M -40 -8 L 40 -8" stroke="#FFF6D5" strokeWidth="5" strokeLinecap="round" opacity="0.85" />
+    </g>
+  );
+}
+
+function Garnish({ seed, color, kind }) {
+  const n = 10;
+  return (
+    <g>
+      {Array.from({ length: n }, (_, i) => {
+        const x = -80 + (i / n) * 160 + (seededRand(seed + i) - 0.5) * 10;
+        const y = (seededRand(seed + i * 2) - 0.5) * 20;
+        if (kind === 'dash') {
+          return <path key={i} d="M -6 0 L 6 0" stroke={color} strokeWidth="3" strokeLinecap="round"
+            transform={`translate(${x},${y}) rotate(${seededRand(seed + i * 3) * 180})`} />;
+        }
+        return <circle key={i} cx={x} cy={y} r={2 + seededRand(seed + i * 4) * 2} fill={color} />;
+      })}
+    </g>
+  );
+}
+
+function ingredientArt(l, seed) {
+  const n = l.name.toLowerCase();
+  switch (l.type) {
+    case 'bread': return <Bread seed={seed} toasted={l.toasted} />;
+    case 'cheese': return <Cheese seed={seed} />;
+    case 'meat': return <Meat />;
+    case 'mix': return <Shredded seed={seed} color={MIX_COLORS[l.name] || '#B08A52'} />;
+    case 'pickle': return <Pickle seed={seed} isOnion={n.includes('onion')} />;
+    case 'tomato': return <Tomato seed={seed} dried={n.includes('dried')} />;
+    case 'veg': return <Veg seed={seed} cucumber={n.includes('cucumber')} />;
+    case 'avocado': return <Avocado />;
+    case 'garnish': return (
+      <Garnish seed={seed} color={GARNISH_COLORS[l.name] || '#4A7A5A'}
+        kind={n.includes('season') || n.includes('pepper') ? 'dot' : 'dash'} />
+    );
+    case 'sauce':
+      if (n === 'butter') return <Butter />;
+      return <Squiggle color={SAUCE_COLORS[l.name] || '#E8C24A'} />;
+    default: return <circle r="30" fill="#D8D2C4" stroke="#8C8175" strokeWidth="3" />;
+  }
+}
+
+function ExplodedDiagram({ guide, activeIndex, onHover, tint }) {
+  const BAND = 116;
+  const WIDTH = 820;
+  const PAD = 54;
+  const height = guide.layers.length * BAND + PAD * 2;
+  const isToastie = guide.category === 'Toasties';
+
+  return (
+    <svg viewBox={`0 0 ${WIDTH} ${height}`} style={{ width: '100%', maxWidth: 620, display: 'block', margin: '0 auto' }}>
+      <defs>
+        <marker id="builds-arrowhead" markerWidth="9" markerHeight="9" refX="6" refY="4.5" orient="auto">
+          <path d="M0,0 L9,4.5 L0,9 Z" fill="#2B2420" />
+        </marker>
+      </defs>
+      {guide.layers.map((l, i) => {
+        const cy = PAD + i * BAND + BAND / 2;
+        const cx = WIDTH / 2;
+        const side = i % 2 === 0 ? 'left' : 'right';
+        const jitter = (seededRand(i * 7 + 3) - 0.5) * 16;
+        const labelX = side === 'left' ? 26 : WIDTH - 26;
+        const arrowStartX = side === 'left' ? 158 : WIDTH - 158;
+        const arrowEndX = side === 'left' ? cx - 100 : cx + 100;
+        const isActive = activeIndex === i;
+        const arcH = 30 + seededRand(i * 13 + 1) * 14;
+        const path = `M ${arrowStartX} ${cy + jitter} Q ${(arrowStartX + arrowEndX) / 2} ${cy - arcH} ${arrowEndX} ${cy}`;
+        return (
+          <g key={i} onMouseEnter={() => onHover(i)} onMouseLeave={() => onHover(null)} style={{ cursor: 'pointer' }}>
+            <path d={path} fill="none" stroke={isActive ? tint : '#B8AE9F'} strokeWidth={isActive ? 3 : 2}
+              markerEnd="url(#builds-arrowhead)" opacity={isActive ? 1 : 0.6} />
+            <g transform={`translate(${cx},${cy}) scale(${isActive ? 1.1 : 1})`} style={{ transition: 'transform 0.15s ease' }}>
+              {ingredientArt({ ...l, toasted: isToastie && l.type === 'bread' }, i)}
+            </g>
+            <text x={labelX} y={cy - 6} textAnchor={side === 'left' ? 'start' : 'end'}
+              fontFamily="'Kalam', cursive" fontWeight="700" fontSize="21"
+              fill={isActive ? tint : '#2B2420'}>
+              {l.name}
+            </text>
+            {l.qty && (
+              <text x={labelX} y={cy + 15} textAnchor={side === 'left' ? 'start' : 'end'}
+                fontFamily="'Work Sans', sans-serif" fontSize="12.5" fill="#8C8175">
+                {l.qty}
+              </text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+const DIAGRAM_STYLES = `@import url('https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap');`;
 
 // ── Item list & shell ────────────────────────────────────────────────────────
 
@@ -498,7 +571,7 @@ export default function BuildsApp({ org }) {
 
   return (
     <div className="h-full flex flex-col" style={{ background: 'var(--app-bg)' }}>
-      <style>{HOLO_STYLES}</style>
+      <style>{DIAGRAM_STYLES}</style>
 
       <div className="shrink-0 border-b px-4 py-2.5 flex items-center gap-3 bg-white" style={{ borderColor: 'var(--top-border)' }}>
         <Layers size={16} style={{ color: 'var(--primary)' }} />
@@ -569,11 +642,13 @@ export default function BuildsApp({ org }) {
                   {guide.category}
                 </span>
               </div>
-              <p className="text-xs text-gray-400 mb-2">Hover a layer, or a step below, to spotlight it. Hover the hologram to pause the spin.</p>
+              <p className="text-xs text-gray-400 mb-2">Hover a layer, or a step below, to spotlight it.</p>
 
-              <HoloStack guide={guide} activeIndex={activeIndex} onHover={setActiveIndex} tint="var(--primary)" />
+              <div className="bg-white rounded-2xl border border-gray-100 py-6 px-3">
+                <ExplodedDiagram guide={guide} activeIndex={activeIndex} onHover={setActiveIndex} tint="var(--primary-dk)" />
+              </div>
 
-              <div className="mt-2 bg-white rounded-2xl border border-gray-100 overflow-hidden">
+              <div className="mt-3 bg-white rounded-2xl border border-gray-100 overflow-hidden">
                 <div className="px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-gray-400 bg-gray-50 border-b border-gray-100">
                   Stack Order — Top to Base
                 </div>
