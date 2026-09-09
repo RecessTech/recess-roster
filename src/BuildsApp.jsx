@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Loader2, Search, Layers } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
-import { findGuide, ExplodedDiagram, DIAGRAM_STYLES } from './buildGuides';
+import { findGuide, ExplodedDiagram } from './buildGuides';
 
 export default function BuildsApp({ org }) {
   const orgId = org?.id;
@@ -10,7 +10,6 @@ export default function BuildsApp({ org }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(null);
-  const [activeIndex, setActiveIndex] = useState(null);
 
   const load = useCallback(async () => {
     if (!orgId) return;
@@ -48,12 +47,8 @@ export default function BuildsApp({ org }) {
   const selectedItem = items.find(i => i.id === selectedId);
   const guide = selectedItem ? findGuide(selectedItem.name) : null;
 
-  useEffect(() => { setActiveIndex(null); }, [selectedId]);
-
   return (
     <div className="h-full flex flex-col" style={{ background: 'var(--app-bg)' }}>
-      <style>{DIAGRAM_STYLES}</style>
-
       <div className="shrink-0 border-b px-4 py-2.5 flex items-center gap-3 bg-white" style={{ borderColor: 'var(--top-border)' }}>
         <Layers size={16} style={{ color: 'var(--primary)' }} />
         <span className="text-sm font-semibold text-gray-700">Sandwich &amp; Toastie Build Guides</span>
@@ -123,32 +118,10 @@ export default function BuildsApp({ org }) {
                   {guide.category}
                 </span>
               </div>
-              <p className="text-xs text-gray-400 mb-2">Hover a layer, or a step below, to spotlight it.</p>
+              <p className="text-xs text-gray-400 mb-3">Top to base.</p>
 
-              <div className="bg-white rounded-2xl border border-gray-100 py-4 px-3">
-                <ExplodedDiagram guide={guide} activeIndex={activeIndex} onHover={setActiveIndex} tint="var(--primary-dk)" maxWidth={500} />
-              </div>
-
-              <div className="mt-3 bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                <div className="px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-gray-400 bg-gray-50 border-b border-gray-100">
-                  Stack Order — Top to Base
-                </div>
-                <div className="divide-y divide-gray-50">
-                  {guide.layers.map((l, i) => (
-                    <div
-                      key={i}
-                      onMouseEnter={() => setActiveIndex(i)}
-                      onMouseLeave={() => setActiveIndex(null)}
-                      className={`flex items-center gap-3 px-4 py-2 text-sm transition-colors ${activeIndex === i ? 'bg-gray-50' : ''}`}
-                    >
-                      <span className="w-11 shrink-0 text-[10px] font-bold uppercase tracking-wide" style={{ color: l.edge === 'top' ? 'var(--primary-dk)' : l.edge === 'base' ? 'var(--primary-dk)' : '#D1D5DB' }}>
-                        {l.edge === 'top' ? 'TOP' : l.edge === 'base' ? 'BASE' : '↑'}
-                      </span>
-                      <span className="flex-1 font-medium text-gray-800">{l.name}</span>
-                      <span className="text-gray-400 text-xs">{l.qty}</span>
-                    </div>
-                  ))}
-                </div>
+              <div className="bg-white rounded-2xl border border-gray-100 py-3 px-4">
+                <ExplodedDiagram guide={guide} tint="var(--primary-dk)" maxWidth={420} />
               </div>
             </div>
           )}

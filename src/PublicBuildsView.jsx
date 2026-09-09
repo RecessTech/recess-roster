@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from './supabaseClient';
-import { findGuide, ExplodedDiagram, DIAGRAM_STYLES } from './buildGuides';
+import { findGuide, ExplodedDiagram } from './buildGuides';
 
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
 const CYAN = '#0891B2';
@@ -86,13 +86,11 @@ export function BuildPickerScreen({ businessName, token, grouped, onSelect }) {
   );
 }
 
-// Detail view -- the exploded diagram sized to the phone's own width (not a
-// fixed desktop max-width) so it and the stack-order list below it both fit
-// without an oversized illustration forcing extra scrolling.
-export function BuildDetailScreen({ token, item, guide, activeIndex, setActiveIndex, onBack }) {
+// Detail view -- the exploded diagram sized to the phone's own width, not a
+// fixed desktop max-width, so it stays compact on the phone it's opened on.
+export function BuildDetailScreen({ token, item, guide, onBack }) {
   return (
     <div style={{ minHeight: '100vh', background: '#F1F5F9', fontFamily: FONT }}>
-      <style>{DIAGRAM_STYLES}</style>
       <div style={{ maxWidth: 480, margin: '0 auto', paddingBottom: 24 }}>
         <div style={{ background: CYAN, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
           <button
@@ -125,34 +123,9 @@ export function BuildDetailScreen({ token, item, guide, activeIndex, setActiveIn
               <p style={{ fontSize: 12, color: '#94A3B8' }}>This item hasn't been added to the build guide baseline. It's likely a special or limited-time item.</p>
             </div>
           ) : (
-            <>
-              <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '12px 6px', marginBottom: 10 }}>
-                <ExplodedDiagram guide={guide} activeIndex={activeIndex} onHover={setActiveIndex} tint={CYAN_DK} maxWidth={340} />
-              </div>
-
-              <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, overflow: 'hidden' }}>
-                <div style={{ padding: '8px 12px', fontSize: 9.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', background: '#FAFBFC', borderBottom: '1px solid #F1F5F9' }}>
-                  Stack Order — Top to Base
-                </div>
-                {guide.layers.map((l, i) => (
-                  <div
-                    key={i}
-                    onTouchStart={() => setActiveIndex(i)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', fontSize: 13.5,
-                      borderTop: i > 0 ? '1px solid #F8FAFC' : 'none',
-                      background: activeIndex === i ? '#F8FAFC' : 'transparent',
-                    }}
-                  >
-                    <span style={{ width: 34, flexShrink: 0, fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: l.edge ? CYAN_DK : '#CBD5E1' }}>
-                      {l.edge === 'top' ? 'TOP' : l.edge === 'base' ? 'BASE' : '↑'}
-                    </span>
-                    <span style={{ flex: 1, fontWeight: 600, color: '#334155' }}>{l.name}</span>
-                    <span style={{ fontSize: 11.5, color: '#94A3B8' }}>{l.qty}</span>
-                  </div>
-                ))}
-              </div>
-            </>
+            <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '14px 10px' }}>
+              <ExplodedDiagram guide={guide} tint={CYAN_DK} maxWidth={360} />
+            </div>
           )}
         </div>
 
@@ -169,7 +142,6 @@ export default function PublicBuildsView({ token }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
-  const [activeIndex, setActiveIndex] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -204,8 +176,6 @@ export default function PublicBuildsView({ token }) {
 
   const selectedItem = items.find(i => i.id === selectedId);
   const guide = selectedItem ? findGuide(selectedItem.name) : null;
-
-  useEffect(() => { setActiveIndex(null); }, [selectedId]);
 
   if (loading) {
     return (
@@ -252,8 +222,6 @@ export default function PublicBuildsView({ token }) {
       token={token}
       item={selectedItem}
       guide={guide}
-      activeIndex={activeIndex}
-      setActiveIndex={setActiveIndex}
       onBack={() => setSelectedId(null)}
     />
   );
