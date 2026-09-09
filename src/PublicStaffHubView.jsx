@@ -42,6 +42,15 @@ const LINKS = [
     tint: '#FFFBEB',
     path: '/prep/',
   },
+  {
+    key: 'catering',
+    label: 'Catering',
+    description: "Today's jobs",
+    icon: '🥪',
+    color: '#BE185D',
+    tint: '#FDF2F8',
+    path: '/cater/',
+  },
 ];
 
 function greeting() {

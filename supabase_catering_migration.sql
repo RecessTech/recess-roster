@@ -23,7 +23,8 @@ CREATE TABLE catering_jobs (
   contact           TEXT,
   job_type          TEXT,          -- Breakfast / Lunch / Morning Tea / Afternoon Tea / Other
   address           TEXT,
-  ready_by          TEXT,          -- freeform: times are often ranges ("11:30-12:00") or TBC
+  ready_by          TEXT,          -- "Pick-Up Time" in the UI -- kitchen-logistics time, set by admin
+  deliver_by        TEXT,          -- delivery time requested by the customer -- freeform, often a range
   delivery_method   TEXT,          -- Pick-up / Courier / CW / etc.
 
   platter_size      INTEGER,       -- number of people the sandwich platter serves
