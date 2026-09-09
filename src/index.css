@@ -198,6 +198,30 @@ body {
   --top-border:     #FBCFE8;
 }
 
+/* Builds theme — a holographic cyan, distinct from every other module's
+   colourway (R-Shift blue, R-Stock orange, R-Prod green, R-Recipe purple,
+   Crystal Ball indigo, Transfer Hub teal, Catering rose) and fitting for
+   the rotating 3D build-guide projection this module is built around */
+[data-theme="builds"] {
+  --sb-bg:          #0E7490;
+  --sb-icon:        rgba(236, 254, 255, 0.75);
+  --sb-icon-active: #ECFEFF;
+  --sb-active:      rgba(236, 254, 255, 0.2);
+  --sb-hover:       rgba(236, 254, 255, 0.1);
+  --sb-logo-bg:     rgba(236, 254, 255, 0.15);
+  --sb-logo-fg:     #ECFEFF;
+  --sb-tooltip-bg:  #155E75;
+  --sb-tooltip-bd:  rgba(236,254,255,0.15);
+
+  --primary:        #0891B2;
+  --primary-dk:     #0E7490;
+  --primary-fg:     white;
+
+  --app-bg:         #ECFEFF;
+  --top-bg:         white;
+  --top-border:     #A5F3FC;
+}
+
 /* Dark theme (logo 3) */
 [data-theme="dark"] {
   --sb-bg:          #171717;
