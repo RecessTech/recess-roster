@@ -8,6 +8,7 @@ import PublicTransferHubView from './PublicTransferHubView';
 import PublicPrepListView from './PublicPrepListView';
 import PublicStaffHubView from './PublicStaffHubView';
 import PublicCateringView from './PublicCateringView';
+import PublicBuildsView from './PublicBuildsView';
 import { ErrorBoundary } from './ErrorBoundary';
 
 // Resolve public routes before auth: /s/<token> (one staff member's shifts),
@@ -15,7 +16,8 @@ import { ErrorBoundary } from './ErrorBoundary';
 // production plan, read-only), /transfers/<token> (Transfer Hub's
 // open-requests dashboard, read-only), /prep/<token> (the Prep List --
 // flag a prep component as running low, tick it off once prepped),
-// /cater/<token> (the day's catering jobs, read-only), and /hub/<token>
+// /cater/<token> (the day's catering jobs, read-only), /builds/<token>
+// (sandwich & toastie build guides, read-only), and /hub/<token>
 // (a landing page linking out to the other read-only pages)
 const publicMatch = window.location.pathname.match(/^\/s\/([^/]+)/);
 const PUBLIC_TOKEN = publicMatch ? publicMatch[1] : null;
@@ -34,6 +36,9 @@ const PUBLIC_PREP_LIST_TOKEN = publicPrepListMatch ? publicPrepListMatch[1] : nu
 
 const publicCateringMatch = window.location.pathname.match(/^\/cater\/([^/]+)/);
 const PUBLIC_CATERING_TOKEN = publicCateringMatch ? publicCateringMatch[1] : null;
+
+const publicBuildsMatch = window.location.pathname.match(/^\/builds\/([^/]+)/);
+const PUBLIC_BUILDS_TOKEN = publicBuildsMatch ? publicBuildsMatch[1] : null;
 
 const publicHubMatch = window.location.pathname.match(/^\/hub\/([^/]+)/);
 const PUBLIC_HUB_TOKEN = publicHubMatch ? publicHubMatch[1] : null;
@@ -82,6 +87,9 @@ function App() {
   }
   if (PUBLIC_CATERING_TOKEN) {
     return <PublicCateringView token={PUBLIC_CATERING_TOKEN} />;
+  }
+  if (PUBLIC_BUILDS_TOKEN) {
+    return <PublicBuildsView token={PUBLIC_BUILDS_TOKEN} />;
   }
   if (PUBLIC_HUB_TOKEN) {
     return <PublicStaffHubView token={PUBLIC_HUB_TOKEN} />;
