@@ -3,6 +3,14 @@ import { supabase } from './supabaseClient';
 
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
 const GREEN = '#15803D';
+const NAME_STORAGE_KEY = 'productionPlan_yourName';
+
+function loadStoredName() {
+  try { return localStorage.getItem(NAME_STORAGE_KEY) || ''; } catch { return ''; }
+}
+function storeName(name) {
+  try { localStorage.setItem(NAME_STORAGE_KEY, name); } catch { /* private browsing etc. -- fine to skip */ }
+}
 
 function fmtISO(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -18,6 +26,39 @@ function dayLabel(dateStr) {
 }
 function fmtDateShort(dateStr) {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function timeAgo(iso) {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+}
+function entryKey(itemId, channelId) { return `${itemId}:${channelId}`; }
+
+// supabase-js's `.functions` is a getter that hands back a brand new
+// FunctionsClient on every access, so it can't be swapped out for a test
+// double by reassignment. These two calls are isolated behind fetchPlan/
+// savePlan props (defaulting to the real edge function) purely so a
+// preview harness can inject an in-memory stand-in instead.
+async function defaultFetchPlan(token, date) {
+  const { data, error } = await supabase.functions.invoke('public-production', {
+    headers: { Authorization: `Bearer ${ANON_KEY}` },
+    body: { token, date },
+  });
+  if (error) throw new Error(error.message);
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+async function defaultSavePlan({ token, date, siteId, entries, editedByName }) {
+  const { data, error } = await supabase.functions.invoke('public-production', {
+    headers: { Authorization: `Bearer ${ANON_KEY}` },
+    body: { token, date, action: 'updatePlan', siteId, entries, editedByName },
+  });
+  if (error) throw new Error(error.message);
+  if (data?.error) throw new Error(data.error);
+  return data;
 }
 
 function QtyBadge({ qty }) {
@@ -35,7 +76,35 @@ function QtyBadge({ qty }) {
   return <span style={{ color: '#D1D5DB', fontWeight: 600, fontSize: 11 }}>0</span>;
 }
 
-export default function PublicProductionView({ token }) {
+function QtyInput({ qty, onChange }) {
+  const [draft, setDraft] = useState(String(qty));
+  useEffect(() => { setDraft(String(qty)); }, [qty]);
+
+  function commit() {
+    const n = parseInt(draft, 10);
+    onChange(isNaN(n) || n < 0 ? 0 : n);
+  }
+
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      min="0"
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onFocus={e => e.target.select()}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+      style={{
+        width: 34, textAlign: 'center', fontSize: 12, fontWeight: 700,
+        border: '1.5px solid #BBF7D0', borderRadius: 8, padding: '3px 0',
+        background: '#F0FDF4', color: '#166534',
+      }}
+    />
+  );
+}
+
+export default function PublicProductionView({ token, fetchPlan = defaultFetchPlan, savePlan = defaultSavePlan }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -45,23 +114,27 @@ export default function PublicProductionView({ token }) {
   });
   const [activeSiteId, setActiveSiteId] = useState(null);
 
+  // Edit-mode state -- entirely local until a re-lock actually saves it.
+  // Unlocking never touches the server; only "Save & Lock" does.
+  const [editMode, setEditMode] = useState(false);
+  const [draft, setDraft] = useState({}); // `${itemId}:${channelId}` -> qty
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [nameInput, setNameInput] = useState(loadStoredName);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [savedNotice, setSavedNotice] = useState(null);
+
   const load = useCallback(async (d) => {
     setLoading(true);
     setError(null);
     try {
-      const { data: result, error: err } = await supabase.functions.invoke('public-production', {
-        headers: { Authorization: `Bearer ${ANON_KEY}` },
-        body: { token, date: d },
-      });
-      if (err) throw new Error(err.message);
-      if (result?.error) throw new Error(result.error);
-      setData(result);
+      setData(await fetchPlan(token, d));
     } catch (e) {
       setError(e.message || 'Unable to load production plan.');
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, fetchPlan]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -75,6 +148,15 @@ export default function PublicProductionView({ token }) {
     setActiveSiteId(prev => (prev && data.sites.some(s => s.id === prev)) ? prev : (data.sites[0]?.id ?? null));
   }, [data]);
 
+  // Switching date or site always starts back at locked/read-only --
+  // never carry a half-edited draft from one view into another.
+  useEffect(() => {
+    setEditMode(false);
+    setDraft({});
+    setShowConfirm(false);
+    setSaveError(null);
+  }, [date, activeSiteId]);
+
   const channelsForSite = useMemo(() => {
     if (!data) return [];
     return data.channels.filter(c => c.site_id === activeSiteId);
@@ -86,24 +168,30 @@ export default function PublicProductionView({ token }) {
     return row ? (Number(row.qty) || 0) : 0;
   }, [data]);
 
+  // The qty actually shown/totalled -- the in-progress draft while
+  // editing, otherwise whatever's saved.
+  const effectiveQty = useCallback((itemId, channelId) => {
+    const key = entryKey(itemId, channelId);
+    if (editMode && key in draft) return draft[key];
+    return getQty(itemId, channelId);
+  }, [editMode, draft, getQty]);
+
   const totalForChannel = useCallback(ch => {
     if (!data) return 0;
-    return data.items.reduce((sum, it) => sum + getQty(it.id, ch.id), 0);
-  }, [data, getQty]);
+    return data.items.reduce((sum, it) => sum + effectiveQty(it.id, ch.id), 0);
+  }, [data, effectiveQty]);
 
   const siteTotal = useMemo(() => channelsForSite.reduce((sum, ch) => sum + totalForChannel(ch), 0), [channelsForSite, totalForChannel]);
 
   const totalsByItemForSite = useMemo(() => {
     const m = new Map();
     if (!data) return m;
-    data.items.forEach(it => m.set(it.id, 0));
-    const siteChannelIds = new Set(channelsForSite.map(c => c.id));
-    data.entries.forEach(e => {
-      if (!siteChannelIds.has(e.channel_id)) return;
-      m.set(e.item_id, (m.get(e.item_id) || 0) + (Number(e.qty) || 0));
+    data.items.forEach(it => {
+      const total = channelsForSite.reduce((sum, ch) => sum + effectiveQty(it.id, ch.id), 0);
+      m.set(it.id, total);
     });
     return m;
-  }, [data, channelsForSite]);
+  }, [data, channelsForSite, effectiveQty]);
 
   const grouped = useMemo(() => {
     if (!data) return [];
@@ -115,6 +203,79 @@ export default function PublicProductionView({ token }) {
     });
     return [...groups.entries()];
   }, [data]);
+
+  const activeLock = data ? (data.locks || []).find(l => l.site_id === activeSiteId) : null;
+  const lastEdit = data ? (data.editLog || []).find(l => l.site_id === activeSiteId) : null;
+
+  const pendingChanges = useMemo(() => {
+    if (!data) return [];
+    return Object.entries(draft)
+      .map(([key, qty]) => {
+        const [itemId, channelId] = key.split(':');
+        return { itemId, channelId, qty, oldQty: getQty(itemId, channelId) };
+      })
+      .filter(c => c.qty !== c.oldQty);
+  }, [draft, data, getQty]);
+
+  function startEditing() {
+    if (!data) return;
+    const next = {};
+    data.items.forEach(it => {
+      channelsForSite.forEach(ch => {
+        next[entryKey(it.id, ch.id)] = getQty(it.id, ch.id);
+      });
+    });
+    setDraft(next);
+    setEditMode(true);
+    setSavedNotice(null);
+  }
+
+  function handleCellChange(itemId, channelId, qty) {
+    setDraft(prev => ({ ...prev, [entryKey(itemId, channelId)]: qty }));
+  }
+
+  function requestLock() {
+    if (pendingChanges.length === 0) {
+      setEditMode(false);
+      setDraft({});
+      return;
+    }
+    setSaveError(null);
+    setShowConfirm(true);
+  }
+
+  function cancelEditing() {
+    setEditMode(false);
+    setDraft({});
+    setShowConfirm(false);
+    setSaveError(null);
+  }
+
+  async function confirmSave() {
+    const name = nameInput.trim();
+    if (!name) { setSaveError("Please enter your name."); return; }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const result = await savePlan({
+        token, date,
+        siteId: activeSiteId,
+        entries: pendingChanges.map(c => ({ itemId: c.itemId, channelId: c.channelId, qty: c.qty })),
+        editedByName: name,
+      });
+      storeName(name);
+      setData(result);
+      setEditMode(false);
+      setDraft({});
+      setShowConfirm(false);
+      setSavedNotice(`Saved by ${name}`);
+      setTimeout(() => setSavedNotice(null), 4000);
+    } catch (e) {
+      setSaveError(e.message || 'Failed to save changes.');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -147,7 +308,6 @@ export default function PublicProductionView({ token }) {
 
   const activeSite = data.sites.find(s => s.id === activeSiteId);
   const noSetup = data.sites.length === 0 || data.items.length === 0;
-  const activeLock = (data.locks || []).find(l => l.site_id === activeSiteId);
 
   return (
     <div style={{ minHeight: '100vh', background: '#F1F5F9', padding: '14px 4px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -179,11 +339,48 @@ export default function PublicProductionView({ token }) {
         </div>
 
         {/* Date navigation */}
-        <div style={{ background: '#F0FDF4', borderLeft: '1px solid #BBF7D0', borderRight: '1px solid #BBF7D0', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <button onClick={() => setDate(d => addDays(d, -1))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: GREEN, fontSize: 18, padding: '4px 8px', borderRadius: 6, lineHeight: 1 }}>←</button>
-          <span style={{ fontSize: 12, color: '#166534', fontWeight: 600 }}>read-only</span>
-          <button onClick={() => setDate(d => addDays(d, 1))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: GREEN, fontSize: 18, padding: '4px 8px', borderRadius: 6, lineHeight: 1 }}>→</button>
+        <div style={{ background: '#F0FDF4', borderLeft: '1px solid #BBF7D0', borderRight: '1px solid #BBF7D0', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <button onClick={() => setDate(d => addDays(d, -1))} disabled={editMode} style={{ background: 'none', border: 'none', cursor: editMode ? 'default' : 'pointer', opacity: editMode ? 0.3 : 1, color: GREEN, fontSize: 18, padding: '4px 8px', borderRadius: 6, lineHeight: 1 }}>←</button>
+
+          {activeLock ? (
+            <span style={{ fontSize: 12, color: '#166534', fontWeight: 600 }}>read-only</span>
+          ) : editMode ? (
+            <button
+              onClick={requestLock}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700,
+                padding: '5px 12px', borderRadius: 999, background: GREEN, color: 'white', border: 'none', cursor: 'pointer',
+              }}
+            >
+              🔓 Editing — tap to save &amp; lock
+            </button>
+          ) : (
+            <button
+              onClick={startEditing}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700,
+                padding: '5px 12px', borderRadius: 999, background: 'white', color: '#166534', border: '1px solid #BBF7D0', cursor: 'pointer',
+              }}
+            >
+              🔒 Locked — tap to unlock &amp; edit
+            </button>
+          )}
+
+          <button onClick={() => setDate(d => addDays(d, 1))} disabled={editMode} style={{ background: 'none', border: 'none', cursor: editMode ? 'default' : 'pointer', opacity: editMode ? 0.3 : 1, color: GREEN, fontSize: 18, padding: '4px 8px', borderRadius: 6, lineHeight: 1 }}>→</button>
         </div>
+
+        {editMode && (
+          <div style={{ background: '#FFFBEB', borderLeft: '1px solid #FDE68A', borderRight: '1px solid #FDE68A', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ fontSize: 11.5, color: '#92400E' }}>Numbers unlocked — tap any quantity to change it.</span>
+            <button onClick={cancelEditing} style={{ background: 'none', border: 'none', color: '#92400E', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', flexShrink: 0 }}>Discard</button>
+          </div>
+        )}
+
+        {savedNotice && (
+          <div style={{ background: '#DCFCE7', padding: '8px 16px', textAlign: 'center', fontSize: 12, fontWeight: 700, color: GREEN }}>
+            ✓ {savedNotice}
+          </div>
+        )}
 
         <div style={{ background: 'white', border: '1px solid #E2E8F0', borderTop: 'none', borderRadius: noSetup ? '0 0 12px 12px' : 0, overflow: 'hidden' }}>
           {noSetup ? (
@@ -199,8 +396,10 @@ export default function PublicProductionView({ token }) {
                     <button
                       key={s.id}
                       onClick={() => setActiveSiteId(s.id)}
+                      disabled={editMode}
                       style={{
-                        padding: '6px 14px', borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                        padding: '6px 14px', borderRadius: 999, fontSize: 13, fontWeight: 700,
+                        cursor: editMode ? 'default' : 'pointer', opacity: editMode && activeSiteId !== s.id ? 0.4 : 1,
                         border: activeSiteId === s.id ? 'none' : '1px solid #E2E8F0',
                         background: activeSiteId === s.id ? GREEN : 'white',
                         color: activeSiteId === s.id ? 'white' : '#475569',
@@ -220,6 +419,13 @@ export default function PublicProductionView({ token }) {
                   }}>
                     ✓ Finalized
                   </span>
+                  <span style={{ marginLeft: 8, fontSize: 11, color: '#94A3B8' }}>Ask an admin to unlock on desktop to make changes.</span>
+                </div>
+              )}
+
+              {!activeLock && lastEdit && !editMode && (
+                <div style={{ padding: '10px 16px 0', fontSize: 11, color: '#94A3B8' }}>
+                  Last edited by <span style={{ fontWeight: 700, color: '#64748B' }}>{lastEdit.edited_by_name}</span> · {timeAgo(lastEdit.edited_at)}
                 </div>
               )}
 
@@ -262,7 +468,11 @@ export default function PublicProductionView({ token }) {
                                 </td>
                                 {channelsForSite.map(ch => (
                                   <td key={ch.id} style={{ padding: '3px 1px', textAlign: 'center' }}>
-                                    <QtyBadge qty={getQty(item.id, ch.id)} />
+                                    {editMode ? (
+                                      <QtyInput qty={effectiveQty(item.id, ch.id)} onChange={q => handleCellChange(item.id, ch.id, q)} />
+                                    ) : (
+                                      <QtyBadge qty={effectiveQty(item.id, ch.id)} />
+                                    )}
                                   </td>
                                 ))}
                                 <td style={{ padding: '3px 2px', textAlign: 'center' }}>
@@ -298,6 +508,39 @@ export default function PublicProductionView({ token }) {
           Powered by Recess Roster
         </p>
       </div>
+
+      {showConfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 50 }}>
+          <div style={{ background: 'white', borderRadius: '16px 16px 0 0', padding: '20px 20px calc(20px + env(safe-area-inset-bottom))', width: '100%', maxWidth: 560 }}>
+            <p style={{ fontSize: 15, fontWeight: 700, color: '#1E293B', marginBottom: 4 }}>Save {pendingChanges.length} change{pendingChanges.length === 1 ? '' : 's'}?</p>
+            <p style={{ fontSize: 12.5, color: '#64748B', marginBottom: 14 }}>Enter your name so it's clear who updated the numbers.</p>
+            <input
+              autoFocus
+              value={nameInput}
+              onChange={e => setNameInput(e.target.value)}
+              placeholder="Your name"
+              style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #E2E8F0', borderRadius: 10, padding: '10px 12px', fontSize: 14, marginBottom: 10 }}
+            />
+            {saveError && <p style={{ color: '#DC2626', fontSize: 12.5, marginBottom: 10 }}>{saveError}</p>}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => setShowConfirm(false)}
+                disabled={saving}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', color: '#475569', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+              >
+                Back
+              </button>
+              <button
+                onClick={confirmSave}
+                disabled={saving}
+                style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: GREEN, color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}
+              >
+                {saving ? 'Saving…' : '🔒 Confirm & Lock'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
