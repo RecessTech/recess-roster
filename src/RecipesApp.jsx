@@ -20,6 +20,12 @@ function fmtQty(n) {
   return num % 1 === 0 ? String(num) : num.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
+// Alt-milk COGS view: an admin-only toggle on the milk line of a recipe,
+// not a real substitution. Full Cream stays the stored recipe always --
+// this just re-costs the same ml against another milk's cost_per_uom so
+// you can see the COGS/margin impact before deciding anything.
+const MILK_ALTERNATIVES = ['Almond Milk', 'Oat Milk', 'Soy Milk'];
+
 // Builds a memoized resolver that costs a component (recursively, through
 // nesting) or a single line (SKU or component), with a cycle guard so a
 // mistaken circular reference degrades to "unknown cost" instead of hanging.
@@ -185,10 +191,13 @@ function IngredientPicker({ skus, components, excludeComponentId, onPick, onClos
 }
 
 // One ingredient-line row, shared by the Component and Menu Item builders.
-function LineRow({ line, resolver, onQtyChange, onDelete }) {
+// nameOverride/unitCostOverride let the milk-COGS toggle show a hypothetical
+// alt-milk cost on this row without touching the underlying recipe line.
+function LineRow({ line, resolver, onQtyChange, onDelete, nameOverride, unitCostOverride }) {
   const [draft, setDraft] = useState(String(line.qty));
   useEffect(() => { setDraft(String(line.qty)); }, [line.qty]);
-  const unitCost = resolver.lineUnitCost(line);
+  const isOverridden = unitCostOverride !== undefined;
+  const unitCost = isOverridden ? unitCostOverride : resolver.lineUnitCost(line);
   const lineCost = unitCost == null ? null : unitCost * (Number(line.qty) || 0);
 
   function commit() {
@@ -199,7 +208,12 @@ function LineRow({ line, resolver, onQtyChange, onDelete }) {
   return (
     <div className="flex items-center gap-2 px-3 py-2">
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 truncate">{resolver.lineName(line)}</p>
+        <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-1.5">
+          {nameOverride ?? resolver.lineName(line)}
+          {isOverridden && (
+            <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">View</span>
+          )}
+        </p>
         {unitCost == null && <p className="text-xs text-amber-600">cost unknown</p>}
       </div>
       <input
@@ -368,8 +382,18 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryP
   const [sellPrice, setSellPrice] = useState(String(item.sell_price ?? ''));
   const [showPicker, setShowPicker] = useState(false);
   const [showPackagingPicker, setShowPackagingPicker] = useState(false);
+  // Milk-COGS view toggle -- null means Full Cream, the recipe's real,
+  // stored ingredient. Never persisted, and resets whenever a different
+  // item is opened, so there's no way for this to leak into the actual
+  // recipe or into another item's view.
+  const [altMilkId, setAltMilkId] = useState(null);
+  useEffect(() => { setAltMilkId(null); }, [item.id]);
 
   const lines = menuItemLines.filter(l => l.item_id === item.id && !l.is_packaging);
+  const fullCreamSku = skus.find(s => s.name === 'Full Cream Milk');
+  const milkLine = fullCreamSku ? lines.find(l => l.stock_item_id === fullCreamSku.id) : null;
+  const altMilkOptions = milkLine ? MILK_ALTERNATIVES.map(name => skus.find(s => s.name === name)).filter(Boolean) : [];
+  const altMilkSku = altMilkId ? skus.find(s => s.id === altMilkId) : null;
   // Extra/different packaging for just this one item -- e.g. Coffee & Tea
   // has no category rule, so each drink's packaging is picked here
   // directly rather than inherited.
@@ -381,13 +405,20 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryP
   // is food cost only -- packaging isn't part of the food-cost target
   // this percentage is meant to track.
   const cogs = lines.reduce((sum, l) => {
-    const c = resolver.lineUnitCost(l);
+    const c = (altMilkSku && milkLine && l.id === milkLine.id) ? altMilkSku.cost_per_uom : resolver.lineUnitCost(l);
     return c == null ? sum : sum + c * (Number(l.qty) || 0);
   }, 0);
   const hasUnknown = lines.some(l => resolver.lineUnitCost(l) == null);
   const price = parseFloat(sellPrice) || 0;
   const gp = price - cogs;
   const margin = price > 0 ? gp / price : null;
+  const fullCreamCogs = altMilkSku
+    ? lines.reduce((sum, l) => {
+        const c = resolver.lineUnitCost(l);
+        return c == null ? sum : sum + c * (Number(l.qty) || 0);
+      }, 0)
+    : cogs;
+  const milkDelta = cogs - fullCreamCogs;
 
   async function savePrice() {
     try {
@@ -522,6 +553,9 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryP
           <div className="bg-purple-50 border border-purple-100 rounded-xl px-3 py-2.5">
             <p className="text-xs text-purple-500 font-semibold uppercase tracking-wide">COGS</p>
             <p className="text-base font-extrabold text-purple-700">{hasUnknown ? '≥ ' : ''}{fmtMoney(cogs)}</p>
+            {altMilkSku && (
+              <p className="text-[11px] font-semibold text-amber-600">{milkDelta >= 0 ? '+' : ''}{fmtMoney(milkDelta)} vs Full Cream</p>
+            )}
           </div>
           <div className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5">
             <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Gross Profit</p>
@@ -532,6 +566,30 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryP
             <p className="text-base font-extrabold text-gray-700">{fmtPct(margin)}</p>
           </div>
         </div>
+
+        {milkLine && (
+          <div className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5">
+            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1.5">Milk COGS view</p>
+            <div className="flex gap-1.5 flex-wrap">
+              <button
+                onClick={() => setAltMilkId(null)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${!altMilkId ? 'bg-amber-600 text-white' : 'bg-white border border-amber-200 text-amber-700 hover:bg-amber-100'}`}
+              >
+                Full Cream
+              </button>
+              {altMilkOptions.map(sku => (
+                <button
+                  key={sku.id}
+                  onClick={() => setAltMilkId(sku.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${altMilkId === sku.id ? 'bg-amber-600 text-white' : 'bg-white border border-amber-200 text-amber-700 hover:bg-amber-100'}`}
+                >
+                  {sku.name.replace(' Milk', '')}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-amber-600/80 mt-1.5">Admin view only — the saved recipe stays Full Cream regardless of this toggle.</p>
+          </div>
+        )}
 
         <div>
           <div className="flex items-center justify-between mb-2">
@@ -544,11 +602,16 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryP
             <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-xl">No ingredients yet.</p>
           ) : (
             <div className="bg-gray-50 rounded-xl divide-y divide-gray-100 overflow-hidden">
-              {lines.map(line => (
-                <LineRow key={line.id} line={line} resolver={resolver}
-                  onQtyChange={q => handleQtyChange(line, q)}
-                  onDelete={() => handleDeleteLine(line)} />
-              ))}
+              {lines.map(line => {
+                const isMilkLine = altMilkSku && milkLine && line.id === milkLine.id;
+                return (
+                  <LineRow key={line.id} line={line} resolver={resolver}
+                    onQtyChange={q => handleQtyChange(line, q)}
+                    onDelete={() => handleDeleteLine(line)}
+                    nameOverride={isMilkLine ? altMilkSku.name : undefined}
+                    unitCostOverride={isMilkLine ? altMilkSku.cost_per_uom : undefined} />
+                );
+              })}
             </div>
           )}
         </div>
