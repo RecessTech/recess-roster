@@ -87,6 +87,7 @@ function QtyInput({ qty, onChange }) {
 
   return (
     <input
+      className="qty-input"
       type="number"
       inputMode="numeric"
       min="0"
@@ -96,9 +97,16 @@ function QtyInput({ qty, onChange }) {
       onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
       style={{
-        width: 34, textAlign: 'center', fontSize: 12, fontWeight: 700,
-        border: '1.5px solid #BBF7D0', borderRadius: 8, padding: '3px 0',
-        background: '#F0FDF4', color: '#166534',
+        // 16px is the line iOS Safari uses to decide whether to
+        // auto-zoom the page on focus -- anything smaller (this used to
+        // be 12px) makes it zoom in aggressively on every tap and stay
+        // zoomed until the user manually pinches back out. Chrome's
+        // native spin-button arrows are hidden via the .qty-input rule
+        // below -- otherwise they eat enough width to clip a 3-digit
+        // quantity like "100".
+        width: 44, boxSizing: 'border-box', textAlign: 'center', fontSize: 16, fontWeight: 700,
+        border: '1.5px solid #BBF7D0', borderRadius: 8, padding: '3px 2px',
+        background: '#F0FDF4', color: '#166534', MozAppearance: 'textfield',
       }}
     />
   );
@@ -311,7 +319,10 @@ export default function PublicProductionView({ token, fetchPlan = defaultFetchPl
 
   return (
     <div style={{ minHeight: '100vh', background: '#F1F5F9', padding: '14px 4px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .qty-input::-webkit-outer-spin-button, .qty-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+      `}</style>
       <div style={{ maxWidth: 560, margin: '0 auto' }}>
 
         {/* Header card */}
@@ -519,7 +530,7 @@ export default function PublicProductionView({ token, fetchPlan = defaultFetchPl
               value={nameInput}
               onChange={e => setNameInput(e.target.value)}
               placeholder="Your name"
-              style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #E2E8F0', borderRadius: 10, padding: '10px 12px', fontSize: 14, marginBottom: 10 }}
+              style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #E2E8F0', borderRadius: 10, padding: '10px 12px', fontSize: 16, marginBottom: 10 }}
             />
             {saveError && <p style={{ color: '#DC2626', fontSize: 12.5, marginBottom: 10 }}>{saveError}</p>}
             <div style={{ display: 'flex', gap: 8 }}>
