@@ -1651,6 +1651,70 @@ export const db = {
     if (error) throw error;
   },
 
+  // ── Drinks Guide (R-Barista) ─────────────────────────────────────────────────
+  // Procedural steps only -- ingredients/quantities are always read live
+  // from R-Recipe's recipe_menu_item_lines, never duplicated here.
+
+  async getDrinkGuides(orgId) {
+    const { data, error } = await supabase
+      .from('drink_guides')
+      .select('*')
+      .eq('org_id', orgId)
+      .eq('active', true);
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getDrinkGuideSteps(orgId, guideIds) {
+    if (!guideIds || guideIds.length === 0) return [];
+    const { data, error } = await supabase
+      .from('drink_guide_steps')
+      .select('*')
+      .eq('org_id', orgId)
+      .in('guide_id', guideIds)
+      .order('step_number', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  // Saving a guide never edits it in place: the previous active version
+  // (if any) is archived, and the new step list is inserted as a fresh
+  // version, so old guides stay in the table instead of being overwritten.
+  async saveDrinkGuide(orgId, { productionItemId, steps, previousGuideId, previousVersion, userId }) {
+    if (previousGuideId) {
+      const { error: archiveError } = await supabase
+        .from('drink_guides')
+        .update({ active: false, archived_at: new Date().toISOString() })
+        .eq('id', previousGuideId);
+      if (archiveError) throw archiveError;
+    }
+
+    const { data: guide, error: guideError } = await supabase
+      .from('drink_guides')
+      .insert([{
+        org_id: orgId,
+        production_item_id: productionItemId,
+        version: (previousVersion || 0) + 1,
+        active: true,
+        created_by: userId || null,
+      }])
+      .select()
+      .single();
+    if (guideError) throw guideError;
+
+    const rows = steps
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map((text, i) => ({ org_id: orgId, guide_id: guide.id, step_number: i + 1, instruction_text: text }));
+
+    if (rows.length) {
+      const { error: stepsError } = await supabase.from('drink_guide_steps').insert(rows);
+      if (stepsError) throw stepsError;
+    }
+
+    return guide;
+  },
+
   // ── Crystal Ball: sales history & forecast settings ─────────────────────────
 
   async getSalesHistory(orgId) {

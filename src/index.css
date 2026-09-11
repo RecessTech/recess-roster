@@ -222,6 +222,30 @@ body {
   --top-border:     #A5F3FC;
 }
 
+/* Barista theme — a warm espresso brown, distinct from every other
+   module's colourway (R-Shift blue, R-Stock orange, R-Prod green,
+   R-Recipe purple, Crystal Ball indigo, Transfer Hub teal, Catering
+   rose, Builds cyan), fitting for a coffee-focused module */
+[data-theme="barista"] {
+  --sb-bg:          #78350F;
+  --sb-icon:        rgba(255, 247, 237, 0.75);
+  --sb-icon-active: #FFF7ED;
+  --sb-active:      rgba(255, 247, 237, 0.2);
+  --sb-hover:       rgba(255, 247, 237, 0.1);
+  --sb-logo-bg:     rgba(255, 247, 237, 0.15);
+  --sb-logo-fg:     #FFF7ED;
+  --sb-tooltip-bg:  #5C2A0A;
+  --sb-tooltip-bd:  rgba(255,247,237,0.15);
+
+  --primary:        #92400E;
+  --primary-dk:     #78350F;
+  --primary-fg:     white;
+
+  --app-bg:         #FDF8F3;
+  --top-bg:         white;
+  --top-border:     #F3E0C7;
+}
+
 /* Dark theme (logo 3) */
 [data-theme="dark"] {
   --sb-bg:          #171717;
