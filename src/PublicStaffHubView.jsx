@@ -60,6 +60,15 @@ const LINKS = [
     tint: '#ECFEFF',
     path: '/builds/',
   },
+  {
+    key: 'barista',
+    label: 'Drinks Guide',
+    description: 'How to make each drink',
+    icon: '☕',
+    color: '#92400E',
+    tint: '#FDF8F3',
+    path: '/barista/',
+  },
 ];
 
 function greeting() {
