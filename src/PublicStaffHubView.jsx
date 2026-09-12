@@ -43,6 +43,15 @@ const LINKS = [
     path: '/prep/',
   },
   {
+    key: 'checklists',
+    label: 'Checklists',
+    description: 'Opening & closing',
+    icon: '📋',
+    color: '#4F46E5',
+    tint: '#EEF2FF',
+    path: '/checklists/',
+  },
+  {
     key: 'catering',
     label: 'Catering',
     description: "Today's jobs",
