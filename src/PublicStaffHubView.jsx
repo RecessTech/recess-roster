@@ -115,7 +115,7 @@ export default function PublicStaffHubView({ token }) {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: '#F4F6F8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ height: '100dvh', background: '#F4F6F8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{
             width: 36, height: 36, border: '3px solid #E2E8F0', borderTopColor: BLUE,
@@ -130,7 +130,7 @@ export default function PublicStaffHubView({ token }) {
 
   if (error) {
     return (
-      <div style={{ minHeight: '100vh', background: '#F4F6F8', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ height: '100dvh', background: '#F4F6F8', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ background: 'white', borderRadius: CARD_RADIUS, padding: '32px 24px', maxWidth: 360, textAlign: 'center', boxShadow: CARD_SHADOW }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
           <p style={{ color: '#1E293B', fontWeight: 700, marginBottom: 6, fontFamily: FONT }}>Couldn't load this page</p>
@@ -142,21 +142,24 @@ export default function PublicStaffHubView({ token }) {
 
   if (!data) return null;
 
+  // Rows needed for a 2-column grid -- computed from however many tiles
+  // there actually are, so the grid keeps filling the screen edge-to-edge
+  // (via 1fr rows, not a fixed tile height) as tiles get added later,
+  // rather than needing another manual resize pass each time.
+  const rows = Math.ceil(LINKS.length / 2);
+
   return (
-    <div style={{ minHeight: '100vh', background: '#F4F6F8', padding: '16px 12px 32px', fontFamily: FONT }}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      <div style={{ maxWidth: 440, margin: '0 auto' }}>
+    <div style={{ height: '100dvh', background: '#F4F6F8', display: 'flex', flexDirection: 'column', padding: '14px 14px', fontFamily: FONT, boxSizing: 'border-box' }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } } html, body { overscroll-behavior-y: none; }`}</style>
+      <div style={{ maxWidth: 480, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
 
         {/* Header -- a warm, time-of-day greeting instead of a plain
-            "Staff links" label. This page has one job: get someone to
-            the right place in one tap, so it should feel like opening
-            an app, not reading a menu. Kept compact (vs. the original,
-            roomier version) so the tile grid below has enough headroom
-            to show 8 tiles on one screen without scrolling. */}
+            "Staff links" label. Fixed height (flexShrink: 0): the tile
+            grid below is what should dominate the screen, not this. */}
         <div style={{
           background: `linear-gradient(135deg, ${BLUE}, #4C6EF5)`, borderRadius: CARD_RADIUS,
-          padding: '16px 18px 14px', boxShadow: '0 10px 24px -10px rgba(59,91,219,0.5)', marginBottom: 12,
-          textAlign: 'center',
+          padding: '16px 18px 14px', boxShadow: '0 10px 24px -10px rgba(59,91,219,0.5)', marginBottom: 10,
+          textAlign: 'center', flexShrink: 0,
         }}>
           <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
             {data.businessName}
@@ -166,37 +169,46 @@ export default function PublicStaffHubView({ token }) {
           </div>
         </div>
 
-        {/* App tiles -- a compact 4-up grid (icon + label only, no
-            description or "Open" pill) so 8 tiles fit in two rows
-            instead of four. Each tile keeps its destination's own
-            accent colour so it previews what's behind it. */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
-          {LINKS.map(link => {
+        {/* App tiles -- a 2-column grid whose rows are all 1fr, so the
+            grid as a whole stretches to fill exactly whatever vertical
+            space is left (flex: 1) instead of sizing itself off a fixed
+            tile height. That's what makes this fill the screen on any
+            device -- tiles grow on a tall/wide screen, shrink on a short
+            one, but the grid always occupies the full remaining page,
+            never leaving dead space below it or needing a scroll. */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: `repeat(${rows}, 1fr)`, gap: 10, flex: 1, minHeight: 0 }}>
+          {LINKS.map((link, idx) => {
             const href = `${link.path}${token}`;
+            // An odd tile count leaves the last one alone in its row --
+            // span it across both columns instead of leaving a dead gap.
+            const isDangling = LINKS.length % 2 === 1 && idx === LINKS.length - 1;
             return (
               <a
                 key={link.key}
                 href={href}
-                title={link.description}
                 style={{
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6,
-                  background: 'white', borderRadius: 12, boxShadow: CARD_SHADOW,
-                  padding: '12px 4px 10px', textDecoration: 'none',
+                  display: 'flex', flexDirection: isDangling ? 'row' : 'column', alignItems: 'center', justifyContent: 'center', gap: isDangling ? 12 : 8,
+                  background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW,
+                  textDecoration: 'none', minHeight: 0, padding: '8px',
+                  gridColumn: isDangling ? '1 / -1' : undefined,
                 }}
               >
                 <div style={{
-                  width: 34, height: 34, borderRadius: 10, background: link.tint,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
+                  width: 46, height: 46, borderRadius: 14, background: link.tint, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22,
                 }}>
                   {link.icon}
                 </div>
-                <div style={{ fontSize: 10.5, fontWeight: 700, color: '#1E293B', lineHeight: 1.2 }}>{link.label}</div>
+                <div style={{ textAlign: isDangling ? 'left' : 'center' }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: '#1E293B', lineHeight: 1.2 }}>{link.label}</div>
+                  <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>{link.description}</div>
+                </div>
               </a>
             );
           })}
         </div>
 
-        <div style={{ textAlign: 'center', color: '#B5BEC9', fontSize: 11, fontWeight: 500 }}>
+        <div style={{ textAlign: 'center', color: '#B5BEC9', fontSize: 11, fontWeight: 500, marginTop: 10, flexShrink: 0 }}>
           No login required · Powered by Recess Roster
         </div>
       </div>
