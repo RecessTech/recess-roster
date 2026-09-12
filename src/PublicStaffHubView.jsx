@@ -150,66 +150,55 @@ export default function PublicStaffHubView({ token }) {
         {/* Header -- a warm, time-of-day greeting instead of a plain
             "Staff links" label. This page has one job: get someone to
             the right place in one tap, so it should feel like opening
-            an app, not reading a menu. */}
+            an app, not reading a menu. Kept compact (vs. the original,
+            roomier version) so the tile grid below has enough headroom
+            to show 8 tiles on one screen without scrolling. */}
         <div style={{
           background: `linear-gradient(135deg, ${BLUE}, #4C6EF5)`, borderRadius: CARD_RADIUS,
-          padding: '26px 22px 24px', boxShadow: '0 10px 24px -10px rgba(59,91,219,0.5)', marginBottom: 16,
+          padding: '16px 18px 14px', boxShadow: '0 10px 24px -10px rgba(59,91,219,0.5)', marginBottom: 12,
           textAlign: 'center',
         }}>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
             {data.businessName}
           </div>
-          <div style={{ color: 'white', fontSize: 25, fontWeight: 800, letterSpacing: '-0.01em', marginBottom: 4 }}>
-            {greeting()} 👋
-          </div>
-          <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13.5, fontWeight: 500 }}>
-            Where are you headed?
+          <div style={{ color: 'white', fontSize: 18, fontWeight: 800, letterSpacing: '-0.01em' }}>
+            {greeting()} 👋 <span style={{ fontWeight: 500, opacity: 0.85 }}>Where are you headed?</span>
           </div>
         </div>
 
-        {/* App tiles -- a two-up grid, each tile carrying its destination's
-            own colour so it previews what's behind it. */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+        {/* App tiles -- a compact 4-up grid (icon + label only, no
+            description or "Open" pill) so 8 tiles fit in two rows
+            instead of four. Each tile keeps its destination's own
+            accent colour so it previews what's behind it. */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
           {LINKS.map(link => {
             const href = `${link.path}${token}`;
             return (
               <a
                 key={link.key}
                 href={href}
+                title={link.description}
                 style={{
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 10,
-                  background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW,
-                  padding: '26px 14px 20px', textDecoration: 'none',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6,
+                  background: 'white', borderRadius: 12, boxShadow: CARD_SHADOW,
+                  padding: '12px 4px 10px', textDecoration: 'none',
                 }}
               >
                 <div style={{
-                  width: 52, height: 52, borderRadius: 15, background: link.tint,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24,
+                  width: 34, height: 34, borderRadius: 10, background: link.tint,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
                 }}>
                   {link.icon}
                 </div>
-                <div>
-                  <div style={{ fontSize: 14.5, fontWeight: 800, color: '#1E293B' }}>{link.label}</div>
-                  <div style={{ fontSize: 11.5, color: '#94A3B8', marginTop: 2 }}>{link.description}</div>
-                </div>
-                <div style={{
-                  fontSize: 11, fontWeight: 700, color: link.color, background: link.tint,
-                  padding: '4px 12px', borderRadius: 999, marginTop: 2,
-                }}>
-                  Open →
-                </div>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: '#1E293B', lineHeight: 1.2 }}>{link.label}</div>
               </a>
             );
           })}
         </div>
 
-        <div style={{ textAlign: 'center', color: '#B5BEC9', fontSize: 11.5, fontWeight: 500 }}>
-          No login required
+        <div style={{ textAlign: 'center', color: '#B5BEC9', fontSize: 11, fontWeight: 500 }}>
+          No login required · Powered by Recess Roster
         </div>
-
-        <p style={{ textAlign: 'center', color: '#CBD5E1', fontSize: 11, marginTop: 20, marginBottom: 0 }}>
-          Powered by Recess Roster
-        </p>
       </div>
     </div>
   );
