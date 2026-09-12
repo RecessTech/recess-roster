@@ -11,6 +11,7 @@ import TransferHubApp from './TransferHubApp';
 import CateringApp from './CateringApp';
 import BuildsApp from './BuildsApp';
 import BaristaApp from './BaristaApp';
+import ChecklistsApp from './ChecklistsApp';
 import { isoWeekLabel } from './isoWeek';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -6562,6 +6563,7 @@ Key things to verify after rebuild:
             { app: 'catering',   icon: <UtensilsCrossed size={18} />, label: 'R-Cater'  },
             { app: 'builds',     icon: <Layers size={18} />,          label: 'R-Builds' },
             { app: 'barista',    icon: <Coffee size={18} />,          label: 'R-Barista' },
+            { app: 'checklists', icon: <ClipboardList size={18} />,   label: 'Checklists' },
           ].map(({ app, icon, label }) => (
             <button key={app} onClick={() => setActiveApp(app)}
               className={`sb-btn group w-full flex justify-center ${activeApp === app ? 'active' : ''}`}
@@ -6834,6 +6836,8 @@ Key things to verify after rebuild:
         <div className="h-full overflow-hidden"><ErrorBoundary><BuildsApp org={org} user={user} /></ErrorBoundary></div>
       ) : activeApp === 'barista' ? (
         <div className="h-full overflow-hidden"><ErrorBoundary><BaristaApp org={org} user={user} /></ErrorBoundary></div>
+      ) : activeApp === 'checklists' ? (
+        <div className="h-full overflow-auto"><ErrorBoundary><ChecklistsApp org={org} user={user} /></ErrorBoundary></div>
       ) : activeView === 'analytics' ? (
         <div className="h-full overflow-auto"><ErrorBoundary><AnalyticsView /></ErrorBoundary></div>
       ) : activeView === 'timesheet' ? (

@@ -6,6 +6,7 @@ import PublicRosterView from './PublicRosterView';
 import PublicProductionView from './PublicProductionView';
 import PublicTransferHubView from './PublicTransferHubView';
 import PublicPrepListView from './PublicPrepListView';
+import PublicChecklistsView from './PublicChecklistsView';
 import PublicStaffHubView from './PublicStaffHubView';
 import PublicCateringView from './PublicCateringView';
 import PublicBuildsView from './PublicBuildsView';
@@ -19,8 +20,9 @@ import { ErrorBoundary } from './ErrorBoundary';
 // flag a prep component as running low, tick it off once prepped),
 // /cater/<token> (the day's catering jobs, read-only), /builds/<token>
 // (sandwich & toastie build guides, read-only), /barista/<token> (Coffee
-// & Tea drinks guide, read-only), and /hub/<token> (a landing page linking
-// out to the other read-only pages)
+// & Tea drinks guide, read-only), /checklists/<token> (Daily Checklists --
+// work through today's opening/closing tasks per site and sign off), and
+// /hub/<token> (a landing page linking out to the other read-only pages)
 const publicMatch = window.location.pathname.match(/^\/s\/([^/]+)/);
 const PUBLIC_TOKEN = publicMatch ? publicMatch[1] : null;
 
@@ -35,6 +37,9 @@ const PUBLIC_TRANSFER_TOKEN = publicTransferMatch ? publicTransferMatch[1] : nul
 
 const publicPrepListMatch = window.location.pathname.match(/^\/prep\/([^/]+)/);
 const PUBLIC_PREP_LIST_TOKEN = publicPrepListMatch ? publicPrepListMatch[1] : null;
+
+const publicChecklistsMatch = window.location.pathname.match(/^\/checklists\/([^/]+)/);
+const PUBLIC_CHECKLISTS_TOKEN = publicChecklistsMatch ? publicChecklistsMatch[1] : null;
 
 const publicCateringMatch = window.location.pathname.match(/^\/cater\/([^/]+)/);
 const PUBLIC_CATERING_TOKEN = publicCateringMatch ? publicCateringMatch[1] : null;
@@ -89,6 +94,9 @@ function App() {
   }
   if (PUBLIC_PREP_LIST_TOKEN) {
     return <PublicPrepListView token={PUBLIC_PREP_LIST_TOKEN} />;
+  }
+  if (PUBLIC_CHECKLISTS_TOKEN) {
+    return <PublicChecklistsView token={PUBLIC_CHECKLISTS_TOKEN} />;
   }
   if (PUBLIC_CATERING_TOKEN) {
     return <PublicCateringView token={PUBLIC_CATERING_TOKEN} />;

@@ -1903,4 +1903,70 @@ export const db = {
       .eq('id', jobId);
     if (error) throw error;
   },
+
+  // ── Daily Checklists ─────────────────────────────────────────────────────────
+  // checklist_items is the editable per-site, per-type (opening/closing) master
+  // list; checklist_runs/checklist_run_items are the actual daily record, always
+  // written by the public no-login page (see supabase/functions/public-checklists)
+  // -- the admin app only ever reads them, for the history view.
+
+  async getChecklistItems(orgId) {
+    const { data, error } = await supabase
+      .from('checklist_items')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createChecklistItem(orgId, { siteId, type, name, details, sortOrder }) {
+    const { data, error } = await supabase
+      .from('checklist_items')
+      .insert([{ org_id: orgId, site_id: siteId, type, name, details: details || null, sort_order: sortOrder ?? 0 }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateChecklistItem(itemId, updates) {
+    const { data, error } = await supabase
+      .from('checklist_items')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', itemId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteChecklistItem(itemId) {
+    const { error } = await supabase
+      .from('checklist_items')
+      .delete()
+      .eq('id', itemId);
+    if (error) throw error;
+  },
+
+  async getChecklistRuns(orgId) {
+    const { data, error } = await supabase
+      .from('checklist_runs')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('run_date', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getChecklistRunItems(runId) {
+    const { data, error } = await supabase
+      .from('checklist_run_items')
+      .select('*')
+      .eq('run_id', runId)
+      .order('sort_order', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
 };
