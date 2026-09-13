@@ -30,3 +30,6 @@ build/
 .vercel/
 .DS_Store
 supabase/.temp/
+
+# Claude Code personal settings (per-machine, not shared with the team)
+.claude/settings.local.json
