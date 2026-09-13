@@ -7,6 +7,7 @@ import StockApp from './StockApp';
 import ProductionApp from './ProductionApp';
 import RecipesApp from './RecipesApp';
 import CrystalBallApp from './CrystalBallApp';
+import ToplineApp from './ToplineApp';
 import TransferHubApp from './TransferHubApp';
 import CateringApp from './CateringApp';
 import BuildsApp from './BuildsApp';
@@ -101,7 +102,7 @@ const RosterApp = () => {
   });
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', activeApp === 'stock' ? 'stock' : activeApp === 'production' ? 'production' : activeApp === 'recipes' ? 'recipes' : activeApp === 'crystalball' ? 'crystalball' : activeApp === 'transfers' ? 'transfers' : activeApp === 'catering' ? 'catering' : activeApp === 'builds' ? 'builds' : activeApp === 'barista' ? 'barista' : 'blue');
+    document.documentElement.setAttribute('data-theme', activeApp === 'stock' ? 'stock' : activeApp === 'production' ? 'production' : activeApp === 'recipes' ? 'recipes' : activeApp === 'crystalball' ? 'crystalball' : activeApp === 'transfers' ? 'transfers' : activeApp === 'catering' ? 'catering' : activeApp === 'builds' ? 'builds' : activeApp === 'barista' ? 'barista' : activeApp === 'topline' ? 'topline' : 'blue');
     try { localStorage.setItem('rshift_active_app', activeApp); } catch {}
   }, [activeApp]);
 
@@ -6559,6 +6560,7 @@ Key things to verify after rebuild:
             { app: 'production', icon: <ChefHat size={18} />,      label: 'R-Prod'   },
             { app: 'recipes',    icon: <BookOpen size={18} />,     label: 'R-Recipe' },
             { app: 'crystalball',icon: <Sparkles size={18} />,     label: 'Crystal Ball' },
+            { app: 'topline',    icon: <TrendingUp size={18} />,     label: 'R-Topline' },
             { app: 'transfers',  icon: <ArrowLeftRight size={18} />, label: 'Transfer Hub' },
             { app: 'catering',   icon: <UtensilsCrossed size={18} />, label: 'R-Cater'  },
             { app: 'builds',     icon: <Layers size={18} />,          label: 'R-Builds' },
@@ -6638,6 +6640,14 @@ Key things to verify after rebuild:
                   <h1 className="text-base font-bold text-gray-900 tracking-tight">{businessSettings.businessName || org?.name}</h1>
                   <span className="text-gray-300">|</span>
                   <span className="text-sm text-gray-400">Crystal Ball</span>
+                </div>
+              </div>
+            ) : activeApp === 'topline' ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-base font-bold text-gray-900 tracking-tight">{businessSettings.businessName || org?.name}</h1>
+                  <span className="text-gray-300">|</span>
+                  <span className="text-sm text-gray-400">R-Topline</span>
                 </div>
               </div>
             ) : activeApp === 'transfers' ? (
@@ -6828,6 +6838,8 @@ Key things to verify after rebuild:
         <div className="h-full overflow-auto"><ErrorBoundary><RecipesApp org={org} user={user} /></ErrorBoundary></div>
       ) : activeApp === 'crystalball' ? (
         <div className="h-full overflow-auto"><ErrorBoundary><CrystalBallApp org={org} user={user} /></ErrorBoundary></div>
+      ) : activeApp === 'topline' ? (
+        <div className="h-full overflow-hidden"><ErrorBoundary><ToplineApp org={org} user={user} /></ErrorBoundary></div>
       ) : activeApp === 'transfers' ? (
         <div className="h-full overflow-auto"><ErrorBoundary><TransferHubApp org={org} user={user} /></ErrorBoundary></div>
       ) : activeApp === 'catering' ? (

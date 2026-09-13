@@ -3,17 +3,17 @@ import {
   LineChart, Line, BarChart, Bar, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts';
-import { fetchAllData, parsePeriod } from './sheetsData';
+import { fetchAllData, parsePeriod } from './toplineData';
 import {
   TrendingUp, TrendingDown, DollarSign, Users, ShoppingCart,
-  BarChart3, RefreshCw, ArrowLeft, Star, Heart,
+  BarChart3, RefreshCw, ArrowLeft, Star, Heart, Loader2,
   Utensils, Truck, AlertCircle, Filter, ChevronDown, SlidersHorizontal, LayoutGrid,
   Calendar, FileText,
 } from 'lucide-react';
 
 // --- CONSTANTS ---
 const COLORS = {
-  primary: '#f97316',
+  primary: 'var(--primary)',
   secondary: '#3b82f6',
   green: '#22c55e',
   red: '#ef4444',
@@ -143,34 +143,37 @@ function FilterBar({ filter, setFilter, availableFilters }) {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-2 text-sm font-medium bg-white border border-surface-200 rounded-lg hover:bg-surface-50 transition-colors shadow-soft"
+        className="flex items-center gap-2 px-3 py-2 text-sm font-medium bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-soft"
       >
-        <Filter size={14} className="text-surface-400" />
-        <span className="text-surface-700">{filterLabel}</span>
-        <ChevronDown size={14} className={`text-surface-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <Filter size={14} className="text-gray-400" />
+        <span className="text-gray-700">{filterLabel}</span>
+        <ChevronDown size={14} className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-40 bg-white rounded-lg shadow-elevated border border-surface-200 py-1 w-52 max-h-72 overflow-y-auto">
-            <div className="px-3 py-1.5 text-xs font-semibold text-surface-400 uppercase tracking-wider">Time Range</div>
+          <div className="absolute right-0 top-full mt-1 z-40 bg-white rounded-lg shadow-elevated border border-gray-200 py-1 w-52 max-h-72 overflow-y-auto">
+            <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Time Range</div>
             {[12, 26, 52].map(n => (
               <button key={n} onClick={() => { setFilter({ type: 'weeks', value: n }); setOpen(false); }}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-50 ${filter.type === 'weeks' && filter.value === n ? 'text-brand-600 font-semibold bg-orange-50' : 'text-surface-700'}`}>
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${filter.type === 'weeks' && filter.value === n ? 'font-semibold' : 'text-gray-700'}`}
+                style={filter.type === 'weeks' && filter.value === n ? { color: 'var(--primary)', background: 'color-mix(in srgb, var(--primary) 8%, white)' } : undefined}>
                 Last {n} weeks
               </button>
             ))}
             <button onClick={() => { setFilter({ type: 'all' }); setOpen(false); }}
-              className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-50 ${filter.type === 'all' ? 'text-brand-600 font-semibold bg-orange-50' : 'text-surface-700'}`}>
+              className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${filter.type === 'all' ? 'font-semibold' : 'text-gray-700'}`}
+              style={filter.type === 'all' ? { color: 'var(--primary)', background: 'color-mix(in srgb, var(--primary) 8%, white)' } : undefined}>
               All time
             </button>
 
             {availableFilters.years.length > 0 && (
               <>
-                <div className="px-3 py-1.5 text-xs font-semibold text-surface-400 uppercase tracking-wider mt-1 border-t border-surface-100">By Year</div>
+                <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-1 border-t border-gray-100">By Year</div>
                 {availableFilters.years.map(y => (
                   <button key={y} onClick={() => { setFilter({ type: 'year', value: y }); setOpen(false); }}
-                    className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-50 ${filter.type === 'year' && filter.value === y ? 'text-brand-600 font-semibold bg-orange-50' : 'text-surface-700'}`}>
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${filter.type === 'year' && filter.value === y ? 'font-semibold' : 'text-gray-700'}`}
+                    style={filter.type === 'year' && filter.value === y ? { color: 'var(--primary)', background: 'color-mix(in srgb, var(--primary) 8%, white)' } : undefined}>
                     {y}
                   </button>
                 ))}
@@ -179,10 +182,11 @@ function FilterBar({ filter, setFilter, availableFilters }) {
 
             {availableFilters.quarters.length > 0 && (
               <>
-                <div className="px-3 py-1.5 text-xs font-semibold text-surface-400 uppercase tracking-wider mt-1 border-t border-surface-100">By Quarter</div>
+                <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-1 border-t border-gray-100">By Quarter</div>
                 {availableFilters.quarters.map(q => (
                   <button key={q} onClick={() => { setFilter({ type: 'quarter', value: q }); setOpen(false); }}
-                    className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-50 ${filter.type === 'quarter' && filter.value === q ? 'text-brand-600 font-semibold bg-orange-50' : 'text-surface-700'}`}>
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${filter.type === 'quarter' && filter.value === q ? 'font-semibold' : 'text-gray-700'}`}
+                    style={filter.type === 'quarter' && filter.value === q ? { color: 'var(--primary)', background: 'color-mix(in srgb, var(--primary) 8%, white)' } : undefined}>
                     {q}
                   </button>
                 ))}
@@ -229,7 +233,7 @@ function WeekExclusionBar({ excludedWeeks, setExcludedWeeks, allWeekNumbers }) {
     <div className="bg-white rounded-xl shadow-card p-4 animate-fade-in">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-surface-700">Exclude Weeks</h3>
+          <h3 className="text-sm font-semibold text-gray-700">Exclude Weeks</h3>
           {excludedWeeks.size > 0 && (
             <span className="text-xs bg-red-100 text-red-700 font-medium px-2 py-0.5 rounded-full">
               {excludedWeeks.size} excluded
@@ -247,7 +251,7 @@ function WeekExclusionBar({ excludedWeeks, setExcludedWeeks, allWeekNumbers }) {
                 className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
                   allActive
                     ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                    : 'bg-surface-100 text-surface-600 hover:bg-surface-200'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
                 {allActive ? 'Include' : 'Exclude'} {preset.label}
@@ -257,14 +261,14 @@ function WeekExclusionBar({ excludedWeeks, setExcludedWeeks, allWeekNumbers }) {
           {excludedWeeks.size > 0 && (
             <button
               onClick={() => setExcludedWeeks(new Set())}
-              className="text-xs px-2.5 py-1 rounded-lg font-medium text-surface-500 hover:bg-surface-100 transition-colors"
+              className="text-xs px-2.5 py-1 rounded-lg font-medium text-gray-500 hover:bg-gray-100 transition-colors"
             >
               Clear all
             </button>
           )}
           <button
             onClick={() => setExpanded(!expanded)}
-            className="text-xs px-2.5 py-1 rounded-lg font-medium text-surface-500 hover:bg-surface-100 transition-colors"
+            className="text-xs px-2.5 py-1 rounded-lg font-medium text-gray-500 hover:bg-gray-100 transition-colors"
           >
             {expanded ? 'Collapse' : 'All weeks'}
           </button>
@@ -299,7 +303,7 @@ function WeekExclusionBar({ excludedWeeks, setExcludedWeeks, allWeekNumbers }) {
                 className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
                   isExcluded
                     ? 'bg-red-100 text-red-700 hover:bg-red-200 line-through'
-                    : 'bg-surface-100 text-surface-600 hover:bg-surface-200'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
                 W{w}
@@ -333,8 +337,8 @@ function KpiCard({ title, value, subtitle, icon: Icon, trend, color = 'brand', i
         <Icon size={22} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-surface-500 font-medium truncate">{title}</p>
-        <p className="text-2xl font-bold text-surface-800 mt-0.5">{value}</p>
+        <p className="text-sm text-gray-500 font-medium truncate">{title}</p>
+        <p className="text-2xl font-bold text-gray-800 mt-0.5">{value}</p>
         {(subtitle || trend != null) && (
           <div className="flex items-center gap-1.5 mt-1">
             {trend != null && (
@@ -343,7 +347,7 @@ function KpiCard({ title, value, subtitle, icon: Icon, trend, color = 'brand', i
                 {Math.abs(trend).toFixed(1)}%
               </span>
             )}
-            {subtitle && <span className="text-xs text-surface-400">{subtitle}</span>}
+            {subtitle && <span className="text-xs text-gray-400">{subtitle}</span>}
           </div>
         )}
       </div>
@@ -370,7 +374,8 @@ function AxisControls({ axis }) {
     <div className="relative inline-flex">
       <button
         onClick={() => setOpen(!open)}
-        className={`p-1 rounded transition-colors ${open || axis.min !== '' || axis.max !== '' ? 'text-brand-600 bg-orange-50' : 'text-surface-400 hover:text-surface-600'}`}
+        className={`p-1 rounded transition-colors ${open || axis.min !== '' || axis.max !== '' ? '' : 'text-gray-400 hover:text-gray-600'}`}
+        style={open || axis.min !== '' || axis.max !== '' ? { color: 'var(--primary)', background: 'color-mix(in srgb, var(--primary) 8%, white)' } : undefined}
         title="Adjust Y-axis range"
       >
         <SlidersHorizontal size={14} />
@@ -378,35 +383,35 @@ function AxisControls({ axis }) {
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-40 bg-white rounded-lg shadow-elevated border border-surface-200 p-3 w-48">
-            <p className="text-xs font-semibold text-surface-500 mb-2">Y-Axis Range</p>
+          <div className="absolute right-0 top-full mt-1 z-40 bg-white rounded-lg shadow-elevated border border-gray-200 p-3 w-48">
+            <p className="text-xs font-semibold text-gray-500 mb-2">Y-Axis Range</p>
             <div className="flex items-center gap-2">
               <div className="flex-1">
-                <label className="text-[10px] text-surface-400 block mb-0.5">Min</label>
+                <label className="text-[10px] text-gray-400 block mb-0.5">Min</label>
                 <input
                   type="number"
                   value={axis.min}
                   onChange={e => axis.setMin(e.target.value)}
                   placeholder="auto"
-                  className="w-full text-xs px-2 py-1.5 border border-surface-200 rounded-md focus:outline-none focus:border-brand-400"
+                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
                 />
               </div>
-              <span className="text-surface-300 mt-3">–</span>
+              <span className="text-gray-300 mt-3">–</span>
               <div className="flex-1">
-                <label className="text-[10px] text-surface-400 block mb-0.5">Max</label>
+                <label className="text-[10px] text-gray-400 block mb-0.5">Max</label>
                 <input
                   type="number"
                   value={axis.max}
                   onChange={e => axis.setMax(e.target.value)}
                   placeholder="auto"
-                  className="w-full text-xs px-2 py-1.5 border border-surface-200 rounded-md focus:outline-none focus:border-brand-400"
+                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
                 />
               </div>
             </div>
             {(axis.min !== '' || axis.max !== '') && (
               <button
                 onClick={() => { axis.setMin(''); axis.setMax(''); }}
-                className="text-xs text-surface-500 hover:text-surface-700 mt-2"
+                className="text-xs text-gray-500 hover:text-gray-700 mt-2"
               >
                 Reset to auto
               </button>
@@ -424,8 +429,8 @@ function ChartCard({ title, subtitle, children, className = '', axis }) {
     <div className={`bg-white rounded-xl shadow-card p-5 animate-fade-in ${className}`}>
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="text-base font-semibold text-surface-800">{title}</h3>
-          {subtitle && <p className="text-xs text-surface-400 mt-0.5">{subtitle}</p>}
+          <h3 className="text-base font-semibold text-gray-800">{title}</h3>
+          {subtitle && <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>}
         </div>
         {axis && <AxisControls axis={axis} />}
       </div>
@@ -438,12 +443,12 @@ function ChartCard({ title, subtitle, children, className = '', axis }) {
 function ChartTooltip({ active, payload, label, formatter }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-surface-800 text-white text-xs rounded-lg px-3 py-2 shadow-elevated">
+    <div className="bg-gray-800 text-white text-xs rounded-lg px-3 py-2 shadow-elevated">
       <p className="font-medium mb-1">{label}</p>
       {payload.map((entry, i) => (
         <p key={i} className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: entry.color }} />
-          <span className="text-surface-300">{entry.name}:</span>
+          <span className="text-gray-300">{entry.name}:</span>
           <span className="font-semibold">{formatter ? formatter(entry.value) : entry.value}</span>
         </p>
       ))}
@@ -948,7 +953,7 @@ function withQoQ(data) {
 }
 
 function QoQBadge({ value, invertTrend = false }) {
-  if (value == null) return <span className="text-xs text-surface-300">—</span>;
+  if (value == null) return <span className="text-xs text-gray-300">—</span>;
   const pos = value >= 0;
   const isGood = invertTrend ? !pos : pos;
   return (
@@ -1047,11 +1052,11 @@ function OverviewTab({ data }) {
 
   // Table row helper
   const MetricRow = ({ label, data: rowData, format = 'currency', className = '', invertTrend = false }) => (
-    <tr className={`border-b border-surface-100 hover:bg-surface-50 transition-colors ${className}`}>
-      <td className="py-3 pr-4 text-sm font-medium text-surface-700 whitespace-nowrap sticky left-0 bg-white">{label}</td>
+    <tr className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${className}`}>
+      <td className="py-3 pr-4 text-sm font-medium text-gray-700 whitespace-nowrap sticky left-0 bg-white">{label}</td>
       {rowData.map((d, i) => (
         <td key={i} className="py-3 px-3 text-right">
-          <div className="text-sm font-semibold text-surface-800">
+          <div className="text-sm font-semibold text-gray-800">
             {format === 'currency' ? fmtDollar(d.value) :
              format === 'pct' ? fmtPct(d.value) :
              format === 'dollar2' ? (d.value != null ? `$${d.value.toFixed(2)}` : '-') :
@@ -1068,7 +1073,7 @@ function OverviewTab({ data }) {
   const SectionHeader = ({ children }) => (
     <tr>
       <td colSpan={quarters.length + 1} className="pt-5 pb-2 sticky left-0">
-        <span className="text-xs font-bold text-surface-400 uppercase tracking-wider">{children}</span>
+        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{children}</span>
       </td>
     </tr>
   );
@@ -1143,17 +1148,17 @@ function OverviewTab({ data }) {
 
       {/* Full quarterly table */}
       <div className="bg-white rounded-xl shadow-card animate-fade-in">
-        <div className="p-5 border-b border-surface-100">
-          <h3 className="text-base font-semibold text-surface-800">Quarterly Performance</h3>
-          <p className="text-xs text-surface-400 mt-0.5">All key metrics with quarter-over-quarter growth</p>
+        <div className="p-5 border-b border-gray-100">
+          <h3 className="text-base font-semibold text-gray-800">Quarterly Performance</h3>
+          <p className="text-xs text-gray-400 mt-0.5">All key metrics with quarter-over-quarter growth</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px]">
             <thead>
-              <tr className="border-b border-surface-200">
-                <th className="text-left py-3 pr-4 text-xs font-semibold text-surface-500 uppercase tracking-wider sticky left-0 bg-white">Metric</th>
+              <tr className="border-b border-gray-200">
+                <th className="text-left py-3 pr-4 text-xs font-semibold text-gray-500 uppercase tracking-wider sticky left-0 bg-white">Metric</th>
                 {quarters.map(q => (
-                  <th key={q} className="py-3 px-3 text-right text-xs font-semibold text-surface-500 uppercase tracking-wider whitespace-nowrap">{q}</th>
+                  <th key={q} className="py-3 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{q}</th>
                 ))}
               </tr>
             </thead>
@@ -1263,49 +1268,49 @@ function WeeklyTab({ data, filter, excludedWeeks }) {
       )}
 
       <div className="bg-white rounded-xl shadow-card animate-fade-in overflow-hidden">
-        <div className="p-5 border-b border-surface-100">
-          <h3 className="text-base font-semibold text-surface-800">Weekly Performance</h3>
-          <p className="text-xs text-surface-400 mt-0.5">All key metrics by week — newest first</p>
+        <div className="p-5 border-b border-gray-100">
+          <h3 className="text-base font-semibold text-gray-800">Weekly Performance</h3>
+          <p className="text-xs text-gray-400 mt-0.5">All key metrics by week — newest first</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs min-w-[1100px]">
             <thead>
-              <tr className="border-b border-surface-200 bg-surface-50">
+              <tr className="border-b border-gray-200 bg-gray-50">
                 {[
                   'Period', 'Quarter', 'Revenue', 'WoW', 'COGS', 'COGS %',
                   'Gross Profit', 'Margin %', 'Labour', 'Labour %',
                   'Contrib. Margin', 'CM %', 'AOV', 'Daily Cust.', 'Rev/Hr', 'Units'
                 ].map(h => (
-                  <th key={h} className={`py-3 px-3 font-semibold text-surface-500 uppercase tracking-wider whitespace-nowrap ${h === 'Period' || h === 'Quarter' ? 'text-left' : 'text-right'}`}>{h}</th>
+                  <th key={h} className={`py-3 px-3 font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap ${h === 'Period' || h === 'Quarter' ? 'text-left' : 'text-right'}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {weeklyRows.map((row, i) => {
                 const wowColor = row.wow == null ? '' : row.wow >= 0 ? 'text-green-600 font-semibold' : 'text-red-500 font-semibold';
-                const cogsPctColor = row.cogsPct == null ? '' : row.cogsPct > 35 ? 'text-red-500' : row.cogsPct < 28 ? 'text-green-600' : 'text-surface-800';
-                const marginColor = row.grossMargin == null ? '' : row.grossMargin > 70 ? 'text-green-600' : row.grossMargin < 60 ? 'text-red-500' : 'text-surface-800';
-                const cmColor = row.contribMarginPct == null ? '' : row.contribMarginPct > 30 ? 'text-green-600' : row.contribMarginPct < 15 ? 'text-red-500' : 'text-surface-800';
+                const cogsPctColor = row.cogsPct == null ? '' : row.cogsPct > 35 ? 'text-red-500' : row.cogsPct < 28 ? 'text-green-600' : 'text-gray-800';
+                const marginColor = row.grossMargin == null ? '' : row.grossMargin > 70 ? 'text-green-600' : row.grossMargin < 60 ? 'text-red-500' : 'text-gray-800';
+                const cmColor = row.contribMarginPct == null ? '' : row.contribMarginPct > 30 ? 'text-green-600' : row.contribMarginPct < 15 ? 'text-red-500' : 'text-gray-800';
                 return (
-                  <tr key={i} className="border-b border-surface-100 hover:bg-surface-50 transition-colors">
-                    <td className="py-2.5 px-3 font-medium text-surface-700 whitespace-nowrap">{shortPeriodLabel(row.period)}</td>
-                    <td className="py-2.5 px-3 text-surface-400 whitespace-nowrap">{row.quarter}</td>
-                    <td className="py-2.5 px-3 text-right font-semibold text-surface-800">{fmtDollar(row.revenue)}</td>
+                  <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td className="py-2.5 px-3 font-medium text-gray-700 whitespace-nowrap">{shortPeriodLabel(row.period)}</td>
+                    <td className="py-2.5 px-3 text-gray-400 whitespace-nowrap">{row.quarter}</td>
+                    <td className="py-2.5 px-3 text-right font-semibold text-gray-800">{fmtDollar(row.revenue)}</td>
                     <td className={`py-2.5 px-3 text-right whitespace-nowrap ${wowColor}`}>
                       {row.wow != null ? `${row.wow >= 0 ? '+' : ''}${row.wow.toFixed(1)}%` : '—'}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-surface-700">{fmtDollar(row.cogs)}</td>
+                    <td className="py-2.5 px-3 text-right text-gray-700">{fmtDollar(row.cogs)}</td>
                     <td className={`py-2.5 px-3 text-right ${cogsPctColor}`}>{fmtPct(row.cogsPct)}</td>
-                    <td className="py-2.5 px-3 text-right font-semibold text-surface-800">{fmtDollar(row.grossProfit)}</td>
+                    <td className="py-2.5 px-3 text-right font-semibold text-gray-800">{fmtDollar(row.grossProfit)}</td>
                     <td className={`py-2.5 px-3 text-right ${marginColor}`}>{fmtPct(row.grossMargin)}</td>
-                    <td className="py-2.5 px-3 text-right text-surface-700">{fmtDollar(row.labour)}</td>
-                    <td className="py-2.5 px-3 text-right text-surface-700">{fmtPct(row.labourPct)}</td>
+                    <td className="py-2.5 px-3 text-right text-gray-700">{fmtDollar(row.labour)}</td>
+                    <td className="py-2.5 px-3 text-right text-gray-700">{fmtPct(row.labourPct)}</td>
                     <td className={`py-2.5 px-3 text-right font-semibold ${cmColor}`}>{fmtDollar(row.contribMargin)}</td>
                     <td className={`py-2.5 px-3 text-right ${cmColor}`}>{fmtPct(row.contribMarginPct)}</td>
-                    <td className="py-2.5 px-3 text-right text-surface-700">{row.aov ? `$${row.aov.toFixed(2)}` : '—'}</td>
-                    <td className="py-2.5 px-3 text-right text-surface-700">{row.dailyCustomers?.toFixed(1) || '—'}</td>
-                    <td className="py-2.5 px-3 text-right text-surface-700">{fmtDollar(row.revenuePerHour)}</td>
-                    <td className="py-2.5 px-3 text-right text-surface-700">{row.unitsSold != null ? row.unitsSold.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'}</td>
+                    <td className="py-2.5 px-3 text-right text-gray-700">{row.aov ? `$${row.aov.toFixed(2)}` : '—'}</td>
+                    <td className="py-2.5 px-3 text-right text-gray-700">{row.dailyCustomers?.toFixed(1) || '—'}</td>
+                    <td className="py-2.5 px-3 text-right text-gray-700">{fmtDollar(row.revenuePerHour)}</td>
+                    <td className="py-2.5 px-3 text-right text-gray-700">{row.unitsSold != null ? row.unitsSold.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'}</td>
                   </tr>
                 );
               })}
@@ -1396,11 +1401,11 @@ function PnLTab({ data }) {
 
   // P&L table rows
   const PnLRow = ({ label, data: rowData, format = 'currency', indent = false, bold = false, invertTrend = false, className = '' }) => (
-    <tr className={`border-b border-surface-100 hover:bg-surface-50 transition-colors ${className}`}>
-      <td className={`py-3 pr-4 text-sm whitespace-nowrap sticky left-0 bg-white ${bold ? 'font-bold text-surface-800' : 'font-medium text-surface-600'} ${indent ? 'pl-6' : ''}`}>{label}</td>
+    <tr className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${className}`}>
+      <td className={`py-3 pr-4 text-sm whitespace-nowrap sticky left-0 bg-white ${bold ? 'font-bold text-gray-800' : 'font-medium text-gray-600'} ${indent ? 'pl-6' : ''}`}>{label}</td>
       {rowData.map((d, i) => (
         <td key={i} className="py-3 px-3 text-right">
-          <div className={`text-sm ${bold ? 'font-bold text-surface-800' : 'font-semibold text-surface-700'}`}>
+          <div className={`text-sm ${bold ? 'font-bold text-gray-800' : 'font-semibold text-gray-700'}`}>
             {format === 'currency' ? fmtDollar(d.value) : format === 'pct' ? fmtPct(d.value) : d.value}
           </div>
           <QoQBadge value={d.qoq} invertTrend={invertTrend} />
@@ -1412,7 +1417,7 @@ function PnLTab({ data }) {
   const SeparatorRow = ({ label }) => (
     <tr>
       <td colSpan={quarters.length + 1} className="pt-4 pb-1 sticky left-0">
-        <span className="text-xs font-bold text-surface-400 uppercase tracking-wider">{label}</span>
+        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{label}</span>
       </td>
     </tr>
   );
@@ -1486,17 +1491,17 @@ function PnLTab({ data }) {
 
       {/* Full P&L Table */}
       <div className="bg-white rounded-xl shadow-card animate-fade-in">
-        <div className="p-5 border-b border-surface-100">
-          <h3 className="text-base font-semibold text-surface-800">Quarterly P&L Statement</h3>
-          <p className="text-xs text-surface-400 mt-0.5">Income statement with quarter-over-quarter growth</p>
+        <div className="p-5 border-b border-gray-100">
+          <h3 className="text-base font-semibold text-gray-800">Quarterly P&L Statement</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Income statement with quarter-over-quarter growth</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px]">
             <thead>
-              <tr className="border-b border-surface-200">
-                <th className="text-left py-3 pr-4 text-xs font-semibold text-surface-500 uppercase tracking-wider sticky left-0 bg-white">Line Item</th>
+              <tr className="border-b border-gray-200">
+                <th className="text-left py-3 pr-4 text-xs font-semibold text-gray-500 uppercase tracking-wider sticky left-0 bg-white">Line Item</th>
                 {quarters.map(q => (
-                  <th key={q} className="py-3 px-3 text-right text-xs font-semibold text-surface-500 uppercase tracking-wider whitespace-nowrap">{q}</th>
+                  <th key={q} className="py-3 px-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{q}</th>
                 ))}
               </tr>
             </thead>
@@ -1530,16 +1535,18 @@ function PnLTab({ data }) {
 // ===========================
 // MAIN DASHBOARD
 // ===========================
+// Customer tab (social/review metrics) is left out of the nav -- per business
+// call, those aren't tracked/important -- but CustomerTab itself stays below
+// in case that changes later.
 const TABS = [
   { id: 'overview', label: 'Overview', icon: LayoutGrid },
   { id: 'weekly', label: 'Weekly', icon: Calendar },
   { id: 'pnl', label: 'P&L', icon: FileText },
   { id: 'revenue', label: 'Revenue', icon: DollarSign },
   { id: 'costs', label: 'Costs', icon: Truck },
-  { id: 'customer', label: 'Customer', icon: Users },
 ];
 
-export default function BusinessDashboard({ onBack }) {
+export default function ToplineApp({ org, user, onBack }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -1547,11 +1554,14 @@ export default function BusinessDashboard({ onBack }) {
   const [filter, setFilter] = useState({ type: 'weeks', value: 12 });
   const [excludedWeeks, setExcludedWeeks] = useState(new Set());
 
+  const orgId = org?.id;
+
   const loadData = useCallback(async () => {
+    if (!orgId) return;
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchAllData();
+      const result = await fetchAllData(orgId);
       setData(result);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
@@ -1559,7 +1569,7 @@ export default function BusinessDashboard({ onBack }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [orgId]);
 
   useEffect(() => {
     loadData();
@@ -1585,24 +1595,20 @@ export default function BusinessDashboard({ onBack }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-surface-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-brand-500 mx-auto mb-4" />
-          <p className="text-surface-500 font-medium">Loading dashboard data...</p>
-          <p className="text-surface-400 text-sm mt-1">Fetching from Google Sheets</p>
-        </div>
+      <div className="h-full flex items-center justify-center">
+        <Loader2 size={20} className="animate-spin text-gray-400" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-surface-50 flex items-center justify-center p-6">
-        <div className="bg-white rounded-xl shadow-card p-8 max-w-md w-full text-center">
+      <div className="h-full flex items-center justify-center p-6">
+        <div className="card p-8 max-w-md w-full text-center">
           <AlertCircle className="mx-auto text-red-500 mb-4" size={40} />
-          <h2 className="text-lg font-semibold text-surface-800 mb-2">Failed to load data</h2>
-          <p className="text-surface-500 text-sm mb-4">{error}</p>
-          <button onClick={loadData} className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors font-medium text-sm">
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">Failed to load data</h2>
+          <p className="text-gray-500 text-sm mb-4">{error}</p>
+          <button onClick={loadData} className="px-4 py-2 text-white rounded-lg hover:brightness-95 transition-colors font-medium text-sm" style={{ background: 'var(--primary)' }}>
             Try Again
           </button>
         </div>
@@ -1611,25 +1617,25 @@ export default function BusinessDashboard({ onBack }) {
   }
 
   return (
-    <div className="min-h-screen bg-surface-50">
+    <div className="h-full overflow-auto" style={{ background: 'var(--app-bg)' }}>
       {/* Header */}
-      <div className="bg-white border-b border-surface-200 sticky top-0 z-20">
+      <div className="bg-white sticky top-0 z-20" style={{ borderBottom: '1px solid var(--top-border)' }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
               {onBack && (
-                <button onClick={onBack} className="p-2 hover:bg-surface-100 rounded-lg transition-colors">
-                  <ArrowLeft size={20} className="text-surface-600" />
+                <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                  <ArrowLeft size={20} className="text-gray-600" />
                 </button>
               )}
               <div>
-                <h1 className="text-lg font-bold text-surface-800">Business Dashboard</h1>
-                <p className="text-xs text-surface-400">It's Recess — Analytics Hub</p>
+                <h1 className="text-lg font-bold text-gray-900">R-Topline</h1>
+                <p className="text-xs text-gray-400">Revenue, costs &amp; P&amp;L, from R-Shift's own data</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               {!['overview', 'pnl'].includes(activeTab) && <FilterBar filter={filter} setFilter={setFilter} availableFilters={availableFilters} />}
-              <button onClick={loadData} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-surface-600 hover:bg-surface-100 rounded-lg transition-colors" title="Refresh data">
+              <button onClick={loadData} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors" title="Refresh data">
                 <RefreshCw size={16} />
                 <span className="hidden sm:inline">Refresh</span>
               </button>
@@ -1642,11 +1648,10 @@ export default function BusinessDashboard({ onBack }) {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === tab.id
-                    ? 'border-brand-500 text-brand-600'
-                    : 'border-transparent text-surface-500 hover:text-surface-700 hover:border-surface-300'
-                }`}
+                className="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors"
+                style={activeTab === tab.id
+                  ? { borderColor: 'var(--primary)', color: 'var(--primary)' }
+                  : { borderColor: 'transparent', color: '#6b7280' }}
               >
                 <tab.icon size={16} />
                 {tab.label}

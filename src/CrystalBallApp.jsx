@@ -169,6 +169,7 @@ function ImportSalesModal({ orgId, items, onClose, onSaved }) {
   const [importing, setImporting] = useState(false);
 
   const itemByName = useMemo(() => new Map(items.map(i => [i.name.toLowerCase(), i])), [items]);
+  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
 
   function handlePreview() {
     const { rows, unmatched } = parseSalesPaste(text, itemByName);
@@ -179,7 +180,14 @@ function ImportSalesModal({ orgId, items, onClose, onSaved }) {
     if (!preview || preview.rows.length === 0) return;
     setImporting(true);
     try {
-      const payload = preview.rows.map(r => ({ sale_date: r.sale_date, item_id: r.item_id, qty: r.qty }));
+      // No price column in the pasted format -- approximate revenue from the
+      // item's current sell price rather than leaving it untracked.
+      const payload = preview.rows.map(r => ({
+        sale_date: r.sale_date,
+        item_id: r.item_id,
+        qty: r.qty,
+        revenue: r.qty * (Number(itemById.get(r.item_id)?.sell_price) || 0),
+      }));
       await db.bulkUpsertSalesHistory(orgId, payload);
       toast.success(`Imported ${payload.length} rows`);
       onSaved();

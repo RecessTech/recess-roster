@@ -246,6 +246,30 @@ body {
   --top-border:     #F3E0C7;
 }
 
+/* Topline theme — a distinct gold, fitting for the revenue/P&L module,
+   and distinct from every other colourway (R-Shift blue, R-Stock orange,
+   R-Prod green, R-Recipe purple, Crystal Ball indigo, Transfer Hub teal,
+   Catering rose, Builds cyan, Barista brown) */
+[data-theme="topline"] {
+  --sb-bg:          #854D0E;
+  --sb-icon:        rgba(254, 252, 232, 0.75);
+  --sb-icon-active: #FEFCE8;
+  --sb-active:      rgba(254, 252, 232, 0.2);
+  --sb-hover:       rgba(254, 252, 232, 0.1);
+  --sb-logo-bg:     rgba(254, 252, 232, 0.15);
+  --sb-logo-fg:     #FEFCE8;
+  --sb-tooltip-bg:  #713F12;
+  --sb-tooltip-bd:  rgba(254,252,232,0.15);
+
+  --primary:        #A16207;
+  --primary-dk:     #854D0E;
+  --primary-fg:     white;
+
+  --app-bg:         #FEFCE8;
+  --top-bg:         white;
+  --top-border:     #FEF9C3;
+}
+
 /* Dark theme (logo 3) */
 [data-theme="dark"] {
   --sb-bg:          #171717;

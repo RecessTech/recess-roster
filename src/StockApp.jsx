@@ -1228,7 +1228,7 @@ function sumQtyByItem(orderHistory, locationId, startISO, endISO) {
 }
 
 // Simple dark tooltip shared by both charts below — matches the pattern
-// used in BusinessDashboard.jsx (ChartTooltip) but scoped to this file
+// used in ToplineApp.jsx (ChartTooltip) but scoped to this file
 // since these charts are single-series and need less machinery.
 function InsightsTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;

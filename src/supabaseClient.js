@@ -5,6 +5,19 @@ const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY || 'YOUR_SUPABAS
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// Monday (ISO week start) of the week containing an ISO date string.
+function mondayOfIso(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const dow = d.getDay(); // 0 = Sun
+  d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function addDaysIso(dateStr, n) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // Database helper functions
 export const db = {
 
@@ -1782,6 +1795,183 @@ export const db = {
       .single();
     if (error) throw error;
     return data;
+  },
+
+  // ── R-Topline (Business Analytics / P&L) ────────────────────────────────────
+
+  async getPnlLineItems(orgId) {
+    const { data, error } = await supabase
+      .from('pnl_line_items')
+      .select('*')
+      .eq('org_id', orgId)
+      .eq('active', true)
+      .order('sort_order', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getPnlEntries(orgId, startDate, endDate) {
+    const { data, error } = await supabase
+      .from('pnl_entries')
+      .select('*')
+      .eq('org_id', orgId)
+      .gte('week_start_date', startDate)
+      .lte('week_start_date', endDate);
+    if (error) throw error;
+    return data || [];
+  },
+
+  async upsertPnlEntry(orgId, userId, { lineItemId, weekStartDate, amount }) {
+    const { data, error } = await supabase
+      .from('pnl_entries')
+      .upsert(
+        [{
+          org_id: orgId,
+          line_item_id: lineItemId,
+          week_start_date: weekStartDate,
+          amount,
+          updated_by: userId,
+          updated_at: new Date().toISOString(),
+        }],
+        { onConflict: 'line_item_id,week_start_date' }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async getPnlRecurringCosts(orgId) {
+    const { data, error } = await supabase
+      .from('pnl_recurring_costs')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('starts_on', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  // "Set and forget" -- ends any current open-ended recurring amount for
+  // this line item the day before `startsOn` (rather than deleting it, so
+  // past weeks still resolve to the old amount), then starts the new one.
+  async setPnlRecurringCost(orgId, lineItemId, amount, startsOn) {
+    const { data: existing, error: fetchErr } = await supabase
+      .from('pnl_recurring_costs')
+      .select('id, starts_on')
+      .eq('org_id', orgId)
+      .eq('line_item_id', lineItemId)
+      .is('ends_on', null);
+    if (fetchErr) throw fetchErr;
+    const dayBefore = addDaysIso(startsOn, -1);
+    for (const row of existing || []) {
+      if (row.starts_on >= startsOn) {
+        await supabase.from('pnl_recurring_costs').delete().eq('id', row.id);
+      } else {
+        await supabase.from('pnl_recurring_costs').update({ ends_on: dayBefore }).eq('id', row.id);
+      }
+    }
+    const { data, error } = await supabase
+      .from('pnl_recurring_costs')
+      .insert([{ org_id: orgId, line_item_id: lineItemId, amount, starts_on: startsOn }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async getAnalyticsKpiHistory(orgId, periodType) {
+    const { data, error } = await supabase
+      .from('analytics_kpi_history')
+      .select('*')
+      .eq('org_id', orgId)
+      .eq('period_type', periodType)
+      .order('period_start', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  // Actual weekly labour cost, computed from the roster itself -- R-Shift has
+  // no separate timesheet/clock-in system, so a rostered slot IS the record
+  // of hours worked. Every `schedules` row is one fixed 15-minute slot
+  // (confirmed against real data -- the UI's zoom level doesn't change what's
+  // stored), so hours = slot count x 0.25. Weekend rows use `weekend_rate`
+  // when a staff member has one set; superannuation is layered on top at the
+  // org's configured rate from `business_settings`.
+  async getWeeklyLabourCost(orgId, startDate, endDate) {
+    const [{ data: schedules, error: schedErr }, { data: staff, error: staffErr }, { data: settings, error: settingsErr }] = await Promise.all([
+      supabase.from('schedules').select('date_key, staff_id').eq('org_id', orgId).gte('date_key', startDate).lte('date_key', endDate),
+      supabase.from('staff').select('id, hourly_rate, weekend_rate').eq('org_id', orgId),
+      supabase.from('business_settings').select('superannuation_rate').eq('org_id', orgId).maybeSingle(),
+    ]);
+    if (schedErr) throw schedErr;
+    if (staffErr) throw staffErr;
+    if (settingsErr) throw settingsErr;
+
+    const staffById = new Map((staff || []).map(s => [s.id, s]));
+    const superRate = (Number(settings?.superannuation_rate) || 0) / 100;
+    const SLOT_HOURS = 0.25;
+
+    const slotsByStaffDate = new Map(); // `${staffId}:${date}` -> slot count
+    (schedules || []).forEach(row => {
+      const key = `${row.staff_id}:${row.date_key}`;
+      slotsByStaffDate.set(key, (slotsByStaffDate.get(key) || 0) + 1);
+    });
+
+    const wagesByWeek = new Map(); // weekStartDate (Monday) -> wages
+    slotsByStaffDate.forEach((slots, key) => {
+      const [staffId, date] = key.split(':');
+      const s = staffById.get(staffId);
+      if (!s) return;
+      const hours = slots * SLOT_HOURS;
+      const dow = new Date(date + 'T12:00:00').getDay(); // 0=Sun..6=Sat
+      const rate = (dow === 0 || dow === 6) && s.weekend_rate ? Number(s.weekend_rate) : (Number(s.hourly_rate) || 0);
+      const weekStart = mondayOfIso(date);
+      wagesByWeek.set(weekStart, (wagesByWeek.get(weekStart) || 0) + hours * rate);
+    });
+
+    return [...wagesByWeek.entries()]
+      .map(([week_start_date, wages]) => ({ week_start_date, wages, superannuation: wages * superRate }))
+      .sort((a, b) => a.week_start_date.localeCompare(b.week_start_date));
+  },
+
+  // Weekly revenue per (channel, item category) for the P&L's revenue lines
+  // and the Overview/Revenue/Weekly tabs -- aggregated from sales_history
+  // now that imports capture `revenue`, not just `qty`.
+  async getWeeklyRevenue(orgId, startDate, endDate) {
+    const [history, items] = await Promise.all([
+      this.getSalesHistory(orgId),
+      this.getProductionItems(orgId),
+    ]);
+    const categoryById = new Map(items.map(i => [i.id, i.category]));
+    const rows = history.filter(h => h.sale_date >= startDate && h.sale_date <= endDate && h.revenue != null);
+
+    const byWeek = new Map(); // weekStart -> { pos_food, pos_drinks, pos_snacks, thirdparty, catering, vending, wholesale, classpass, total }
+    rows.forEach(r => {
+      const weekStart = mondayOfIso(r.sale_date);
+      if (!byWeek.has(weekStart)) {
+        byWeek.set(weekStart, { week_start_date: weekStart, food: 0, drinks: 0, snacks: 0, thirdparty: 0, classpass: 0, catering: 0, vending: 0, wholesale: 0, total: 0 });
+      }
+      const bucket = byWeek.get(weekStart);
+      const revenue = Number(r.revenue) || 0;
+      bucket.total += revenue;
+      if (r.channel === 'pos') {
+        const cat = categoryById.get(r.item_id);
+        if (cat === 'Coffee & Tea' || cat === 'Drinks') bucket.drinks += revenue;
+        else if (cat === 'Snacks') bucket.snacks += revenue;
+        else bucket.food += revenue;
+      } else if (r.channel === 'ubereats' || r.channel === 'doordash' || r.channel === 'heyyou') {
+        bucket.thirdparty += revenue;
+      } else if (r.channel === 'classpass') {
+        bucket.classpass += revenue;
+      } else if (r.channel === 'catering') {
+        bucket.catering += revenue;
+      } else if (r.channel === 'vending') {
+        bucket.vending += revenue;
+      } else if (r.channel === 'wholesale') {
+        bucket.wholesale += revenue;
+      }
+    });
+    return [...byWeek.values()].sort((a, b) => a.week_start_date.localeCompare(b.week_start_date));
   },
 
   // ── Transfer Hub ─────────────────────────────────────────────────────────────
