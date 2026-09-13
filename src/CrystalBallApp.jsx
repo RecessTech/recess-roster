@@ -6,6 +6,7 @@ import {
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
 import { isoWeekLabel } from './isoWeek';
+import { CHANNEL_GROUPS, dayOfWeekIndex, buildDowAverages, forecastItemsForDate } from './forecastEngine';
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -18,7 +19,6 @@ function addDays(dateStr, n) {
   d.setDate(d.getDate() + n);
   return fmtISO(d);
 }
-function dayOfWeekIndex(dateStr) { return new Date(dateStr + 'T12:00:00').getDay(); } // 0=Sun..6=Sat
 const DOW_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 function fmtDateLong(dateStr) {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
@@ -283,67 +283,9 @@ function SalesHistoryTab({ orgId, items, salesHistory, onRefresh }) {
 // then the channels are ADDED together -- in-store customers, delivery-app
 // customers, and Classpass customers are different people ordering on top of
 // each other, not samples of the same demand to be blended into one average.
-
-const CHANNEL_GROUPS = [
-  { key: 'instore', label: 'In-Store', channels: ['pos'] },
-  { key: 'delivery', label: 'Delivery Apps', channels: ['ubereats', 'doordash'] },
-  { key: 'classpass', label: 'Classpass', channels: ['classpass'] },
-];
-const CHANNEL_TO_GROUP = new Map(
-  CHANNEL_GROUPS.flatMap(g => g.channels.map(ch => [ch, g.key]))
-);
-
-// A bucket needs at least this many historical same-weekday data points
-// before a trend line is trusted at all -- below this, too few points
-// makes a "slope" meaningless noise, so it's forced flat.
-const MIN_TREND_SAMPLES = 4;
-// However strong the fitted trend looks, its contribution this many
-// weeks out is capped to +-50% of the current level -- a couple of
-// unusually large recent weeks shouldn't be able to extrapolate a
-// forecast to zero or to some absurd multiple several weeks out.
-const MAX_TREND_DELTA_FRACTION = 0.5;
-
-// Weighted least squares over a bucket's (weeksFromNow, qty) points --
-// weeksFromNow is negative for past sales, 0 = today -- returning the
-// fitted value at the requested weeksFromNow. With < MIN_TREND_SAMPLES
-// points, or with all points landing in the same week (no x variance
-// to fit a slope against), this degrades to the flat recency-weighted
-// mean (slope forced to 0), same as before trend support existed.
-function bucketPredict(bucket, weeksFromNow) {
-  if (!bucket) return { value: 0, samples: 0 };
-  const [rawCount, sw, swx, swy, swxx, swxy] = bucket;
-  if (sw <= 0) return { value: 0, samples: rawCount };
-  const xbar = swx / sw;
-  const ybar = swy / sw;
-  const sxx = swxx - sw * xbar * xbar;
-  const slope = (rawCount >= MIN_TREND_SAMPLES && sxx > 1e-6)
-    ? (swxy - sw * xbar * ybar) / sxx
-    : 0;
-  const intercept = ybar - slope * xbar; // fitted value at weeksFromNow = 0 (today)
-  const trendDelta = slope * weeksFromNow;
-  const cap = Math.abs(intercept) * MAX_TREND_DELTA_FRACTION;
-  const clampedDelta = Math.max(-cap, Math.min(cap, trendDelta));
-  return { value: Math.max(0, intercept + clampedDelta), samples: rawCount };
-}
-
-// Same math the single-day Forecast tab uses, factored out so the weekly
-// rollup can call it once per date and sum -- forecasts stay identical
-// whichever tab you look at them from.
-function forecastItemsForDate(items, dowAverages, uplift, dateStr) {
-  const dow = dayOfWeekIndex(dateStr);
-  const weeksFromNow = (new Date(dateStr + 'T12:00:00').getTime() - new Date(todayStr() + 'T12:00:00').getTime()) / (7 * 86400000);
-  return items.map(item => {
-    const groupStats = CHANNEL_GROUPS.map(g => {
-      const bucket = dowAverages.get(`${item.id}:${dow}:${g.key}`);
-      const { value: avg, samples } = bucketPredict(bucket, weeksFromNow);
-      return { ...g, avg, samples };
-    });
-    const baseTotal = groupStats.reduce((s, g) => s + g.avg, 0);
-    const forecast = baseTotal * uplift;
-    const samples = groupStats.reduce((s, g) => s + g.samples, 0);
-    return { item, groupStats, forecast, samples };
-  }).filter(f => f.forecast > 0 || f.samples > 0);
-}
+// The actual model (CHANNEL_GROUPS, bucketPredict, forecastItemsForDate) lives
+// in forecastEngine.js so R-Prod's "Pull from Crystal Ball" reads identical
+// numbers to this tab.
 
 // kg/L display conversion for the weekly SKU rollup -- same >=1000 rule
 // used in R-Stock, kept local here since it's the only place in Crystal
@@ -458,7 +400,7 @@ function ForecastTab({ orgId, user, items, dowAverages, resolver, skuById, setti
   const uplift = 1 + (Number(settings?.channel_uplift_pct) || 0) / 100;
 
   const itemForecasts = useMemo(
-    () => forecastItemsForDate(items, dowAverages, uplift, date),
+    () => forecastItemsForDate(items, dowAverages, uplift, date, todayStr()),
     [items, dowAverages, date, uplift]
   );
 
@@ -748,7 +690,7 @@ function WeeklyConsumptionTab({ items, dowAverages, uplift, resolver, skuById })
   const weeklyItemTotals = useMemo(() => {
     const totals = new Map(); // itemId -> forecast qty summed across the week
     weekDates.forEach(d => {
-      forecastItemsForDate(items, dowAverages, uplift, d).forEach(({ item, forecast }) => {
+      forecastItemsForDate(items, dowAverages, uplift, d, todayStr()).forEach(({ item, forecast }) => {
         if (forecast <= 0) return;
         totals.set(item.id, (totals.get(item.id) || 0) + forecast);
       });
@@ -933,28 +875,10 @@ export default function CrystalBallApp({ org, user }) {
   // when there isn't enough data to trust a slope. This is why forecasts
   // for different future weeks can now actually differ from each other,
   // instead of every future Monday reusing the exact same number.
-  const dowAverages = useMemo(() => {
-    const buckets = new Map(); // `${itemId}:${dow}:${groupKey}` -> [rawCount, sw, swx, swy, swxx, swxy]
-    const now = Date.now();
-    salesHistory.forEach(row => {
-      const groupKey = CHANNEL_TO_GROUP.get(row.channel) || 'instore';
-      const dow = dayOfWeekIndex(row.sale_date);
-      const key = `${row.item_id}:${dow}:${groupKey}`;
-      const daysAgo = Math.max(0, (now - new Date(row.sale_date + 'T12:00:00').getTime()) / 86400000);
-      const weight = halfLifeDays > 0 ? Math.pow(0.5, daysAgo / halfLifeDays) : 1;
-      const x = -daysAgo / 7;
-      const y = Number(row.qty) || 0;
-      const entry = buckets.get(key) || [0, 0, 0, 0, 0, 0];
-      entry[0] += 1;
-      entry[1] += weight;
-      entry[2] += weight * x;
-      entry[3] += weight * y;
-      entry[4] += weight * x * x;
-      entry[5] += weight * x * y;
-      buckets.set(key, entry);
-    });
-    return buckets;
-  }, [salesHistory, halfLifeDays]);
+  const dowAverages = useMemo(
+    () => buildDowAverages(salesHistory, halfLifeDays),
+    [salesHistory, halfLifeDays]
+  );
   const uplift = 1 + (Number(settings?.channel_uplift_pct) || 0) / 100;
 
   const TABS = [

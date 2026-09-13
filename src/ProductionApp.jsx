@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, Trash2, Edit2, X, Settings, ChevronLeft, ChevronRight,
-  ClipboardList, Loader2, ChevronUp, ChevronDown, ChefHat, CheckCircle, BarChart3, Wheat,
+  ClipboardList, Loader2, ChevronUp, ChevronDown, ChefHat, CheckCircle, BarChart3, Wheat, Sparkles,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
 import ProductionInsights from './ProductionInsights';
+import { buildDowAverages, forecastItemsForDate } from './forecastEngine';
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -635,6 +636,7 @@ export default function ProductionApp({ org, user }) {
   const [showSettings, setShowSettings] = useState(false);
   const [dayLock, setDayLock] = useState(null);
   const [finalizing, setFinalizing] = useState(false);
+  const [pullingForecast, setPullingForecast] = useState(false);
 
   const loadCatalog = useCallback(async () => {
     if (!orgId) return;
@@ -781,6 +783,45 @@ export default function ProductionApp({ org, user }) {
     return [...groups.entries()];
   }, [activeItems]);
 
+  // Pulls this date's Crystal Ball forecast -- same model as the Forecast
+  // tab's own "Load to R-Prod" button, via the shared forecastEngine -- for
+  // whichever of this site's items have a forecast, straight into the
+  // site's In-Store channel. Items assigned to other sites, or with no
+  // forecast yet, are left untouched.
+  async function pullFromCrystalBall() {
+    if (!activeSiteId) return;
+    const inStoreChannel = channelsForSite.find(c => c.name === 'In-Store');
+    if (!inStoreChannel) {
+      toast.error('This site has no "In-Store" channel to pull the forecast into.');
+      return;
+    }
+    setPullingForecast(true);
+    try {
+      const [history, cbSettings] = await Promise.all([
+        db.getSalesHistory(orgId),
+        db.getCrystalBallSettings(orgId),
+      ]);
+      const halfLifeDays = (Number(cbSettings?.recency_halflife_weeks) || 0) * 7;
+      const uplift = 1 + (Number(cbSettings?.channel_uplift_pct) || 0) / 100;
+      const dowAverages = buildDowAverages(history, halfLifeDays);
+      const siteItems = planningItems.filter(i => i.site_id === activeSiteId);
+      const targets = forecastItemsForDate(siteItems, dowAverages, uplift, date, todayStr()).filter(f => f.forecast > 0);
+      if (targets.length === 0) {
+        toast.error("No Crystal Ball forecast yet for this site's items on this date.");
+        return;
+      }
+      for (const f of targets) {
+        await db.setProductionPlanQty(orgId, user.id, { itemId: f.item.id, channelId: inStoreChannel.id, date, qty: Math.round(f.forecast) });
+      }
+      await loadPlan();
+      toast.success(`Pulled forecast for ${targets.length} item${targets.length === 1 ? '' : 's'} into In-Store.`);
+    } catch (err) {
+      toast.error('Failed to pull forecast: ' + (err.message || 'unknown error'));
+    } finally {
+      setPullingForecast(false);
+    }
+  }
+
   if (loadingCatalog) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -899,6 +940,18 @@ export default function ProductionApp({ org, user }) {
                   )}
                 </div>
                 <div className="flex items-center gap-3">
+                  {!dayLock && (
+                    <button
+                      onClick={pullFromCrystalBall}
+                      disabled={pullingForecast}
+                      title="Pull this date's Crystal Ball forecast for this site's items into In-Store"
+                      aria-label="Pull from Crystal Ball"
+                      className="flex items-center justify-center w-9 h-9 rounded-full text-white shadow-md transition-transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+                      style={{ background: 'var(--primary)' }}
+                    >
+                      {pullingForecast ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                    </button>
+                  )}
                   {dayLock ? (
                     <div className="flex items-center gap-2">
                       <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: '#DCFCE7', color: 'var(--primary)' }}>
