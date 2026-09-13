@@ -4,13 +4,13 @@
 // the exact same item/date -- one algorithm, not two copies that can drift.
 
 // Each sales channel is forecast independently (its own day-of-week average),
-// then the channels are ADDED together -- in-store customers, delivery-app
-// customers, and Classpass customers are different people ordering on top of
-// each other, not samples of the same demand to be blended into one average.
+// then the channels are ADDED together -- in-store customers, 3rd-party-app
+// customers, and B2B customers are different people ordering on top of each
+// other, not samples of the same demand to be blended into one average.
 export const CHANNEL_GROUPS = [
   { key: 'instore', label: 'In-Store', channels: ['pos'] },
-  { key: 'delivery', label: 'Delivery Apps', channels: ['ubereats', 'doordash'] },
-  { key: 'classpass', label: 'Classpass', channels: ['classpass'] },
+  { key: 'thirdparty', label: '3rd Party Apps', channels: ['ubereats', 'doordash', 'classpass', 'heyyou'] },
+  { key: 'b2b', label: 'B2B', channels: ['catering', 'vending', 'wholesale'] },
 ];
 export const CHANNEL_TO_GROUP = new Map(
   CHANNEL_GROUPS.flatMap(g => g.channels.map(ch => [ch, g.key]))
