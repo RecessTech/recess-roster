@@ -945,10 +945,11 @@ export default function ProductionApp({ org, user }) {
                       onClick={pullFromCrystalBall}
                       disabled={pullingForecast}
                       title="Pull this date's Crystal Ball forecast for this site's items into In-Store"
-                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                      aria-label="Pull from Crystal Ball"
+                      className="flex items-center justify-center w-9 h-9 rounded-full text-white shadow-md transition-transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+                      style={{ background: 'var(--primary)' }}
                     >
-                      {pullingForecast ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                      Pull from Crystal Ball
+                      {pullingForecast ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
                     </button>
                   )}
                   {dayLock ? (
