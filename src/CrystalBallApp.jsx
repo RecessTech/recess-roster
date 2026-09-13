@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Sparkles, Upload, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
-  AlertTriangle, Check, X, Percent, Layers, Clock,
+  AlertTriangle, Check, X, Percent, Layers, Clock, Send,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -365,7 +365,7 @@ function packEquivalent(qty, sku) {
   return `≈ ${trimNum(count)} ${sku.order_pack_label}${Math.abs(count - 1) < 0.001 ? '' : 's'}`;
 }
 
-function ForecastTab({ orgId, items, dowAverages, resolver, skuById, settings, onSettingsSaved }) {
+function ForecastTab({ orgId, user, items, dowAverages, resolver, skuById, settings, onSettingsSaved, productionSites, productionChannels }) {
   const [date, setDate] = useState(addDays(todayStr(), 1));
   const [upliftInput, setUpliftInput] = useState(String(settings?.channel_uplift_pct ?? 0));
   const [savingUplift, setSavingUplift] = useState(false);
@@ -373,6 +373,41 @@ function ForecastTab({ orgId, items, dowAverages, resolver, skuById, settings, o
   const [savingRecency, setSavingRecency] = useState(false);
   const [collapsedForecast, setCollapsedForecast] = useState(() => new Set());
   const [collapsedPrep, setCollapsedPrep] = useState(() => new Set());
+  const [loadingToProd, setLoadingToProd] = useState(false);
+
+  // Every site's "In-Store" channel -- the single bucket Crystal Ball's
+  // combined-across-channels forecast loads into. Anything more specific
+  // (Catering, Vending) is a manual adjustment from there, same as any
+  // other R-Prod edit.
+  const inStoreChannelBySite = useMemo(() => {
+    const m = new Map();
+    productionChannels.forEach(c => {
+      if (c.name === 'In-Store') m.set(c.site_id, c.id);
+    });
+    return m;
+  }, [productionChannels]);
+
+  async function loadForecastToProd() {
+    const targets = itemForecasts
+      .filter(f => f.forecast > 0 && f.item.site_id && inStoreChannelBySite.has(f.item.site_id))
+      .map(f => ({ itemId: f.item.id, channelId: inStoreChannelBySite.get(f.item.site_id), qty: Math.round(f.forecast) }));
+    const skipped = itemForecasts.filter(f => f.forecast > 0 && (!f.item.site_id || !inStoreChannelBySite.has(f.item.site_id))).length;
+    if (targets.length === 0) {
+      toast.error('No forecasted items have a production site assigned yet (set one per item in R-Recipe).');
+      return;
+    }
+    setLoadingToProd(true);
+    try {
+      for (const t of targets) {
+        await db.setProductionPlanQty(orgId, user?.id, { itemId: t.itemId, channelId: t.channelId, date, qty: t.qty });
+      }
+      toast.success(`Loaded ${targets.length} item${targets.length === 1 ? '' : 's'} into R-Prod (In-Store)${skipped ? `, skipped ${skipped} with no site assigned` : ''}.`);
+    } catch (err) {
+      toast.error('Failed to load into R-Prod: ' + (err.message || 'unknown error'));
+    } finally {
+      setLoadingToProd(false);
+    }
+  }
 
   function toggleForecastCat(cat) {
     setCollapsedForecast(prev => {
@@ -542,12 +577,26 @@ function ForecastTab({ orgId, items, dowAverages, resolver, skuById, settings, o
                 <h3 className="text-sm font-bold text-gray-900">Item Forecast</h3>
                 <p className="text-xs text-gray-400">Each channel's trend-projected avg. of past {DOW_LABELS[dayOfWeekIndex(date)]}s, added together × buffer</p>
               </div>
-              {itemForecastsByCategory.length > 0 && (
-                <div className="text-right">
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Today's Total</p>
-                  <p className="text-xl font-extrabold tabular-nums" style={{ color: 'var(--primary)' }}>{Math.ceil(grandForecastTotal)}</p>
-                </div>
-              )}
+              <div className="flex items-center gap-3">
+                {itemForecastsByCategory.length > 0 && (
+                  <button
+                    onClick={loadForecastToProd}
+                    disabled={loadingToProd}
+                    title="Writes each item's forecast for this date into its assigned production site's In-Store channel in R-Prod"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-white transition-colors hover:brightness-95 disabled:opacity-50"
+                    style={{ background: 'var(--primary)' }}
+                  >
+                    {loadingToProd ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                    Load to R-Prod
+                  </button>
+                )}
+                {itemForecastsByCategory.length > 0 && (
+                  <div className="text-right">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Today's Total</p>
+                    <p className="text-xl font-extrabold tabular-nums" style={{ color: 'var(--primary)' }}>{Math.ceil(grandForecastTotal)}</p>
+                  </div>
+                )}
+              </div>
             </div>
 
             {itemForecastsByCategory.length === 0 ? (
@@ -805,7 +854,7 @@ function WeeklyConsumptionTab({ items, dowAverages, uplift, resolver, skuById })
 
 // ── Top level ─────────────────────────────────────────────────────────────────
 
-export default function CrystalBallApp({ org }) {
+export default function CrystalBallApp({ org, user }) {
   const orgId = org?.id;
   const [activeTab, setActiveTab] = useState('forecast');
   const [items, setItems] = useState([]);
@@ -817,12 +866,14 @@ export default function CrystalBallApp({ org }) {
   const [packagingExclusions, setPackagingExclusions] = useState([]);
   const [salesHistory, setSalesHistory] = useState([]);
   const [settings, setSettings] = useState(null);
+  const [productionSites, setProductionSites] = useState([]);
+  const [productionChannels, setProductionChannels] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!orgId) return;
     try {
-      const [prodItems, stockItems, comps, compLines, itemLines, pkgLines, pkgExclusions, history, cbSettings] = await Promise.all([
+      const [prodItems, stockItems, comps, compLines, itemLines, pkgLines, pkgExclusions, history, cbSettings, sites, channels] = await Promise.all([
         db.getProductionItems(orgId),
         db.getStockItems(orgId),
         db.getRecipeComponents(orgId),
@@ -832,6 +883,8 @@ export default function CrystalBallApp({ org }) {
         db.getMenuItemPackagingExclusions(orgId),
         db.getSalesHistory(orgId),
         db.getCrystalBallSettings(orgId),
+        db.getProductionSites(orgId),
+        db.getProductionChannels(orgId),
       ]);
       setItems(prodItems.filter(i => i.active !== false));
       setSkus(stockItems);
@@ -842,6 +895,8 @@ export default function CrystalBallApp({ org }) {
       setPackagingExclusions(pkgExclusions);
       setSalesHistory(history);
       setSettings(cbSettings);
+      setProductionSites(sites);
+      setProductionChannels(channels);
     } catch (err) {
       toast.error('Failed to load Crystal Ball data: ' + (err.message || 'unknown error'));
     } finally {
@@ -939,7 +994,8 @@ export default function CrystalBallApp({ org }) {
       </div>
 
       {activeTab === 'forecast' && (
-        <ForecastTab orgId={orgId} items={forecastableItems} dowAverages={dowAverages} resolver={resolver} skuById={skuById} settings={settings} onSettingsSaved={load} />
+        <ForecastTab orgId={orgId} user={user} items={forecastableItems} dowAverages={dowAverages} resolver={resolver} skuById={skuById} settings={settings} onSettingsSaved={load}
+          productionSites={productionSites} productionChannels={productionChannels} />
       )}
       {activeTab === 'weekly' && (
         <WeeklyConsumptionTab items={forecastableItems} dowAverages={dowAverages} uplift={uplift} resolver={resolver} skuById={skuById} />

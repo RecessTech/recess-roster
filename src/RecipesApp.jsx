@@ -378,7 +378,7 @@ function ComponentBuilderModal({ component, skus, components, componentLines, re
 
 // ── Menu item recipe builder ─────────────────────────────────────────────────
 
-function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryPackagingLines, packagingExclusions, resolver, orgId, onClose, onRefresh }) {
+function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryPackagingLines, packagingExclusions, resolver, orgId, sites, onClose, onRefresh }) {
   const [sellPrice, setSellPrice] = useState(String(item.sell_price ?? ''));
   const [showPicker, setShowPicker] = useState(false);
   const [showPackagingPicker, setShowPackagingPicker] = useState(false);
@@ -444,6 +444,16 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryP
       onRefresh();
     } catch (err) {
       toast.error('Failed to update: ' + (err.message || 'unknown error'));
+    }
+  }
+
+  async function saveSite(e) {
+    const siteId = e.target.value || null;
+    try {
+      await db.updateProductionItem(item.id, { site_id: siteId });
+      onRefresh();
+    } catch (err) {
+      toast.error('Failed to update production site: ' + (err.message || 'unknown error'));
     }
   }
 
@@ -537,6 +547,21 @@ function MenuItemBuilderModal({ item, skus, components, menuItemLines, categoryP
           <span className="text-sm text-gray-700">Needs planning in R-Prod</span>
           <span className="text-xs text-gray-400 ml-auto">off = made to order / shelf stock</span>
         </label>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Production Site</label>
+          <select
+            value={item.site_id || ''}
+            onChange={saveSite}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
+          >
+            <option value="">Unassigned</option>
+            {sites.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-400 mt-1">Where Crystal Ball's "Load to R-Prod" sends this item's forecast</p>
+        </div>
 
         <label className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5 cursor-pointer select-none">
           <input
@@ -772,7 +797,7 @@ function ComponentsTab({ orgId, skus, components, componentLines, resolver, onRe
 
 // ── Menu Recipes tab (doubles as the COGS overview) ─────────────────────────
 
-function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, categoryPackagingLines, packagingExclusions, resolver, onRefresh }) {
+function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, categoryPackagingLines, packagingExclusions, resolver, sites, onRefresh }) {
   const [showBuilder, setShowBuilder] = useState(null);
 
   const rows = menuItems.map(item => {
@@ -910,6 +935,7 @@ function MenuRecipesTab({ orgId, skus, components, menuItems, menuItemLines, cat
           packagingExclusions={packagingExclusions}
           resolver={resolver}
           orgId={orgId}
+          sites={sites}
           onClose={() => setShowBuilder(null)}
           onRefresh={() => { onRefresh(); setShowBuilder(prev => menuItems.find(i => i.id === prev?.id) || prev); }}
         />
@@ -1037,12 +1063,13 @@ export default function RecipesApp({ org }) {
   const [menuItemLines, setMenuItemLines] = useState([]);
   const [categoryPackagingLines, setCategoryPackagingLines] = useState([]);
   const [packagingExclusions, setPackagingExclusions] = useState([]);
+  const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!orgId) return;
     try {
-      const [sk, comp, compLines, items, itemLines, pkgLines, pkgExclusions] = await Promise.all([
+      const [sk, comp, compLines, items, itemLines, pkgLines, pkgExclusions, prodSites] = await Promise.all([
         db.getStockItems(orgId),
         db.getRecipeComponents(orgId),
         db.getRecipeComponentLines(orgId),
@@ -1050,6 +1077,7 @@ export default function RecipesApp({ org }) {
         db.getRecipeMenuItemLines(orgId),
         db.getCategoryPackagingLines(orgId),
         db.getMenuItemPackagingExclusions(orgId),
+        db.getProductionSites(orgId),
       ]);
       setSkus(sk);
       setComponents(comp);
@@ -1058,6 +1086,7 @@ export default function RecipesApp({ org }) {
       setMenuItemLines(itemLines);
       setCategoryPackagingLines(pkgLines);
       setPackagingExclusions(pkgExclusions);
+      setSites(prodSites);
     } catch (err) {
       toast.error('Failed to load recipes: ' + (err.message || 'unknown error'));
     } finally {
@@ -1112,7 +1141,7 @@ export default function RecipesApp({ org }) {
       )}
       {activeTab === 'menu' && (
         <MenuRecipesTab orgId={orgId} skus={skus} components={components} menuItems={menuItems} menuItemLines={menuItemLines}
-          categoryPackagingLines={categoryPackagingLines} packagingExclusions={packagingExclusions}
+          categoryPackagingLines={categoryPackagingLines} packagingExclusions={packagingExclusions} sites={sites}
           resolver={resolver} onRefresh={load} />
       )}
       {activeTab === 'packaging' && (
