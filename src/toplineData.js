@@ -97,9 +97,15 @@ export function toChartRows(namedSeries) {
   });
 }
 
+// ISO-8601 week number -- the sheet's week-start dates are always Mondays,
+// which is exactly what ISO weeks are anchored to, so this lines up cleanly
+// with no off-by-one drift at year boundaries.
 export function fmtWeekLabel(iso) {
-  const d = new Date(iso + 'T12:00:00');
-  return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+  const d = new Date(iso + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  return `W${String(week).padStart(2, '0')}-${d.getUTCFullYear()}`;
 }
 
 export function fmtMoney(n, { compact = false } = {}) {
