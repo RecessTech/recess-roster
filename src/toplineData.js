@@ -20,6 +20,35 @@ function sectionRank(tab, section) {
   return idx === -1 ? order.length : idx;
 }
 
+// Several sections use weekday or hour-range names as their leaf metric
+// ("Monday".."Sunday", "5am-6am".."4pm-5pm") -- alphabetical sort scrambles
+// both (e.g. "Friday, Monday, Saturday..." or "10am-11am" before "5am-6am").
+// Detected per-name rather than per-section so it applies wherever these
+// show up (and a mixed section like "Avg. Revenue by Hour", which also has
+// a "Run Rate" metric alongside the hour ranges, still sorts its hour
+// entries correctly and just puts the odd one out at the end).
+const WEEKDAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const HOUR_RANGE_START = /^(\d{1,2})(am|pm)-/i;
+
+function metricOrderKey(name) {
+  const weekdayIdx = WEEKDAY_ORDER.indexOf(name);
+  if (weekdayIdx !== -1) return [0, weekdayIdx];
+  const hourMatch = name.match(HOUR_RANGE_START);
+  if (hourMatch) {
+    let hour = parseInt(hourMatch[1], 10) % 12;
+    if (hourMatch[2].toLowerCase() === 'pm') hour += 12;
+    return [1, hour];
+  }
+  return [2, name];
+}
+
+function compareMetricNames(a, b) {
+  const ka = metricOrderKey(a);
+  const kb = metricOrderKey(b);
+  if (ka[0] !== kb[0]) return ka[0] - kb[0];
+  return typeof ka[1] === 'number' ? ka[1] - kb[1] : String(ka[1]).localeCompare(String(kb[1]));
+}
+
 // ── Value classification ─────────────────────────────────────────────────────
 // The sheet mixes dollars, plain counts and ratios in the same flat metric
 // list with no type column, and several sections reuse identical leaf names
@@ -111,7 +140,7 @@ function groupBySection(tab, rows, asOfDate) {
   return [...groups.entries()]
     .map(([section, metrics]) => ({
       section,
-      metrics: metrics.sort((a, b) => a.metric.localeCompare(b.metric)),
+      metrics: metrics.sort((a, b) => compareMetricNames(a.metric, b.metric)),
     }))
     .sort((a, b) => sectionRank(tab, a.section) - sectionRank(tab, b.section) || a.section.localeCompare(b.section));
 }
