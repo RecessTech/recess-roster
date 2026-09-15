@@ -36,7 +36,11 @@ const PERCENT_SECTIONS = new Set(['COGS Evolution']); // a ratio section the she
 const COUNT_METRIC = /\bcustomers?\b|\bfollowers?\b|\bmembers?\b|\breviews?\b|\brating\b|\bhours\b|\bunits?\b|^#\s*of\b/i;
 
 export function classifyMetric(tab, section, metric) {
-  if (metric.includes('%') || PERCENT_SECTIONS.has(section)) return 'percent';
+  // The "%" usually lives on the SECTION (e.g. "Daily Revenue Evolution %"),
+  // not the leaf metric name (e.g. "Monday") -- checking metric name alone
+  // missed every evolution/share-of/growth section and let them fall
+  // through to the money default instead.
+  if (metric.includes('%') || section.includes('%') || PERCENT_SECTIONS.has(section)) return 'percent';
   if (COUNT_SECTIONS.has(section)) return 'count';
   if (COUNT_METRIC.test(metric)) return 'count';
   return 'money';
@@ -255,10 +259,20 @@ export function fmtWeekRange(iso) {
   return `${dayMonth(start)} – ${dayMonth(end)} ${year}`;
 }
 
+// Large figures (revenue totals, COGS spend, ...) read better as whole
+// dollars or a compact "$24.2k"; small per-unit figures (AOV, average COGS
+// per unit, hourly rates) lose the number that actually matters -- the
+// cents -- if rounded the same way, so anything under $1,000 keeps 2dp.
 export function fmtMoney(n, { compact = false } = {}) {
   if (n == null || Number.isNaN(n)) return '—';
   if (compact && Math.abs(n) >= 1000) return `$${(n / 1000).toFixed(1)}k`;
-  return n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 });
+  const small = Math.abs(n) < 1000;
+  return n.toLocaleString('en-AU', {
+    style: 'currency',
+    currency: 'AUD',
+    minimumFractionDigits: small ? 2 : 0,
+    maximumFractionDigits: small ? 2 : 0,
+  });
 }
 
 export function fmtNumber(n, { decimals = 0 } = {}) {

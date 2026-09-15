@@ -9,15 +9,22 @@ import {
   fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts,
 } from './toplineData';
 
-// Validated categorical palette (dataviz skill reference order: blue, orange,
-// aqua, yellow, magenta, green -- adjacent-pair CVD Delta E >= 8, normal-vision
-// >= 15, both light-mode gates; re-validated for this 6-slot subset). Used for
-// anything with 2+ series. Single-series charts use the module's own accent
-// (var(--primary), topline's gold) instead, so a lone trend line still reads
-// as "this module's colour", not just "series 1".
-const CATEGORICAL = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300'];
+// Validated categorical palette (dataviz skill hues, reordered to lead with
+// warm orange rather than R-Shift's own blue -- blue as "series 1" read as
+// the sibling app's brand colour fighting this module's gold theme -- and
+// with its two greens (aqua/pure-green) kept apart rather than adjacent, since
+// that pairing barely cleared the CVD floor and was genuinely hard to tell
+// apart in a 4-series stacked bar. Re-validated as its own theme: worst
+// adjacent normal-vision Delta E 28.3, both light-mode gates clear (a
+// same-slot-count-as-series-length subset therefore never puts the two
+// greens next to each other). Used for anything with 2+ series. Single-
+// series charts use the module's own accent (var(--primary), topline's
+// gold) instead, so a lone trend line still reads as "this module's
+// colour", not just "series 1".
+const CATEGORICAL = ['#eb6834', '#4a3aa7', '#1baf7a', '#e87ba4', '#008300', '#2a78d6'];
 const AXIS_COLOR = '#8a8578';
 const GRID_COLOR = '#e8e4d8';
+const CHART_HEIGHT = 320;
 const GOOD = '#0f9d4e';
 const BAD = '#d0393b';
 
@@ -194,7 +201,7 @@ function MetricTable({ groups, asOfDate, period, defaultOpenCount = 2 }) {
 }
 
 function EmptyChart({ label = 'No data yet' }) {
-  return <div className="h-[220px] flex items-center justify-center text-sm text-gray-400">{label}</div>;
+  return <div className="flex items-center justify-center text-sm text-gray-400" style={{ height: CHART_HEIGHT }}>{label}</div>;
 }
 
 // True when at least one row carries a real value for at least one of the
@@ -208,9 +215,9 @@ function hasChartData(rows, dataKeys) {
 
 function ChartCard({ title, subtitle, children }) {
   return (
-    <div className="card p-4">
-      <p className="text-sm font-bold text-gray-900">{title}</p>
-      {subtitle && <p className="text-xs text-gray-400 mb-2">{subtitle}</p>}
+    <div className="card p-5">
+      <p className="text-base font-bold text-gray-900">{title}</p>
+      {subtitle && <p className="text-xs text-gray-400 mb-3">{subtitle}</p>}
       {children}
     </div>
   );
@@ -220,15 +227,15 @@ function TrendChart({ rows, dataKeys, colors, money, percent }) {
   if (!rows.length || !hasChartData(rows, dataKeys)) return <EmptyChart label="No data in this period" />;
   const yFmt = v => (percent ? fmtPct(v) : money ? fmtMoney(v, { compact: true }) : fmtNumber(v));
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
       <LineChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke={GRID_COLOR} vertical={false} />
-        <XAxis dataKey="date" tickFormatter={fmtWeekLabel} tick={{ fontSize: 11, fill: AXIS_COLOR }} axisLine={{ stroke: GRID_COLOR }} tickLine={false} minTickGap={24} />
-        <YAxis tickFormatter={yFmt} tick={{ fontSize: 11, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={money ? 56 : 40} />
-        <Tooltip labelFormatter={fmtWeekLabel} formatter={v => yFmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
-        {dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
+        <XAxis dataKey="date" tickFormatter={fmtWeekLabel} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={{ stroke: GRID_COLOR }} tickLine={false} minTickGap={28} />
+        <YAxis tickFormatter={yFmt} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={money ? 64 : 46} />
+        <Tooltip labelFormatter={fmtWeekLabel} formatter={v => yFmt(v)} contentStyle={{ fontSize: 13, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
+        {dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
         {dataKeys.map((k, i) => (
-          <Line key={k} type="monotone" dataKey={k} stroke={dataKeys.length > 1 ? colors[i % colors.length] : 'var(--primary)'} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+          <Line key={k} type="monotone" dataKey={k} stroke={dataKeys.length > 1 ? colors[i % colors.length] : 'var(--primary)'} strokeWidth={2.5} dot={false} connectNulls isAnimationActive={false} />
         ))}
       </LineChart>
     </ResponsiveContainer>
@@ -239,13 +246,13 @@ function StackedBarChart({ rows, dataKeys, colors, money }) {
   if (!rows.length || !hasChartData(rows, dataKeys)) return <EmptyChart label="No data in this period" />;
   const yFmt = v => (money ? fmtMoney(v, { compact: true }) : fmtNumber(v));
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
       <BarChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke={GRID_COLOR} vertical={false} />
-        <XAxis dataKey="date" tickFormatter={fmtWeekLabel} tick={{ fontSize: 11, fill: AXIS_COLOR }} axisLine={{ stroke: GRID_COLOR }} tickLine={false} minTickGap={24} />
-        <YAxis tickFormatter={yFmt} tick={{ fontSize: 11, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={money ? 56 : 40} />
-        <Tooltip labelFormatter={fmtWeekLabel} formatter={v => yFmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
-        <Legend wrapperStyle={{ fontSize: 11 }} />
+        <XAxis dataKey="date" tickFormatter={fmtWeekLabel} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={{ stroke: GRID_COLOR }} tickLine={false} minTickGap={28} />
+        <YAxis tickFormatter={yFmt} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={money ? 64 : 46} />
+        <Tooltip labelFormatter={fmtWeekLabel} formatter={v => yFmt(v)} contentStyle={{ fontSize: 13, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
         {dataKeys.map((k, i) => (
           <Bar key={k} dataKey={k} stackId="a" fill={colors[i % colors.length]} radius={i === dataKeys.length - 1 ? [3, 3, 0, 0] : undefined} />
         ))}
