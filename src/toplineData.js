@@ -20,6 +20,28 @@ function sectionRank(tab, section) {
   return idx === -1 ? order.length : idx;
 }
 
+// ── Value classification ─────────────────────────────────────────────────────
+// The sheet mixes dollars, plain counts and ratios in the same flat metric
+// list with no type column, and several sections reuse identical leaf names
+// (weekday names, hour ranges, category names) across money AND count
+// sections -- e.g. "Revenue by Hour" / "Customers by Hour" / "AOV by Hour"
+// all have a metric literally named "5am-6am". Metric name alone can't
+// disambiguate those, so classification runs on (tab, section, metric)
+// together: percent (has "%") > section overrides (for the ambiguous
+// generic-leaf-name sections + the one section that's a ratio without a "%"
+// in its name) > count keywords on the metric name > default money, since
+// this dataset is overwhelmingly a P&L/revenue sheet.
+const COUNT_SECTIONS = new Set(['Customers by Hour', 'Daily Customers', 'Category Units Sold', 'Subcat Units Sold #']);
+const PERCENT_SECTIONS = new Set(['COGS Evolution']); // a ratio section the sheet didn't suffix with "%"
+const COUNT_METRIC = /\bcustomers?\b|\bfollowers?\b|\bmembers?\b|\breviews?\b|\brating\b|\bhours\b|\bunits?\b|^#\s*of\b/i;
+
+export function classifyMetric(tab, section, metric) {
+  if (metric.includes('%') || PERCENT_SECTIONS.has(section)) return 'percent';
+  if (COUNT_SECTIONS.has(section)) return 'count';
+  if (COUNT_METRIC.test(metric)) return 'count';
+  return 'money';
+}
+
 export async function fetchTopline(orgId) {
   const [revenue, costs, customer, budget] = await Promise.all([
     db.getAnalyticsMetrics(orgId, 'revenue'),
@@ -27,21 +49,60 @@ export async function fetchTopline(orgId) {
     db.getAnalyticsMetrics(orgId, 'customer'),
     db.getAnalyticsMetrics(orgId, 'budget'),
   ]);
-  const shape = (tab, rows) => groupBySection(tab, rows);
+  const all = [
+    ...revenue.map(r => ({ ...r, tab: 'revenue' })),
+    ...costs.map(r => ({ ...r, tab: 'costs' })),
+    ...customer.map(r => ({ ...r, tab: 'customer' })),
+    ...budget.map(r => ({ ...r, tab: 'budget' })),
+  ];
+  const asOfDate = findAsOfDate(all);
+  const shape = (tab, rows) => groupBySection(tab, rows, asOfDate);
   return {
     revenue: shape('revenue', revenue),
     costs: shape('costs', costs),
     customer: shape('customer', customer),
     budget: shape('budget', budget),
+    asOfDate,
   };
 }
 
-function groupBySection(tab, rows) {
+// The sheet isn't a live feed -- it's a point-in-time export, and different
+// metrics stop at slightly different dates (a stray trailing week with only
+// partial data entered for a handful of metrics, a couple of short series
+// that started late). Rather than let each metric report its own literal
+// last key as "current" -- which is how a partially-entered trailing week
+// silently showed up as a $0 "last week's revenue" -- the whole dashboard
+// agrees on ONE current week: whichever date the largest number of metrics
+// actually end on. Every stat tile and chart reads that same week.
+function findAsOfDate(rows) {
+  const counts = new Map();
+  rows.forEach(r => {
+    const dates = Object.keys(r.series || {});
+    if (!dates.length) return;
+    const last = dates.sort().at(-1);
+    counts.set(last, (counts.get(last) || 0) + 1);
+  });
+  let best = null;
+  let bestCount = -1;
+  for (const [date, count] of counts) {
+    if (count > bestCount || (count === bestCount && date < best)) {
+      best = date;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+function groupBySection(tab, rows, asOfDate) {
   const groups = new Map();
   rows.forEach(r => {
     const section = r.section || '';
     if (!groups.has(section)) groups.set(section, []);
-    groups.get(section).push({ metric: r.metric, series: r.series || {} });
+    groups.get(section).push({
+      metric: r.metric,
+      series: clipSeries(r.series || {}, asOfDate),
+      kind: classifyMetric(tab, section, r.metric),
+    });
   });
   return [...groups.entries()]
     .map(([section, metrics]) => ({
@@ -49,6 +110,18 @@ function groupBySection(tab, rows) {
       metrics: metrics.sort((a, b) => a.metric.localeCompare(b.metric)),
     }))
     .sort((a, b) => sectionRank(tab, a.section) - sectionRank(tab, b.section) || a.section.localeCompare(b.section));
+}
+
+// Drop anything after the dashboard's agreed "as of" week -- a metric with a
+// stray/partial entry beyond that point (see findAsOfDate) should never
+// surface in a chart, table or "latest" tile, not even as a trailing blip.
+function clipSeries(series, asOfDate) {
+  if (!asOfDate) return series;
+  const out = {};
+  for (const date of Object.keys(series)) {
+    if (date <= asOfDate) out[date] = series[date];
+  }
+  return out;
 }
 
 // -- per-series helpers --------------------------------------------------
@@ -64,16 +137,35 @@ export function latestEntry(series) {
   return { date, value: series[date] };
 }
 
-// Week-over-week delta off the latest two dates present in the series --
-// not necessarily adjacent calendar weeks, since some weeks (closures) are
-// simply absent from the sheet rather than recorded as zero.
+// The value at a specific (dashboard-wide) reporting week, not whatever this
+// particular series happens to end on -- see findAsOfDate. Null if this
+// metric simply has no data for that week (a genuinely shorter series),
+// which renders as "—" rather than a misleading 0 or a stale older value.
+export function valueAt(series, date) {
+  if (!date || !(date in series)) return null;
+  return series[date];
+}
+
+// Week-over-week delta anchored to a specific date and the entry immediately
+// before it IN THIS SERIES (not necessarily exactly 7 days earlier, since a
+// closure week is sometimes simply absent rather than recorded as zero).
+export function wowDeltaAt(series, date) {
+  const dates = sortedDates(series);
+  const idx = dates.indexOf(date);
+  if (idx <= 0) return null;
+  const latest = series[dates[idx]];
+  const prev = series[dates[idx - 1]];
+  if (prev === 0 || prev == null || latest == null) return null;
+  return (latest - prev) / Math.abs(prev);
+}
+
+// Legacy alias kept for call sites that just want "latest two points,
+// whatever they are" (sparkline-adjacent contexts, not stat tiles that need
+// to agree on a single current week).
 export function wowDelta(series) {
   const dates = sortedDates(series);
   if (dates.length < 2) return null;
-  const latest = series[dates[dates.length - 1]];
-  const prev = series[dates[dates.length - 2]];
-  if (prev === 0 || prev == null || latest == null) return null;
-  return (latest - prev) / Math.abs(prev);
+  return wowDeltaAt(series, dates.at(-1));
 }
 
 export function findMetric(group, section, metric) {
@@ -97,15 +189,70 @@ export function toChartRows(namedSeries) {
   });
 }
 
+// The last N week-start dates up to (and including) the dashboard's as-of
+// week, shared by every chart/table so "8 weeks" always means the same 8
+// calendar weeks no matter which metric is being drawn.
+export function lastNDates(series, n, asOfDate) {
+  const dates = sortedDates(series).filter(d => !asOfDate || d <= asOfDate);
+  return dates.slice(-n);
+}
+
+// Chart rows for a fixed set of weeks (see weekAxis) rather than "however
+// many of this series' own dates happen to exist" -- a metric that stopped
+// updating early (e.g. a manually-tracked social stat) must show as a gap
+// in the current window, not silently shift the whole chart's x-axis back
+// to whenever that metric last had data.
+export function chartRowsForWindow(namedSeries, dates) {
+  return dates.map(date => {
+    const row = { date };
+    namedSeries.forEach(({ name, series }) => {
+      if (series[date] != null) row[name] = series[date];
+    });
+    return row;
+  });
+}
+
+// A fixed Monday-by-Monday date axis ending at asOfDate, walked backward by
+// calendar arithmetic rather than read off any one metric's own keys -- so
+// every chart/table column means the same calendar week for every metric,
+// even metrics with a gap (an absent closure week) somewhere in the range.
+export function weekAxis(asOfDate, n) {
+  if (!asOfDate) return [];
+  const end = new Date(asOfDate + 'T12:00:00Z');
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(end);
+    d.setUTCDate(d.getUTCDate() - i * 7);
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
 // ISO-8601 week number -- the sheet's week-start dates are always Mondays,
 // which is exactly what ISO weeks are anchored to, so this lines up cleanly
 // with no off-by-one drift at year boundaries.
-export function fmtWeekLabel(iso) {
+export function isoWeekParts(iso) {
   const d = new Date(iso + 'T12:00:00Z');
   d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const week = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-  return `W${String(week).padStart(2, '0')}-${d.getUTCFullYear()}`;
+  return { week, year: d.getUTCFullYear() };
+}
+
+export function fmtWeekLabel(iso) {
+  const { week, year } = isoWeekParts(iso);
+  return `W${String(week).padStart(2, '0')}-${year}`;
+}
+
+// "24 – 30 Aug 2026" -- the Monday-to-Sunday span a week-start date covers,
+// for the one place per screen that should spell out what a week means.
+export function fmtWeekRange(iso) {
+  const start = new Date(iso + 'T12:00:00Z');
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+  const dayMonth = d => d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const year = end.getUTCFullYear();
+  return `${dayMonth(start)} – ${dayMonth(end)} ${year}`;
 }
 
 export function fmtMoney(n, { compact = false } = {}) {
@@ -124,26 +271,23 @@ export function fmtPct(n, { decimals = 1 } = {}) {
   return `${(n * 100).toFixed(decimals)}%`;
 }
 
-// Metrics whose values are already ratios (0-1) rather than dollars/counts --
-// the sheet marks these with a "%" somewhere in the metric's own name (not
-// always at the end, e.g. "Labour (+Salaries) as % of sales").
+// Kept for any external call site that only has a metric name and genuinely
+// has no section context -- prefer classifyMetric(tab, section, metric)
+// wherever a section is available, since name alone is ambiguous for the
+// generic-leaf-name sections (see classifyMetric's comment).
 export function isPercentMetric(metricName) {
   return metricName.includes('%');
 }
-
-const MONEY_METRIC = /revenue|cogs|cost|wage|salar|rent|spend|price|profit|cashflow|repayment|discount|fee/i;
 export function isMoneyMetric(metricName) {
-  return MONEY_METRIC.test(metricName);
+  return !isPercentMetric(metricName) && !COUNT_METRIC.test(metricName);
 }
 
-// Best-effort value formatter driven entirely by the metric's own name --
-// there's no per-metric config table, so this heuristic is what lets 250+
-// sheet metrics render sensibly without being hand-mapped one by one.
-export function formatMetricValue(value, metricName) {
+// Value formatter driven by a metric's classified kind ('money'|'percent'|'count').
+export function formatMetricValue(value, kind, opts = {}) {
   if (value == null || Number.isNaN(value)) return '—';
-  if (isPercentMetric(metricName)) return fmtPct(value);
-  if (isMoneyMetric(metricName)) return fmtMoney(value, { compact: true });
-  return fmtNumber(value, { decimals: Number.isInteger(value) ? 0 : 1 });
+  if (kind === 'percent') return fmtPct(value);
+  if (kind === 'money') return fmtMoney(value, { compact: true, ...opts });
+  return fmtNumber(value, { decimals: Number.isInteger(value) ? 0 : 1, ...opts });
 }
 
 export function findMetricAnywhere(groups, metricName) {
