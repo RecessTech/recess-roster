@@ -1,40 +1,55 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { TrendingUp, Loader2, ChevronDown, ChevronUp, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { TrendingUp, Loader2, ChevronDown, ChevronUp, ArrowUpRight, ArrowDownRight, Table2, LayoutGrid, CalendarDays } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import toast from 'react-hot-toast';
 import {
-  fetchTopline, sortedDates, latestEntry, wowDelta, toChartRows, findMetric,
-  fmtWeekLabel, fmtMoney, fmtNumber, fmtPct, formatMetricValue,
+  fetchTopline, sortedDates, valueAt, wowDeltaAt, chartRowsForWindow, findMetric, weekAxis,
+  fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts,
 } from './toplineData';
 
-// Categorical palette (validated: adjacent-pair CVD Delta E >= 8, normal-vision
-// >= 15, both light-mode gates) -- used for anything with 2+ series. Single-
-// series charts use the module's own accent (var(--primary)) instead, so a
-// lone trend line still reads as "this module's colour", not just "series 1".
-const CATEGORICAL = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#4a3aa7'];
-const AXIS_COLOR = '#898781';
-const GRID_COLOR = '#e1e0d9';
+// Validated categorical palette (dataviz skill reference order: blue, orange,
+// aqua, yellow, magenta, green -- adjacent-pair CVD Delta E >= 8, normal-vision
+// >= 15, both light-mode gates; re-validated for this 6-slot subset). Used for
+// anything with 2+ series. Single-series charts use the module's own accent
+// (var(--primary), topline's gold) instead, so a lone trend line still reads
+// as "this module's colour", not just "series 1".
+const CATEGORICAL = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300'];
+const AXIS_COLOR = '#8a8578';
+const GRID_COLOR = '#e8e4d8';
+const GOOD = '#0f9d4e';
+const BAD = '#d0393b';
+
+const PERIODS = [4, 8, 12, 26, 52];
 
 // ── Small shared pieces ──────────────────────────────────────────────────────
+
+function DeltaPill({ delta }) {
+  if (delta == null) return null;
+  const good = delta >= 0;
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-full mt-1"
+      style={{ color: good ? GOOD : BAD, background: good ? 'rgba(15,157,78,0.1)' : 'rgba(208,57,59,0.1)' }}
+    >
+      {good ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />} {fmtPct(Math.abs(delta))}
+    </span>
+  );
+}
 
 function StatTile({ label, value, delta }) {
   return (
     <div className="metric-card min-w-0">
       <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide truncate">{label}</p>
       <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums truncate">{value}</p>
-      {delta != null && (
-        <p className="text-[11px] font-semibold mt-1 flex items-center gap-0.5" style={{ color: delta >= 0 ? '#0ca30c' : '#d03b3b' }}>
-          {delta >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />} {fmtPct(Math.abs(delta))} WoW
-        </p>
-      )}
+      <DeltaPill delta={delta} />
     </div>
   );
 }
 
-function Sparkline({ series, color }) {
-  const dates = sortedDates(series).slice(-16);
+function Sparkline({ series, color, period }) {
+  const dates = sortedDates(series).slice(-Math.min(period, 20));
   if (dates.length < 2) return <div style={{ width: 90, height: 28 }} />;
   const data = dates.map(d => ({ date: d, value: series[d] }));
   return (
@@ -48,24 +63,41 @@ function Sparkline({ series, color }) {
   );
 }
 
-function MetricRow({ m, idx }) {
-  const latest = latestEntry(m.series);
-  const delta = wowDelta(m.series);
+function MetricRow({ m, idx, asOfDate }) {
+  const value = valueAt(m.series, asOfDate);
+  const delta = wowDeltaAt(m.series, asOfDate);
   return (
     <div className={`flex items-center justify-between gap-3 px-4 py-2 ${idx % 2 === 1 ? 'bg-gray-50/40' : ''}`}>
       <p className="text-sm font-medium text-gray-800 truncate flex-1 min-w-0">{m.metric}</p>
-      <Sparkline series={m.series} color="var(--primary)" />
+      <Sparkline series={m.series} color="var(--primary)" period={16} />
       <div className="text-right w-24 shrink-0">
-        <p className="text-sm font-semibold text-gray-700 tabular-nums">{latest ? formatMetricValue(latest.value, m.metric) : '—'}</p>
+        <p className="text-sm font-semibold text-gray-700 tabular-nums">{formatMetricValue(value, m.kind)}</p>
         {delta != null && (
-          <p className="text-[11px] font-semibold tabular-nums" style={{ color: delta >= 0 ? '#0ca30c' : '#d03b3b' }}>{delta >= 0 ? '+' : ''}{fmtPct(delta)}</p>
+          <p className="text-[11px] font-semibold tabular-nums" style={{ color: delta >= 0 ? GOOD : BAD }}>{delta >= 0 ? '+' : ''}{fmtPct(delta)}</p>
         )}
       </div>
     </div>
   );
 }
 
-function MetricGroupList({ groups, defaultOpenCount = 2 }) {
+function SectionHeader({ label, count, isCollapsed, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-expanded={!isCollapsed}
+      className="w-full flex items-center justify-between px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors border-l-4"
+      style={{ borderColor: 'var(--primary)' }}
+    >
+      <span className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
+        {isCollapsed ? <ChevronDown size={14} className="text-gray-400 shrink-0" /> : <ChevronUp size={14} className="text-gray-400 shrink-0" />}
+        {label}
+      </span>
+      <span className="text-xs font-semibold text-gray-400">{count} metric{count !== 1 ? 's' : ''}</span>
+    </button>
+  );
+}
+
+function MetricGroupList({ groups, defaultOpenCount = 2, asOfDate }) {
   const [collapsed, setCollapsed] = useState(() => new Set(groups.slice(defaultOpenCount).map(g => g.section)));
   function toggle(section) {
     setCollapsed(prev => {
@@ -82,21 +114,10 @@ function MetricGroupList({ groups, defaultOpenCount = 2 }) {
         const isCollapsed = collapsed.has(section);
         return (
           <div key={section || '_summary'} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-            <button
-              onClick={() => toggle(section)}
-              aria-expanded={!isCollapsed}
-              className="w-full flex items-center justify-between px-4 py-2.5 hover:brightness-[0.98] transition-[filter]"
-              style={{ background: 'color-mix(in srgb, var(--primary) 5%, white)' }}
-            >
-              <span className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
-                {isCollapsed ? <ChevronDown size={14} className="text-gray-400 shrink-0" /> : <ChevronUp size={14} className="text-gray-400 shrink-0" />}
-                {label}
-              </span>
-              <span className="text-xs font-semibold text-gray-400">{metrics.length} metric{metrics.length !== 1 ? 's' : ''}</span>
-            </button>
+            <SectionHeader label={label} count={metrics.length} isCollapsed={isCollapsed} onClick={() => toggle(section)} />
             {!isCollapsed && (
               <div className="divide-y divide-gray-50 border-t border-gray-100">
-                {metrics.map((m, i) => <MetricRow key={m.metric} m={m} idx={i} />)}
+                {metrics.map((m, i) => <MetricRow key={m.metric} m={m} idx={i} asOfDate={asOfDate} />)}
               </div>
             )}
           </div>
@@ -106,8 +127,83 @@ function MetricGroupList({ groups, defaultOpenCount = 2 }) {
   );
 }
 
-function EmptyChart() {
-  return <div className="h-[220px] flex items-center justify-center text-sm text-gray-400">No data yet</div>;
+// Spreadsheet-style scan view: metrics as rows, weeks as columns -- the
+// "overall tabulated view" the sheet had and the card/chart views don't
+// give you when you just want to eyeball a run of numbers at once.
+function MetricTable({ groups, asOfDate, period, defaultOpenCount = 2 }) {
+  const dates = useMemo(() => weekAxis(asOfDate, period), [asOfDate, period]);
+  const [collapsed, setCollapsed] = useState(() => new Set(groups.slice(defaultOpenCount).map(g => g.section)));
+  function toggle(section) {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(section)) next.delete(section); else next.add(section);
+      return next;
+    });
+  }
+  if (!groups.length) return <div className="card p-8 text-center text-sm text-gray-400">Nothing to show yet.</div>;
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr>
+              <th className="sticky left-0 z-10 bg-white text-left text-[11px] font-bold text-gray-400 uppercase tracking-wide px-4 py-2 border-b border-gray-100 min-w-[220px]">
+                Metric
+              </th>
+              {dates.map(d => (
+                <th key={d} title={fmtWeekRange(d)} className="text-right text-[11px] font-bold text-gray-400 px-3 py-2 border-b border-gray-100 whitespace-nowrap tabular-nums">
+                  {fmtWeekLabel(d)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map(({ section, metrics }) => {
+              const label = section || 'Summary';
+              const isCollapsed = collapsed.has(section);
+              return (
+                <React.Fragment key={section || '_summary'}>
+                  <tr>
+                    <td
+                      colSpan={dates.length + 1}
+                      className="sticky left-0 p-0"
+                    >
+                      <SectionHeader label={label} count={metrics.length} isCollapsed={isCollapsed} onClick={() => toggle(section)} />
+                    </td>
+                  </tr>
+                  {!isCollapsed && metrics.map((m, i) => (
+                    <tr key={m.metric} className={i % 2 === 1 ? 'bg-gray-50/40' : ''}>
+                      <td className="sticky left-0 z-10 bg-inherit text-sm font-medium text-gray-800 px-4 py-1.5 border-b border-gray-50 whitespace-nowrap min-w-[220px]" style={{ background: i % 2 === 1 ? '#fafaf9' : 'white' }}>
+                        {m.metric}
+                      </td>
+                      {dates.map(d => (
+                        <td key={d} className="text-right text-xs text-gray-700 tabular-nums px-3 py-1.5 border-b border-gray-50 whitespace-nowrap">
+                          {formatMetricValue(valueAt(m.series, d), m.kind)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function EmptyChart({ label = 'No data yet' }) {
+  return <div className="h-[220px] flex items-center justify-center text-sm text-gray-400">{label}</div>;
+}
+
+// True when at least one row carries a real value for at least one of the
+// series being drawn -- distinguishes "no data in this window" (real dates,
+// every cell empty, e.g. a metric that stopped updating months ago) from an
+// actual empty series, so the chart never renders a bare axis with nothing
+// on it and no explanation.
+function hasChartData(rows, dataKeys) {
+  return rows.some(r => dataKeys.some(k => r[k] != null));
 }
 
 function ChartCard({ title, subtitle, children }) {
@@ -121,7 +217,7 @@ function ChartCard({ title, subtitle, children }) {
 }
 
 function TrendChart({ rows, dataKeys, colors, money, percent }) {
-  if (!rows.length) return <EmptyChart />;
+  if (!rows.length || !hasChartData(rows, dataKeys)) return <EmptyChart label="No data in this period" />;
   const yFmt = v => (percent ? fmtPct(v) : money ? fmtMoney(v, { compact: true }) : fmtNumber(v));
   return (
     <ResponsiveContainer width="100%" height={220}>
@@ -132,7 +228,7 @@ function TrendChart({ rows, dataKeys, colors, money, percent }) {
         <Tooltip labelFormatter={fmtWeekLabel} formatter={v => yFmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
         {dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
         {dataKeys.map((k, i) => (
-          <Line key={k} type="monotone" dataKey={k} stroke={colors[i % colors.length]} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+          <Line key={k} type="monotone" dataKey={k} stroke={dataKeys.length > 1 ? colors[i % colors.length] : 'var(--primary)'} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
         ))}
       </LineChart>
     </ResponsiveContainer>
@@ -140,7 +236,7 @@ function TrendChart({ rows, dataKeys, colors, money, percent }) {
 }
 
 function StackedBarChart({ rows, dataKeys, colors, money }) {
-  if (!rows.length) return <EmptyChart />;
+  if (!rows.length || !hasChartData(rows, dataKeys)) return <EmptyChart label="No data in this period" />;
   const yFmt = v => (money ? fmtMoney(v, { compact: true }) : fmtNumber(v));
   return (
     <ResponsiveContainer width="100%" height={220}>
@@ -158,33 +254,72 @@ function StackedBarChart({ rows, dataKeys, colors, money }) {
   );
 }
 
+// A tab's KPI list can be scanned as cards (sparkline + latest value, good
+// for a quick glance) or as a table (every value for every visible week at
+// once, good for spotting a trend or an outlier across the period).
+function ViewToggle({ view, onChange }) {
+  return (
+    <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+      {[{ id: 'cards', icon: LayoutGrid }, { id: 'table', icon: Table2 }].map(({ id, icon: Icon }) => (
+        <button
+          key={id}
+          onClick={() => onChange(id)}
+          aria-pressed={view === id}
+          title={id === 'cards' ? 'Card view' : 'Table view'}
+          className="px-2.5 py-1.5 rounded-md transition-colors"
+          style={view === id ? { background: 'white', boxShadow: '0 1px 2px rgba(0,0,0,0.08)' } : {}}
+        >
+          <Icon size={14} className={view === id ? 'text-gray-900' : 'text-gray-400'} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function KpiSection({ title, groups, asOfDate, period, defaultOpenCount }) {
+  const [view, setView] = useState('cards');
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        {title ? <h3 className="text-sm font-bold text-gray-900">{title}</h3> : <div />}
+        <ViewToggle view={view} onChange={setView} />
+      </div>
+      {view === 'cards'
+        ? <MetricGroupList groups={groups} defaultOpenCount={defaultOpenCount} asOfDate={asOfDate} />
+        : <MetricTable groups={groups} asOfDate={asOfDate} period={period} defaultOpenCount={defaultOpenCount} />}
+    </div>
+  );
+}
+
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 
-function OverviewTab({ topline }) {
+function OverviewTab({ topline, period }) {
+  const { asOfDate } = topline;
   const totalRevenueM = findMetric(topline.revenue, 'Revenue', 'Revenue - Total');
   const aovM = findMetric(topline.revenue, 'Customer', 'AOV');
   const customersM = findMetric(topline.revenue, 'Customer', 'Customers');
   const opProfitM = findMetric(topline.budget, '', 'Operating Profit $');
   const opProfitPctM = findMetric(topline.budget, '', 'Operating Profit %');
 
-  const revenueChart = totalRevenueM ? toChartRows([{ name: 'Revenue', series: totalRevenueM.series }]).slice(-26) : [];
-  const customerChart = customersM ? toChartRows([{ name: 'Customers', series: customersM.series }]).slice(-26) : [];
+  const dates = weekAxis(asOfDate, period);
+  const revenueChart = totalRevenueM ? chartRowsForWindow([{ name: 'Revenue', series: totalRevenueM.series }], dates) : [];
+  const customerChart = customersM ? chartRowsForWindow([{ name: 'Customers', series: customersM.series }], dates) : [];
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <StatTile label="Revenue (last wk)" value={totalRevenueM ? fmtMoney(latestEntry(totalRevenueM.series)?.value, { compact: true }) : '—'} delta={totalRevenueM && wowDelta(totalRevenueM.series)} />
-        <StatTile label="AOV" value={aovM ? fmtMoney(latestEntry(aovM.series)?.value) : '—'} delta={aovM && wowDelta(aovM.series)} />
-        <StatTile label="Customers" value={customersM ? fmtNumber(latestEntry(customersM.series)?.value) : '—'} delta={customersM && wowDelta(customersM.series)} />
-        <StatTile label="Operating Profit" value={opProfitM ? fmtMoney(latestEntry(opProfitM.series)?.value, { compact: true }) : '—'} delta={opProfitM && wowDelta(opProfitM.series)} />
-        <StatTile label="Operating Margin" value={opProfitPctM ? fmtPct(latestEntry(opProfitPctM.series)?.value) : '—'} delta={opProfitPctM && wowDelta(opProfitPctM.series)} />
+        <StatTile label="Revenue" value={totalRevenueM ? formatMetricValue(valueAt(totalRevenueM.series, asOfDate), 'money') : '—'} delta={totalRevenueM && wowDeltaAt(totalRevenueM.series, asOfDate)} />
+        <StatTile label="AOV" value={aovM ? fmtMoney(valueAt(aovM.series, asOfDate)) : '—'} delta={aovM && wowDeltaAt(aovM.series, asOfDate)} />
+        <StatTile label="Customers" value={customersM ? fmtNumber(valueAt(customersM.series, asOfDate)) : '—'} delta={customersM && wowDeltaAt(customersM.series, asOfDate)} />
+        <StatTile label="Operating Profit" value={opProfitM ? formatMetricValue(valueAt(opProfitM.series, asOfDate), 'money') : '—'} delta={opProfitM && wowDeltaAt(opProfitM.series, asOfDate)} />
+        <StatTile label="Operating Margin" value={opProfitPctM ? fmtPct(valueAt(opProfitPctM.series, asOfDate)) : '—'} delta={opProfitPctM && wowDeltaAt(opProfitPctM.series, asOfDate)} />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="Revenue" subtitle="Weekly total, last 26 weeks">
-          <TrendChart rows={revenueChart} dataKeys={['Revenue']} colors={['var(--primary)']} money />
+        <ChartCard title="Revenue" subtitle={`Weekly total, last ${period} weeks`}>
+          <TrendChart rows={revenueChart} dataKeys={['Revenue']} colors={CATEGORICAL} money />
         </ChartCard>
-        <ChartCard title="Customers" subtitle="Weekly total, last 26 weeks">
-          <TrendChart rows={customerChart} dataKeys={['Customers']} colors={['var(--primary)']} />
+        <ChartCard title="Customers" subtitle={`Weekly total, last ${period} weeks`}>
+          <TrendChart rows={customerChart} dataKeys={['Customers']} colors={CATEGORICAL} />
         </ChartCard>
       </div>
     </div>
@@ -200,15 +335,17 @@ const REVENUE_CHANNELS = [
 ];
 const REVENUE_CATEGORIES = ['Food', 'Drinks', 'Snacks', 'Merch'];
 
-function RevenueTab({ topline }) {
+function RevenueTab({ topline, period }) {
+  const { asOfDate } = topline;
   const revGroup = topline.revenue;
+  const dates = weekAxis(asOfDate, period);
   const channelSeries = REVENUE_CHANNELS
     .map(c => {
       const m = findMetric(revGroup, 'Revenue', c.key);
       return m ? { name: c.label, series: m.series } : null;
     })
     .filter(Boolean);
-  const channelRows = toChartRows(channelSeries).slice(-26);
+  const channelRows = chartRowsForWindow(channelSeries, dates);
 
   const categorySeries = REVENUE_CATEGORIES
     .map(name => {
@@ -216,7 +353,7 @@ function RevenueTab({ topline }) {
       return m ? { name, series: m.series } : null;
     })
     .filter(Boolean);
-  const categoryRows = toChartRows(categorySeries).slice(-26);
+  const categoryRows = chartRowsForWindow(categorySeries, dates);
 
   const totalM = findMetric(revGroup, 'Revenue', 'Revenue - Total');
   const inStoreM = findMetric(revGroup, 'Revenue', 'Revenue - In-Store');
@@ -226,28 +363,30 @@ function RevenueTab({ topline }) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatTile label="Total Revenue" value={totalM ? fmtMoney(latestEntry(totalM.series)?.value, { compact: true }) : '—'} delta={totalM && wowDelta(totalM.series)} />
-        <StatTile label="In-Store" value={inStoreM ? fmtMoney(latestEntry(inStoreM.series)?.value, { compact: true }) : '—'} delta={inStoreM && wowDelta(inStoreM.series)} />
-        <StatTile label="3rd Party Apps" value={thirdPartyM ? fmtMoney(latestEntry(thirdPartyM.series)?.value, { compact: true }) : '—'} delta={thirdPartyM && wowDelta(thirdPartyM.series)} />
-        <StatTile label="Catering / B2B" value={b2bM ? fmtMoney(latestEntry(b2bM.series)?.value, { compact: true }) : '—'} delta={b2bM && wowDelta(b2bM.series)} />
+        <StatTile label="Total Revenue" value={totalM ? formatMetricValue(valueAt(totalM.series, asOfDate), 'money') : '—'} delta={totalM && wowDeltaAt(totalM.series, asOfDate)} />
+        <StatTile label="In-Store" value={inStoreM ? formatMetricValue(valueAt(inStoreM.series, asOfDate), 'money') : '—'} delta={inStoreM && wowDeltaAt(inStoreM.series, asOfDate)} />
+        <StatTile label="3rd Party Apps" value={thirdPartyM ? formatMetricValue(valueAt(thirdPartyM.series, asOfDate), 'money') : '—'} delta={thirdPartyM && wowDeltaAt(thirdPartyM.series, asOfDate)} />
+        <StatTile label="Catering / B2B" value={b2bM ? formatMetricValue(valueAt(b2bM.series, asOfDate), 'money') : '—'} delta={b2bM && wowDeltaAt(b2bM.series, asOfDate)} />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="Revenue by Channel" subtitle="Weekly, last 26 weeks">
+        <ChartCard title="Revenue by Channel" subtitle={`Weekly, last ${period} weeks`}>
           <TrendChart rows={channelRows} dataKeys={REVENUE_CHANNELS.map(c => c.label)} colors={CATEGORICAL} money />
         </ChartCard>
-        <ChartCard title="Revenue by Category" subtitle="Food / Drinks / Snacks / Merch, last 26 weeks">
+        <ChartCard title="Revenue by Category" subtitle={`Food / Drinks / Snacks / Merch, last ${period} weeks`}>
           <StackedBarChart rows={categoryRows} dataKeys={REVENUE_CATEGORIES} colors={CATEGORICAL} money />
         </ChartCard>
       </div>
-      <MetricGroupList groups={revGroup} defaultOpenCount={2} />
+      <KpiSection groups={revGroup} defaultOpenCount={2} asOfDate={asOfDate} period={period} />
     </div>
   );
 }
 
 const COGS_SUPPLIERS = ['Foodbyus', 'Ordermentum', 'Supermarket', 'Direct Supply'];
 
-function CostsTab({ topline }) {
+function CostsTab({ topline, period }) {
+  const { asOfDate } = topline;
   const costsGroup = topline.costs;
+  const dates = weekAxis(asOfDate, period);
   const cogsTotal = findMetric(costsGroup, 'COGS Spend', 'Total');
   const cogsPct = findMetric(costsGroup, 'Average COGS', 'COGS % of Revenue');
   const labourPct = findMetric(costsGroup, 'Labour', 'Labour % Of Revenue');
@@ -259,36 +398,37 @@ function CostsTab({ topline }) {
       return m ? { name: s, series: m.series } : null;
     })
     .filter(Boolean);
-  const supplierRows = toChartRows(supplierSeries).slice(-26);
+  const supplierRows = chartRowsForWindow(supplierSeries, dates);
 
   const ratioSeries = [
     cogsPct && { name: 'COGS % of Revenue', series: cogsPct.series },
     labourPct && { name: 'Labour % of Revenue', series: labourPct.series },
   ].filter(Boolean);
-  const ratioRows = toChartRows(ratioSeries).slice(-26);
+  const ratioRows = chartRowsForWindow(ratioSeries, dates);
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatTile label="COGS (last wk)" value={cogsTotal ? fmtMoney(latestEntry(cogsTotal.series)?.value, { compact: true }) : '—'} delta={cogsTotal && wowDelta(cogsTotal.series)} />
-        <StatTile label="COGS % of Revenue" value={cogsPct ? fmtPct(latestEntry(cogsPct.series)?.value) : '—'} delta={cogsPct && wowDelta(cogsPct.series)} />
-        <StatTile label="Total Labour Cost" value={totalLabour ? fmtMoney(latestEntry(totalLabour.series)?.value, { compact: true }) : '—'} delta={totalLabour && wowDelta(totalLabour.series)} />
-        <StatTile label="Labour % of Revenue" value={labourPct ? fmtPct(latestEntry(labourPct.series)?.value) : '—'} delta={labourPct && wowDelta(labourPct.series)} />
+        <StatTile label="COGS" value={cogsTotal ? formatMetricValue(valueAt(cogsTotal.series, asOfDate), 'money') : '—'} delta={cogsTotal && wowDeltaAt(cogsTotal.series, asOfDate)} />
+        <StatTile label="COGS % of Revenue" value={cogsPct ? fmtPct(valueAt(cogsPct.series, asOfDate)) : '—'} delta={cogsPct && wowDeltaAt(cogsPct.series, asOfDate)} />
+        <StatTile label="Total Labour Cost" value={totalLabour ? formatMetricValue(valueAt(totalLabour.series, asOfDate), 'money') : '—'} delta={totalLabour && wowDeltaAt(totalLabour.series, asOfDate)} />
+        <StatTile label="Labour % of Revenue" value={labourPct ? fmtPct(valueAt(labourPct.series, asOfDate)) : '—'} delta={labourPct && wowDeltaAt(labourPct.series, asOfDate)} />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="COGS by Supplier" subtitle="Weekly spend, last 26 weeks">
+        <ChartCard title="COGS by Supplier" subtitle={`Weekly spend, last ${period} weeks`}>
           <StackedBarChart rows={supplierRows} dataKeys={COGS_SUPPLIERS} colors={CATEGORICAL} money />
         </ChartCard>
-        <ChartCard title="COGS % & Labour % of Revenue" subtitle="Last 26 weeks">
-          <TrendChart rows={ratioRows} dataKeys={ratioSeries.map(s => s.name)} colors={[CATEGORICAL[1], CATEGORICAL[5]]} percent />
+        <ChartCard title="COGS % & Labour % of Revenue" subtitle={`Last ${period} weeks`}>
+          <TrendChart rows={ratioRows} dataKeys={ratioSeries.map(s => s.name)} colors={[CATEGORICAL[1], CATEGORICAL[4]]} percent />
         </ChartCard>
       </div>
-      <MetricGroupList groups={costsGroup} defaultOpenCount={2} />
+      <KpiSection groups={costsGroup} defaultOpenCount={2} asOfDate={asOfDate} period={period} />
     </div>
   );
 }
 
-function CustomerTab({ topline }) {
+function CustomerTab({ topline, period }) {
+  const { asOfDate } = topline;
   const custGroup = topline.customer;
   const ig = findMetric(custGroup, 'Engagement', 'Instagram Followers');
   const fb = findMetric(custGroup, 'Engagement', 'Facebook Page Likes');
@@ -302,22 +442,22 @@ function CustomerTab({ topline }) {
     fb && { name: 'Facebook', series: fb.series },
     tiktok && { name: 'TikTok', series: tiktok.series },
   ].filter(Boolean);
-  const followerRows = toChartRows(followerSeries).slice(-26);
+  const followerRows = chartRowsForWindow(followerSeries, weekAxis(asOfDate, period));
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <StatTile label="Instagram" value={ig ? fmtNumber(latestEntry(ig.series)?.value) : '—'} delta={ig && wowDelta(ig.series)} />
-        <StatTile label="Facebook" value={fb ? fmtNumber(latestEntry(fb.series)?.value) : '—'} delta={fb && wowDelta(fb.series)} />
-        <StatTile label="TikTok" value={tiktok ? fmtNumber(latestEntry(tiktok.series)?.value) : '—'} delta={tiktok && wowDelta(tiktok.series)} />
-        <StatTile label="Loyalty Members" value={loyalty ? fmtNumber(latestEntry(loyalty.series)?.value) : '—'} delta={loyalty && wowDelta(loyalty.series)} />
-        <StatTile label="Google Rating" value={rating ? fmtNumber(latestEntry(rating.series)?.value, { decimals: 1 }) : '—'} delta={rating && wowDelta(rating.series)} />
-        <StatTile label="Google Reviews" value={reviews ? fmtNumber(latestEntry(reviews.series)?.value) : '—'} delta={reviews && wowDelta(reviews.series)} />
+        <StatTile label="Instagram" value={ig ? fmtNumber(valueAt(ig.series, asOfDate)) : '—'} delta={ig && wowDeltaAt(ig.series, asOfDate)} />
+        <StatTile label="Facebook" value={fb ? fmtNumber(valueAt(fb.series, asOfDate)) : '—'} delta={fb && wowDeltaAt(fb.series, asOfDate)} />
+        <StatTile label="TikTok" value={tiktok ? fmtNumber(valueAt(tiktok.series, asOfDate)) : '—'} delta={tiktok && wowDeltaAt(tiktok.series, asOfDate)} />
+        <StatTile label="Loyalty Members" value={loyalty ? fmtNumber(valueAt(loyalty.series, asOfDate)) : '—'} delta={loyalty && wowDeltaAt(loyalty.series, asOfDate)} />
+        <StatTile label="Google Rating" value={rating ? fmtNumber(valueAt(rating.series, asOfDate), { decimals: 1 }) : '—'} delta={rating && wowDeltaAt(rating.series, asOfDate)} />
+        <StatTile label="Google Reviews" value={reviews ? fmtNumber(valueAt(reviews.series, asOfDate)) : '—'} delta={reviews && wowDeltaAt(reviews.series, asOfDate)} />
       </div>
-      <ChartCard title="Social Followers" subtitle="Last 26 weeks">
+      <ChartCard title="Social Followers" subtitle={`Last ${period} weeks`}>
         <TrendChart rows={followerRows} dataKeys={followerSeries.map(s => s.name)} colors={CATEGORICAL} />
       </ChartCard>
-      <MetricGroupList groups={custGroup} defaultOpenCount={2} />
+      <KpiSection groups={custGroup} defaultOpenCount={2} asOfDate={asOfDate} period={period} />
     </div>
   );
 }
@@ -325,7 +465,8 @@ function CustomerTab({ topline }) {
 const PNL_SUMMARY_METRICS = ['Gross Revenue', 'Net Revenue', 'PC1 Total', 'PC1 Margin', 'Operating Profit $', 'Operating Profit %'];
 const PNL_TREND_METRICS = ['Gross Revenue', 'Net Revenue', 'Operating Profit $'];
 
-function PnlTab({ topline }) {
+function PnlTab({ topline, period }) {
+  const { asOfDate } = topline;
   const budgetGroup = topline.budget;
   const stats = PNL_SUMMARY_METRICS.map(name => findMetric(budgetGroup, '', name)).filter(Boolean);
   const trendSeries = PNL_TREND_METRICS
@@ -334,7 +475,7 @@ function PnlTab({ topline }) {
       return m ? { name, series: m.series } : null;
     })
     .filter(Boolean);
-  const trendRows = toChartRows(trendSeries).slice(-26);
+  const trendRows = chartRowsForWindow(trendSeries, weekAxis(asOfDate, period));
 
   const categoryGroups = budgetGroup.filter(g => g.section !== '');
   const summaryGroup = budgetGroup.find(g => g.section === '');
@@ -343,21 +484,15 @@ function PnlTab({ topline }) {
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {stats.map(m => (
-          <StatTile key={m.metric} label={m.metric} value={formatMetricValue(latestEntry(m.series)?.value, m.metric)} delta={wowDelta(m.series)} />
+          <StatTile key={m.metric} label={m.metric} value={formatMetricValue(valueAt(m.series, asOfDate), m.kind)} delta={wowDeltaAt(m.series, asOfDate)} />
         ))}
       </div>
-      <ChartCard title="Gross Revenue, Net Revenue & Operating Profit" subtitle="Weekly, last 26 weeks">
+      <ChartCard title="Gross Revenue, Net Revenue & Operating Profit" subtitle={`Weekly, last ${period} weeks`}>
         <TrendChart rows={trendRows} dataKeys={trendSeries.map(s => s.name)} colors={CATEGORICAL} money />
       </ChartCard>
-      <div>
-        <h3 className="text-sm font-bold text-gray-900 mb-2">P&L Line Items</h3>
-        <MetricGroupList groups={categoryGroups} defaultOpenCount={0} />
-      </div>
+      <KpiSection title="P&L Line Items" groups={categoryGroups} defaultOpenCount={0} asOfDate={asOfDate} period={period} />
       {summaryGroup && (
-        <div>
-          <h3 className="text-sm font-bold text-gray-900 mb-2">Summary & Ratios</h3>
-          <MetricGroupList groups={[summaryGroup]} defaultOpenCount={0} />
-        </div>
+        <KpiSection title="Summary & Ratios" groups={[summaryGroup]} defaultOpenCount={0} asOfDate={asOfDate} period={period} />
       )}
     </div>
   );
@@ -373,11 +508,55 @@ const TABS = [
   { id: 'pnl', label: 'P&L' },
 ];
 
+function AsOfBanner({ asOfDate }) {
+  if (!asOfDate) return null;
+  const dataWeek = isoWeekParts(asOfDate);
+  const today = new Date();
+  const todayIso = today.toISOString().slice(0, 10);
+  const todayWeek = isoWeekParts(todayIso);
+  const isCurrent = todayWeek.week === dataWeek.week && todayWeek.year === dataWeek.year;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <span
+        className="inline-flex items-center gap-1.5 font-semibold px-2.5 py-1 rounded-full"
+        style={{ background: 'color-mix(in srgb, var(--primary) 12%, white)', color: 'var(--primary-dk)' }}
+      >
+        <CalendarDays size={12} />
+        Data as of W{String(dataWeek.week).padStart(2, '0')}-{dataWeek.year} ({fmtWeekRange(asOfDate)})
+      </span>
+      {!isCurrent && (
+        <span className="text-gray-400">
+          — this is the most recent complete week in the data; today is W{String(todayWeek.week).padStart(2, '0')}-{todayWeek.year}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function PeriodSelector({ period, onChange }) {
+  return (
+    <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+      {PERIODS.map(p => (
+        <button
+          key={p}
+          onClick={() => onChange(p)}
+          aria-pressed={period === p}
+          className="px-2.5 py-1 text-xs font-semibold rounded-md transition-colors tabular-nums"
+          style={period === p ? { background: 'var(--primary)', color: 'var(--primary-fg)' } : { color: '#6b7280' }}
+        >
+          {p}w
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function ToplineApp({ org }) {
   const orgId = org?.id;
   const [topline, setTopline] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
+  const [period, setPeriod] = useState(26);
 
   const load = useCallback(async () => {
     if (!orgId) return;
@@ -412,11 +591,15 @@ export default function ToplineApp({ org }) {
   return (
     <div className="h-full overflow-auto" style={{ background: 'var(--app-bg)' }}>
       <div className="p-6 max-w-6xl mx-auto space-y-5">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <TrendingUp size={20} style={{ color: 'var(--primary)' }} /> R-Topline
-          </h2>
-          <p className="text-sm text-gray-400 mt-0.5">Revenue, costs & P&L — every KPI from the analytics sheet, natively in R-Shift</p>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <TrendingUp size={20} style={{ color: 'var(--primary)' }} /> R-Topline
+            </h2>
+            <PeriodSelector period={period} onChange={setPeriod} />
+          </div>
+          <p className="text-sm text-gray-400">Revenue, costs & P&L — every KPI from the analytics sheet, natively in R-Shift, reported weekly</p>
+          <AsOfBanner asOfDate={topline.asOfDate} />
         </div>
 
         <div className="flex gap-1 border-b border-gray-100 overflow-x-auto">
@@ -425,18 +608,18 @@ export default function ToplineApp({ org }) {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className="px-4 py-2.5 text-sm font-medium border-b-2 transition-all -mb-px whitespace-nowrap"
-              style={activeTab === tab.id ? { borderColor: 'var(--primary)', color: 'var(--primary)' } : { borderColor: 'transparent', color: '#6b7280' }}
+              style={activeTab === tab.id ? { borderColor: 'var(--primary)', color: 'var(--primary-dk)' } : { borderColor: 'transparent', color: '#6b7280' }}
             >
               {tab.label}
             </button>
           ))}
         </div>
 
-        {activeTab === 'overview' && <OverviewTab topline={topline} />}
-        {activeTab === 'revenue' && <RevenueTab topline={topline} />}
-        {activeTab === 'costs' && <CostsTab topline={topline} />}
-        {activeTab === 'customer' && <CustomerTab topline={topline} />}
-        {activeTab === 'pnl' && <PnlTab topline={topline} />}
+        {activeTab === 'overview' && <OverviewTab topline={topline} period={period} />}
+        {activeTab === 'revenue' && <RevenueTab topline={topline} period={period} />}
+        {activeTab === 'costs' && <CostsTab topline={topline} period={period} />}
+        {activeTab === 'customer' && <CustomerTab topline={topline} period={period} />}
+        {activeTab === 'pnl' && <PnlTab topline={topline} period={period} />}
       </div>
     </div>
   );
