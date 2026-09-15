@@ -9,19 +9,17 @@ import {
   fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts,
 } from './toplineData';
 
-// Validated categorical palette (dataviz skill hues, reordered to lead with
-// warm orange rather than R-Shift's own blue -- blue as "series 1" read as
-// the sibling app's brand colour fighting this module's gold theme -- and
-// with its two greens (aqua/pure-green) kept apart rather than adjacent, since
-// that pairing barely cleared the CVD floor and was genuinely hard to tell
-// apart in a 4-series stacked bar. Re-validated as its own theme: worst
-// adjacent normal-vision Delta E 28.3, both light-mode gates clear (a
-// same-slot-count-as-series-length subset therefore never puts the two
-// greens next to each other). Used for anything with 2+ series. Single-
-// series charts use the module's own accent (var(--primary), topline's
-// gold) instead, so a lone trend line still reads as "this module's
-// colour", not just "series 1".
-const CATEGORICAL = ['#eb6834', '#4a3aa7', '#1baf7a', '#e87ba4', '#008300', '#2a78d6'];
+// Validated categorical palette, bookended with R-Shift's own brand orange
+// and blue (rather than the generic dataviz-reference hues in those slots)
+// so multi-series charts read as "this app's colours", with three more
+// validated hues filling the gap and the two greens kept apart -- that
+// pairing barely cleared the CVD floor and was genuinely hard to tell apart
+// in a 4-series stacked bar. Re-validated as its own theme: worst adjacent
+// normal-vision Delta E 28.3, both light-mode gates clear. Used for anything
+// with 2+ series. Single-series charts use the module's own accent
+// (var(--primary), R-Shift blue) instead, so a lone trend line still reads
+// as "this module's colour", not just "series 1".
+const CATEGORICAL = ['#E85018', '#4a3aa7', '#1baf7a', '#e87ba4', '#008300', '#3B5BDB'];
 const AXIS_COLOR = '#8a8578';
 const GRID_COLOR = '#e8e4d8';
 const CHART_HEIGHT = 320;
@@ -134,6 +132,51 @@ function MetricGroupList({ groups, defaultOpenCount = 2, asOfDate }) {
   );
 }
 
+// Conditional formatting for one table row -- a flat grid of formatted
+// numbers is exactly the "wall of text" complaint, so each row gets its own
+// visual structure: money/count cells get a light intensity scale (like a
+// spreadsheet colour-scale rule) relative to that row's own min/max across
+// the visible weeks, so a glance shows which weeks were relatively higher or
+// lower; percent cells (already a comparison, not a magnitude) get
+// red/green text instead, since a heat scale on a ratio that swings through
+// zero reads as noise rather than signal.
+function MetricTableRow({ m, dates, idx }) {
+  const values = dates.map(d => valueAt(m.series, d));
+  let min = null, max = null;
+  if (m.kind !== 'percent') {
+    values.forEach(v => {
+      if (v == null) return;
+      if (min == null || v < min) min = v;
+      if (max == null || v > max) max = v;
+    });
+  }
+  const base = idx % 2 === 1 ? '#fafaf9' : 'white';
+  return (
+    <tr>
+      <td className="sticky left-0 z-10 text-sm font-medium text-gray-800 px-4 py-1.5 border-b border-gray-50 whitespace-nowrap min-w-[220px]" style={{ background: base }}>
+        {m.metric}
+      </td>
+      {dates.map((d, i) => {
+        const v = values[i];
+        let cellStyle = { background: base };
+        let textClass = 'text-gray-700';
+        if (v != null && m.kind === 'percent') {
+          textClass = v !== 0 ? 'font-semibold' : 'text-gray-700';
+          cellStyle.color = v > 0 ? GOOD : v < 0 ? BAD : undefined;
+        } else if (v != null && max != null && max > min) {
+          const intensity = (v - min) / (max - min);
+          cellStyle.background = `rgba(59, 91, 219, ${(0.06 + intensity * 0.24).toFixed(3)})`;
+        }
+        return (
+          <td key={d} className={`text-right text-xs tabular-nums px-3 py-1.5 border-b border-gray-50 whitespace-nowrap ${textClass}`} style={cellStyle}>
+            {formatMetricValue(v, m.kind)}
+          </td>
+        );
+      })}
+    </tr>
+  );
+}
+
 // Spreadsheet-style scan view: metrics as rows, weeks as columns -- the
 // "overall tabulated view" the sheet had and the card/chart views don't
 // give you when you just want to eyeball a run of numbers at once.
@@ -179,16 +222,7 @@ function MetricTable({ groups, asOfDate, period, defaultOpenCount = 2 }) {
                     </td>
                   </tr>
                   {!isCollapsed && metrics.map((m, i) => (
-                    <tr key={m.metric} className={i % 2 === 1 ? 'bg-gray-50/40' : ''}>
-                      <td className="sticky left-0 z-10 bg-inherit text-sm font-medium text-gray-800 px-4 py-1.5 border-b border-gray-50 whitespace-nowrap min-w-[220px]" style={{ background: i % 2 === 1 ? '#fafaf9' : 'white' }}>
-                        {m.metric}
-                      </td>
-                      {dates.map(d => (
-                        <td key={d} className="text-right text-xs text-gray-700 tabular-nums px-3 py-1.5 border-b border-gray-50 whitespace-nowrap">
-                          {formatMetricValue(valueAt(m.series, d), m.kind)}
-                        </td>
-                      ))}
-                    </tr>
+                    <MetricTableRow key={m.metric} m={m} dates={dates} idx={i} />
                   ))}
                 </React.Fragment>
               );
@@ -377,7 +411,7 @@ function RevenueTab({ topline, period }) {
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Revenue by Channel" subtitle={`Weekly, last ${period} weeks`}>
-          <TrendChart rows={channelRows} dataKeys={REVENUE_CHANNELS.map(c => c.label)} colors={CATEGORICAL} money />
+          <StackedBarChart rows={channelRows} dataKeys={REVENUE_CHANNELS.map(c => c.label)} colors={CATEGORICAL} money />
         </ChartCard>
         <ChartCard title="Revenue by Category" subtitle={`Food / Drinks / Snacks / Merch, last ${period} weeks`}>
           <StackedBarChart rows={categoryRows} dataKeys={REVENUE_CATEGORIES} colors={CATEGORICAL} money />

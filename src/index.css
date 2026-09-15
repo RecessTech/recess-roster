@@ -246,28 +246,28 @@ body {
   --top-border:     #F3E0C7;
 }
 
-/* Topline theme — a distinct gold, fitting for the revenue/P&L module,
-   and distinct from every other colourway (R-Shift blue, R-Stock orange,
-   R-Prod green, R-Recipe purple, Crystal Ball indigo, Transfer Hub teal,
-   Catering rose, Builds cyan, Barista brown) */
+/* Topline theme — R-Shift's own core brand colours (blue/orange/cream)
+   rather than a bespoke per-module hue; the module doesn't need to read as
+   visually distinct from the rest of the app the way the operational tools
+   (R-Stock, R-Prod, etc.) do, so it uses the actual brand palette instead */
 [data-theme="topline"] {
-  --sb-bg:          #854D0E;
-  --sb-icon:        rgba(254, 252, 232, 0.75);
-  --sb-icon-active: #FEFCE8;
-  --sb-active:      rgba(254, 252, 232, 0.2);
-  --sb-hover:       rgba(254, 252, 232, 0.1);
-  --sb-logo-bg:     rgba(254, 252, 232, 0.15);
-  --sb-logo-fg:     #FEFCE8;
-  --sb-tooltip-bg:  #713F12;
-  --sb-tooltip-bd:  rgba(254,252,232,0.15);
+  --sb-bg:          #3B5BDB;
+  --sb-icon:        rgba(255, 255, 255, 0.6);
+  --sb-icon-active: #ffffff;
+  --sb-active:      rgba(255, 255, 255, 0.18);
+  --sb-hover:       rgba(255, 255, 255, 0.1);
+  --sb-logo-bg:     rgba(255, 255, 255, 0.15);
+  --sb-logo-fg:     #ffffff;
+  --sb-tooltip-bg:  #2D4EC9;
+  --sb-tooltip-bd:  rgba(255,255,255,0.15);
 
-  --primary:        #A16207;
-  --primary-dk:     #854D0E;
+  --primary:        #3B5BDB;
+  --primary-dk:     #2D4EC9;
   --primary-fg:     white;
 
-  --app-bg:         #FBFAF6;
+  --app-bg:         #FBF8F2;
   --top-bg:         white;
-  --top-border:     #F0EAD8;
+  --top-border:     #EFE9DA;
 }
 
 /* Dark theme (logo 3) */
