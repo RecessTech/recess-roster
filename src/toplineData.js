@@ -11,7 +11,12 @@ const SECTION_ORDER = {
   revenue: ['Revenue', 'Customer', 'Key Metric Evolution %'],
   costs: ['COGS Spend', 'COGS Evolution', 'Average COGS', 'Labour'],
   customer: ['Engagement', 'Customer Sentiment'],
-  budget: [''],
+  // Budget/P&L sections follow the statement's own logical flow (revenue,
+  // then COGS/gross margin, then operating expenses, then tax) rather than
+  // alphabetical order -- alphabetical put "General & Administration" ahead
+  // of "Labour" and buried "PC1" (COGS) in the middle of the opex block,
+  // which doesn't read like an actual P&L.
+  budget: ['', 'B2B', 'B2C', 'PC1', 'Labour', 'Marketing', 'General & Administration', 'Property Costs', 'Misc.', 'Shipping', 'Tax'],
 };
 
 function sectionRank(tab, section) {

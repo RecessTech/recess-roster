@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { TrendingUp, Loader2, ChevronDown, ChevronUp, ArrowUpRight, ArrowDownRight, Table2, LayoutGrid, CalendarDays } from 'lucide-react';
 import {
-  ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, LineChart, Line, BarChart, Bar, ComposedChart, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import toast from 'react-hot-toast';
 import {
@@ -298,6 +298,58 @@ function StackedBarChart({ rows, dataKeys, colors, money }) {
 // A tab's KPI list can be scanned as cards (sparkline + latest value, good
 // for a quick glance) or as a table (every value for every visible week at
 // once, good for spotting a trend or an outlier across the period).
+// P&L trend: revenue drawn as lines (magnitude, both comfortably positive),
+// profit as a bar coloured by sign -- a line for profit reads poorly when
+// it's squashed near zero on the same axis as $20k of revenue; a coloured
+// bar per week answers "was this week profitable" at a glance instead.
+function PnlTrendChart({ rows, lineKeys, barKey, colors }) {
+  const allKeys = [...lineKeys, barKey];
+  if (!rows.length || !hasChartData(rows, allKeys)) return <EmptyChart label="No data in this period" />;
+  const yFmt = v => fmtMoney(v, { compact: true });
+  return (
+    <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+      <ComposedChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+        <CartesianGrid stroke={GRID_COLOR} vertical={false} />
+        <XAxis dataKey="date" tickFormatter={fmtWeekLabel} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={{ stroke: GRID_COLOR }} tickLine={false} minTickGap={28} />
+        <YAxis tickFormatter={yFmt} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={64} />
+        <Tooltip labelFormatter={fmtWeekLabel} formatter={v => yFmt(v)} contentStyle={{ fontSize: 13, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
+        <Legend
+          wrapperStyle={{ fontSize: 12 }}
+          // A per-week-coloured bar has no single legend swatch to show, so
+          // the line series get their normal auto entries and the bar is
+          // explained with its own two-state (profit/loss) key instead.
+          content={({ payload }) => (
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-2 text-xs">
+              {payload.filter(p => p.dataKey !== barKey).map(p => (
+                <span key={p.dataKey} className="inline-flex items-center gap-1.5">
+                  <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: p.color }} />
+                  {p.value}
+                </span>
+              ))}
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: GOOD }} />
+                {barKey} (profit)
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: BAD }} />
+                {barKey} (loss)
+              </span>
+            </div>
+          )}
+        />
+        <Bar dataKey={barKey} maxBarSize={28} radius={[3, 3, 3, 3]}>
+          {rows.map((r, i) => (
+            <Cell key={i} fill={r[barKey] == null ? 'transparent' : r[barKey] >= 0 ? GOOD : BAD} />
+          ))}
+        </Bar>
+        {lineKeys.map((k, i) => (
+          <Line key={k} type="monotone" dataKey={k} stroke={colors[i % colors.length]} strokeWidth={2.5} dot={false} connectNulls isAnimationActive={false} />
+        ))}
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
 function ViewToggle({ view, onChange }) {
   return (
     <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
@@ -317,8 +369,8 @@ function ViewToggle({ view, onChange }) {
   );
 }
 
-function KpiSection({ title, groups, asOfDate, period, defaultOpenCount }) {
-  const [view, setView] = useState('cards');
+function KpiSection({ title, groups, asOfDate, period, defaultOpenCount, defaultView = 'cards' }) {
+  const [view, setView] = useState(defaultView);
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -504,18 +556,21 @@ function CustomerTab({ topline, period }) {
 }
 
 const PNL_SUMMARY_METRICS = ['Gross Revenue', 'Net Revenue', 'PC1 Total', 'PC1 Margin', 'Operating Profit $', 'Operating Profit %'];
-const PNL_TREND_METRICS = ['Gross Revenue', 'Net Revenue', 'Operating Profit $'];
+const PNL_TREND_REVENUE_METRICS = ['Gross Revenue', 'Net Revenue'];
+const PNL_TREND_PROFIT_METRIC = 'Operating Profit $';
 
 function PnlTab({ topline, period }) {
   const { asOfDate } = topline;
   const budgetGroup = topline.budget;
   const stats = PNL_SUMMARY_METRICS.map(name => findMetric(budgetGroup, '', name)).filter(Boolean);
-  const trendSeries = PNL_TREND_METRICS
-    .map(name => {
+  const profitM = findMetric(budgetGroup, '', PNL_TREND_PROFIT_METRIC);
+  const trendSeries = [
+    ...PNL_TREND_REVENUE_METRICS.map(name => {
       const m = findMetric(budgetGroup, '', name);
       return m ? { name, series: m.series } : null;
-    })
-    .filter(Boolean);
+    }),
+    profitM && { name: PNL_TREND_PROFIT_METRIC, series: profitM.series },
+  ].filter(Boolean);
   const trendRows = chartRowsForWindow(trendSeries, weekAxis(asOfDate, period));
 
   const categoryGroups = budgetGroup.filter(g => g.section !== '');
@@ -528,12 +583,12 @@ function PnlTab({ topline, period }) {
           <StatTile key={m.metric} label={m.metric} value={formatMetricValue(valueAt(m.series, asOfDate), m.kind)} delta={wowDeltaAt(m.series, asOfDate)} />
         ))}
       </div>
-      <ChartCard title="Gross Revenue, Net Revenue & Operating Profit" subtitle={`Weekly, last ${period} weeks`}>
-        <TrendChart rows={trendRows} dataKeys={trendSeries.map(s => s.name)} colors={CATEGORICAL} money />
+      <ChartCard title="Gross Revenue, Net Revenue & Operating Profit" subtitle={`Weekly, last ${period} weeks — bars show profitable (green) vs loss-making (red) weeks`}>
+        <PnlTrendChart rows={trendRows} lineKeys={PNL_TREND_REVENUE_METRICS} barKey={PNL_TREND_PROFIT_METRIC} colors={CATEGORICAL} />
       </ChartCard>
-      <KpiSection title="P&L Line Items" groups={categoryGroups} defaultOpenCount={0} asOfDate={asOfDate} period={period} />
+      <KpiSection title="P&L Line Items" groups={categoryGroups} defaultOpenCount={categoryGroups.length} defaultView="table" asOfDate={asOfDate} period={period} />
       {summaryGroup && (
-        <KpiSection title="Summary & Ratios" groups={[summaryGroup]} defaultOpenCount={0} asOfDate={asOfDate} period={period} />
+        <KpiSection title="Summary & Ratios" groups={[summaryGroup]} defaultOpenCount={1} defaultView="table" asOfDate={asOfDate} period={period} />
       )}
     </div>
   );
