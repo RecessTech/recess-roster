@@ -11,13 +11,54 @@ const SECTION_ORDER = {
   revenue: ['Revenue', 'Customer', 'Key Metric Evolution %'],
   costs: ['COGS Spend', 'COGS Evolution', 'Average COGS', 'Labour'],
   customer: ['Engagement', 'Customer Sentiment'],
-  // Budget/P&L sections follow the statement's own logical flow (revenue,
-  // then COGS/gross margin, then operating expenses, then tax) rather than
-  // alphabetical order -- alphabetical put "General & Administration" ahead
-  // of "Labour" and buried "PC1" (COGS) in the middle of the opex block,
-  // which doesn't read like an actual P&L.
-  budget: ['', 'B2B', 'B2C', 'PC1', 'Labour', 'Marketing', 'General & Administration', 'Property Costs', 'Misc.', 'Shipping', 'Tax'],
+  // Budget/P&L section order mirrors the row order of the source sheet's
+  // own Budget tab (revenue categories, then COGS/gross margin, then
+  // operating expenses in the order that sheet lists them, then tax) --
+  // alphabetical order buried "PC1" (COGS) in the opex block and put G&A
+  // ahead of Labour, which doesn't read like an actual P&L.
+  budget: ['', 'B2C', 'B2B', 'PC1', 'Labour', 'Property Costs', 'Shipping', 'Marketing', 'General & Administration', 'Misc.', 'Tax'],
 };
+
+// Metric order *within* a budget section, again taken straight from the
+// source sheet's own row order rather than alphabetical -- e.g. the sheet
+// lists Units Sold before Gross Revenue within B2C, and Kitchen Rent before
+// Utilities within Property Costs. Anything not listed here (a metric added
+// after this was written) falls back to the general-purpose comparator
+// below instead of disappearing.
+const METRIC_ORDER = {
+  budget: {
+    '': [
+      '# of Customers per day', '# of Customers per week', 'AOV', 'Total Units Sold',
+      'Gross Revenue', 'Sales Fees - UberEats / Doordash', 'Sales Fees - Eatclub', 'Sales Fees',
+      'Direct Discounts', 'Payment Processing Costs', 'Net Revenue', 'Avg. COGS $',
+      'PC1 Total', 'PC1 Margin', 'Labour Hours (Store)', 'Labour (+Salaries) as % of sales',
+      'Rent as % of Sales', 'Marketing as a % of sales', 'Operating Profit $', 'Operating Profit %',
+      'Finance Repayments', 'Operating Cashflow', 'Reality Operating Cashflow',
+    ],
+    'B2C': ['Food Units Sold', 'Drinks Units Sold', 'Snacks Units Sold', 'Food Gross Revenue', 'Drinks Gross Revenue', 'Snacks Gross Revenue', 'UberEats Gross Revenue', 'TGTG / Classpass Revenue'],
+    'B2B': ['Catering Gross Revenue', 'Direct B2B Gross Revenue', 'Vending Revenue'],
+    'PC1': ['COGS', 'COGS % of Revenue', 'COGs Waste', 'Packaging'],
+    'Labour': ['Labour Costs (Wages)', 'Superannuation'],
+    'Property Costs': ['Kitchen Rent', 'Equipment Rental', 'Outgoings', 'Parking', 'Utilities', 'Cleaning & Maintenance'],
+    'Shipping': ['Delivery Costs'],
+    'Marketing': ['Marketing & Socials'],
+    'General & Administration': ['Salaries - Clark', 'Salaries - Paddy', 'Accounting & Subscriptions', 'Insurance'],
+    'Misc.': ['Stationery and printing', 'Kitchen Consumables'],
+    'Tax': ['GST'],
+  },
+};
+
+function compareMetricNamesFor(tab, section, a, b) {
+  const order = METRIC_ORDER[tab] && METRIC_ORDER[tab][section];
+  if (order) {
+    const ra = order.indexOf(a);
+    const rb = order.indexOf(b);
+    if (ra !== -1 || rb !== -1) {
+      return (ra === -1 ? order.length : ra) - (rb === -1 ? order.length : rb);
+    }
+  }
+  return compareMetricNames(a, b);
+}
 
 function sectionRank(tab, section) {
   const order = SECTION_ORDER[tab] || [];
@@ -145,7 +186,7 @@ function groupBySection(tab, rows, asOfDate) {
   return [...groups.entries()]
     .map(([section, metrics]) => ({
       section,
-      metrics: metrics.sort((a, b) => compareMetricNames(a.metric, b.metric)),
+      metrics: metrics.sort((a, b) => compareMetricNamesFor(tab, section, a.metric, b.metric)),
     }))
     .sort((a, b) => sectionRank(tab, a.section) - sectionRank(tab, b.section) || a.section.localeCompare(b.section));
 }
