@@ -573,7 +573,17 @@ function CustomerTab({ topline, period }) {
 }
 
 const PNL_SUMMARY_METRICS = ['Gross Revenue', 'Net Revenue', 'PC1 Total', 'PC1 Margin', 'Operating Profit $', 'Operating Profit %'];
-const PNL_TREND_REVENUE_METRICS = ['Gross Revenue', 'Net Revenue'];
+// Revenue, COGS and Labour give the three biggest levers on profit; Net
+// Revenue was dropped in favour of the two cost lines since it tracks
+// Gross Revenue too closely to add its own signal on this chart.
+const PNL_TREND_LINES = [
+  { section: '', metric: 'Gross Revenue', label: 'Gross Revenue' },
+  { section: 'PC1', metric: 'COGS', label: 'COGS' },
+  { section: 'Labour', metric: 'Labour Costs (Wages)', label: 'Labour' },
+];
+// Picked away from the teal/green in CATEGORICAL so a cost line never reads
+// like the profit bar's own green.
+const PNL_TREND_LINE_COLORS = [CATEGORICAL[0], CATEGORICAL[1], CATEGORICAL[3]];
 const PNL_TREND_PROFIT_METRIC = 'Operating Profit $';
 
 function PnlTab({ topline, period }) {
@@ -582,9 +592,9 @@ function PnlTab({ topline, period }) {
   const stats = PNL_SUMMARY_METRICS.map(name => findMetric(budgetGroup, '', name)).filter(Boolean);
   const profitM = findMetric(budgetGroup, '', PNL_TREND_PROFIT_METRIC);
   const trendSeries = [
-    ...PNL_TREND_REVENUE_METRICS.map(name => {
-      const m = findMetric(budgetGroup, '', name);
-      return m ? { name, series: m.series } : null;
+    ...PNL_TREND_LINES.map(({ section, metric, label }) => {
+      const m = findMetric(budgetGroup, section, metric);
+      return m ? { name: label, series: m.series } : null;
     }),
     profitM && { name: PNL_TREND_PROFIT_METRIC, series: profitM.series },
   ].filter(Boolean);
@@ -600,8 +610,8 @@ function PnlTab({ topline, period }) {
           <StatTile key={m.metric} label={m.metric} value={formatMetricValue(valueAt(m.series, asOfDate), m.kind)} delta={wowDeltaAt(m.series, asOfDate)} />
         ))}
       </div>
-      <ChartCard title="Gross Revenue, Net Revenue & Operating Profit" subtitle={`Weekly, last ${period} weeks — bars show profitable (green) vs loss-making (red) weeks`}>
-        <PnlTrendChart rows={trendRows} lineKeys={PNL_TREND_REVENUE_METRICS} barKey={PNL_TREND_PROFIT_METRIC} colors={CATEGORICAL} />
+      <ChartCard title="Gross Revenue, COGS & Labour" subtitle={`Weekly, last ${period} weeks — bars show profitable (green) vs loss-making (red) weeks`}>
+        <PnlTrendChart rows={trendRows} lineKeys={PNL_TREND_LINES.map(l => l.label)} barKey={PNL_TREND_PROFIT_METRIC} colors={PNL_TREND_LINE_COLORS} />
       </ChartCard>
       {summaryGroup && (
         <KpiSection title="Summary & Ratios" groups={[summaryGroup]} defaultOpenCount={1} defaultView="table" asOfDate={asOfDate} period={period} />
