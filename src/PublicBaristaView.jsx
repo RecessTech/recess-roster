@@ -22,10 +22,22 @@ const yieldInputStyle = {
   background: '#FDF8F3', fontWeight: 700, textAlign: 'center',
 };
 
-// Item picker -- a short tappable list of drinks, grouped into sections
-// (e.g. "Coffee & Tea", "Cold Foam") matching the pattern the other
-// staff-facing public pages (Build Guides, Prep List) use for a flat list.
+// Item picker -- a short tappable list of drinks, grouped into collapsed
+// sections (e.g. "Cold Foam", "Iced Drinks", "Coffee & Tea") matching the
+// order and alphabetisation the public-barista function already applies.
+// Sections start collapsed so the picker reads as a short list of groups
+// rather than one long scroll -- tap a header to expand it.
 export function BaristaPickerScreen({ businessName, token, sections, guides, onSelect }) {
+  const [openCategories, setOpenCategories] = useState(() => new Set());
+
+  const toggleCategory = (category) => {
+    setOpenCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category); else next.add(category);
+      return next;
+    });
+  };
+
   return (
     <div style={{ minHeight: '100vh', background: '#FDF8F3', padding: '14px 4px', fontFamily: FONT }}>
       <div style={{ maxWidth: 480, margin: '0 auto' }}>
@@ -48,7 +60,7 @@ export function BaristaPickerScreen({ businessName, token, sections, guides, onS
             Drinks Guide
           </div>
           <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>
-            Tap a drink to see how it's made
+            Tap a section to see its drinks
           </div>
         </div>
 
@@ -57,32 +69,53 @@ export function BaristaPickerScreen({ businessName, token, sections, guides, onS
             <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '32px 20px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
               No coffee or tea items found.
             </div>
-          ) : sections.map(section => (
-            <div key={section.category} style={{ marginBottom: 14 }}>
-              <p style={{ fontSize: 10.5, fontWeight: 700, color: '#B08968', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 6px 4px' }}>
-                {section.category}
-              </p>
-              <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, overflow: 'hidden' }}>
-                {section.items.map((it, i) => (
-                  <button
-                    key={it.key}
-                    onClick={() => onSelect(it.key)}
-                    style={{
-                      width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '13px 14px',
-                      background: 'none', border: 'none', borderTop: i > 0 ? '1px solid #F1F5F9' : 'none',
-                      textAlign: 'left', cursor: 'pointer', fontFamily: FONT,
-                    }}
-                  >
-                    <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: '#1E293B' }}>{it.name}</span>
-                    {!guides[it.key] && (
-                      <span style={{ fontSize: 10, fontWeight: 600, color: '#CBD5E1' }}>No guide</span>
-                    )}
-                    <span style={{ fontSize: 15, color: '#CBD5E1' }}>›</span>
-                  </button>
-                ))}
+          ) : sections.map(section => {
+            const isOpen = openCategories.has(section.category);
+            return (
+              <div key={section.category} style={{ marginBottom: 10 }}>
+                <button
+                  onClick={() => toggleCategory(section.category)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                    background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, border: 'none',
+                    padding: '13px 16px', cursor: 'pointer', fontFamily: FONT,
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 700, color: '#1E293B' }}>{section.category}</span>
+                    <span style={{ fontSize: 11.5, color: '#B08968', fontWeight: 600 }}>{section.items.length}</span>
+                  </span>
+                  <span style={{
+                    fontSize: 13, color: '#CBD5E1', transition: 'transform 0.15s ease',
+                    transform: isOpen ? 'rotate(90deg)' : 'none', display: 'inline-block',
+                  }}>
+                    ›
+                  </span>
+                </button>
+                {isOpen && (
+                  <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, overflow: 'hidden', marginTop: 6 }}>
+                    {section.items.map((it, i) => (
+                      <button
+                        key={it.key}
+                        onClick={() => onSelect(it.key)}
+                        style={{
+                          width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '13px 14px',
+                          background: 'none', border: 'none', borderTop: i > 0 ? '1px solid #F1F5F9' : 'none',
+                          textAlign: 'left', cursor: 'pointer', fontFamily: FONT,
+                        }}
+                      >
+                        <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: '#1E293B' }}>{it.name}</span>
+                        {!guides[it.key] && (
+                          <span style={{ fontSize: 10, fontWeight: 600, color: '#CBD5E1' }}>No guide</span>
+                        )}
+                        <span style={{ fontSize: 15, color: '#CBD5E1' }}>›</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <p style={{ textAlign: 'center', color: '#CBD5E1', fontSize: 11, marginTop: 20, marginBottom: 0 }}>
