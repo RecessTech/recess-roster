@@ -603,10 +603,10 @@ function PnlTab({ topline, period }) {
       <ChartCard title="Gross Revenue, Net Revenue & Operating Profit" subtitle={`Weekly, last ${period} weeks — bars show profitable (green) vs loss-making (red) weeks`}>
         <PnlTrendChart rows={trendRows} lineKeys={PNL_TREND_REVENUE_METRICS} barKey={PNL_TREND_PROFIT_METRIC} colors={CATEGORICAL} />
       </ChartCard>
-      <KpiSection title="P&L Line Items" groups={categoryGroups} defaultOpenCount={categoryGroups.length} defaultView="table" asOfDate={asOfDate} period={period} />
       {summaryGroup && (
         <KpiSection title="Summary & Ratios" groups={[summaryGroup]} defaultOpenCount={1} defaultView="table" asOfDate={asOfDate} period={period} />
       )}
+      <KpiSection title="P&L Line Items" groups={categoryGroups} defaultOpenCount={categoryGroups.length} defaultView="table" asOfDate={asOfDate} period={period} />
     </div>
   );
 }
