@@ -147,23 +147,39 @@ serve(async (req) => {
       if (entry) entry.steps.push({ step_number: s.step_number, instruction_text: s.instruction_text });
     });
 
+    // Sections are ordered batch preps first (e.g. Cold Foam -- staff
+    // reach for these before service), then Iced Drinks split out of
+    // Coffee & Tea (a distinct summer-menu grouping), then the remaining
+    // Coffee & Tea drinks -- alphabetical within every section so the
+    // list stays scannable as the menu grows.
+    const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+    const ICED_RE = /\biced\b/i;
+    const icedItems = activeItems.filter((i: any) => ICED_RE.test(i.name)).slice().sort(byName);
+    const otherItems = activeItems.filter((i: any) => !ICED_RE.test(i.name)).slice().sort(byName);
+
+    const componentSections = Object.entries(
+      activeComps.reduce((acc: Record<string, any[]>, c: any) => {
+        (acc[c.category] ||= []).push(c);
+        return acc;
+      }, {})
+    ).map(([category, comps]) => ({
+      category,
+      items: (comps as any[]).slice().sort(byName).map(c => ({
+        id: c.id, key: `component:${c.id}`, kind: 'component', name: c.name,
+        batchYield: c.batch_yield, uom: c.uom,
+      })),
+    }));
+
     const sections = [
+      ...componentSections,
+      {
+        category: 'Iced Drinks',
+        items: icedItems.map((i: any) => ({ id: i.id, key: `item:${i.id}`, kind: 'item', name: i.name })),
+      },
       {
         category: 'Coffee & Tea',
-        items: activeItems.map((i: any) => ({ id: i.id, key: `item:${i.id}`, kind: 'item', name: i.name })),
+        items: otherItems.map((i: any) => ({ id: i.id, key: `item:${i.id}`, kind: 'item', name: i.name })),
       },
-      ...Object.entries(
-        activeComps.reduce((acc: Record<string, any[]>, c: any) => {
-          (acc[c.category] ||= []).push(c);
-          return acc;
-        }, {})
-      ).map(([category, comps]) => ({
-        category,
-        items: (comps as any[]).map(c => ({
-          id: c.id, key: `component:${c.id}`, kind: 'component', name: c.name,
-          batchYield: c.batch_yield, uom: c.uom,
-        })),
-      })),
     ].filter(section => section.items.length > 0);
 
     return jsonResponse({
