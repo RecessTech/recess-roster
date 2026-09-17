@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { TrendingUp, Loader2, ChevronDown, ChevronUp, ArrowUpRight, ArrowDownRight, Table2, LayoutGrid, CalendarDays } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, ComposedChart, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -85,19 +85,26 @@ function MetricRow({ m, idx, asOfDate }) {
   );
 }
 
-function SectionHeader({ label, count, isCollapsed, onClick }) {
+// `sticky` is for the table view, where this header sits in a cell that
+// spans every date column -- without it, scrolling that wide row (e.g. to
+// the latest-week default position) carries the label off the left edge
+// with nothing left onscreen but blank space, since a full-width flex box
+// scrolls like anything else. Pinning it to a fixed, left-anchored width
+// keeps the label readable at any scroll position, same as the metric
+// column itself.
+function SectionHeader({ label, count, isCollapsed, onClick, sticky }) {
   return (
     <button
       onClick={onClick}
       aria-expanded={!isCollapsed}
-      className="w-full flex items-center justify-between px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors border-l-4"
+      className={`flex items-center justify-between gap-4 px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors border-l-4 ${sticky ? 'sticky left-0 z-10 min-w-[220px] w-fit' : 'w-full'}`}
       style={{ borderColor: 'var(--primary)' }}
     >
-      <span className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
+      <span className="flex items-center gap-1.5 text-sm font-bold text-gray-900 whitespace-nowrap">
         {isCollapsed ? <ChevronDown size={14} className="text-gray-400 shrink-0" /> : <ChevronUp size={14} className="text-gray-400 shrink-0" />}
         {label}
       </span>
-      <span className="text-xs font-semibold text-gray-400">{count} metric{count !== 1 ? 's' : ''}</span>
+      <span className="text-xs font-semibold text-gray-400 whitespace-nowrap">{count} metric{count !== 1 ? 's' : ''}</span>
     </button>
   );
 }
@@ -132,43 +139,45 @@ function MetricGroupList({ groups, defaultOpenCount = 2, asOfDate }) {
   );
 }
 
-// Conditional formatting for one table row -- a flat grid of formatted
-// numbers is exactly the "wall of text" complaint, so each row gets its own
-// visual structure: money/count cells get a light intensity scale (like a
-// spreadsheet colour-scale rule) relative to that row's own min/max across
-// the visible weeks, so a glance shows which weeks were relatively higher or
-// lower; percent cells (already a comparison, not a magnitude) get
-// red/green text instead, since a heat scale on a ratio that swings through
-// zero reads as noise rather than signal.
+// Subtotal / rollup metrics -- computed sums or margins rather than raw
+// line items, called out the same way the source sheet calls them out: a
+// shaded, bold row with a rule above it, not a colour that varies with the
+// number. Matched on name alone since a bare "Total" always means the same
+// thing wherever it shows up (COGS by supplier, category units, ...).
+const SUBTOTAL_METRICS = new Set([
+  'Total', 'Total Units Sold', 'Total Labour Cost', 'Total Revenue %', 'Revenue - Total',
+  'Gross Revenue', 'Net Revenue', 'Sales Fees', 'PC1 Total', 'PC1 Margin',
+  'Operating Profit $', 'Operating Profit %',
+]);
+
+// One row of the table view. A per-cell heat scale keyed to each row's own
+// min/max reads as a wall of colour once there are enough rows to scan at
+// once -- the source sheet's own convention (flat shading that marks a
+// row's *role* -- plain line item vs. subtotal -- rather than colouring
+// every cell by its value) is both calmer and closer to how a real P&L
+// looks, so that's what this reproduces. Percent cells keep red/green text:
+// a sign, not a magnitude scale, so it doesn't create the same noise.
 function MetricTableRow({ m, dates, idx }) {
-  const values = dates.map(d => valueAt(m.series, d));
-  let min = null, max = null;
-  if (m.kind !== 'percent') {
-    values.forEach(v => {
-      if (v == null) return;
-      if (min == null || v < min) min = v;
-      if (max == null || v > max) max = v;
-    });
-  }
-  const base = idx % 2 === 1 ? '#fafaf9' : 'white';
+  const isSubtotal = SUBTOTAL_METRICS.has(m.metric);
+  const base = isSubtotal ? '#f0efe9' : idx % 2 === 1 ? '#fafaf9' : 'white';
   return (
-    <tr>
-      <td className="sticky left-0 z-10 text-sm font-medium text-gray-800 px-4 py-1.5 border-b border-gray-50 whitespace-nowrap min-w-[220px]" style={{ background: base }}>
+    <tr className={isSubtotal ? 'border-t-2 border-gray-200' : ''}>
+      <td
+        className={`sticky left-0 z-10 text-sm px-4 py-1.5 border-b border-gray-50 whitespace-nowrap min-w-[220px] ${isSubtotal ? 'italic font-bold text-gray-900' : 'font-medium text-gray-800'}`}
+        style={{ background: base }}
+      >
         {m.metric}
       </td>
-      {dates.map((d, i) => {
-        const v = values[i];
-        let cellStyle = { background: base };
-        let textClass = 'text-gray-700';
+      {dates.map(d => {
+        const v = valueAt(m.series, d);
+        let color;
+        let textClass = isSubtotal ? 'font-semibold text-gray-800' : 'text-gray-700';
         if (v != null && m.kind === 'percent') {
-          textClass = v !== 0 ? 'font-semibold' : 'text-gray-700';
-          cellStyle.color = v > 0 ? GOOD : v < 0 ? BAD : undefined;
-        } else if (v != null && max != null && max > min) {
-          const intensity = (v - min) / (max - min);
-          cellStyle.background = `rgba(59, 91, 219, ${(0.06 + intensity * 0.24).toFixed(3)})`;
+          if (v !== 0) textClass += ' font-semibold';
+          color = v > 0 ? GOOD : v < 0 ? BAD : undefined;
         }
         return (
-          <td key={d} className={`text-right text-xs tabular-nums px-3 py-1.5 border-b border-gray-50 whitespace-nowrap ${textClass}`} style={cellStyle}>
+          <td key={d} className={`text-right text-xs tabular-nums px-3 py-1.5 border-b border-gray-50 whitespace-nowrap ${textClass}`} style={{ background: base, color }}>
             {formatMetricValue(v, m.kind)}
           </td>
         );
@@ -183,6 +192,17 @@ function MetricTableRow({ m, dates, idx }) {
 function MetricTable({ groups, asOfDate, period, defaultOpenCount = 2 }) {
   const dates = useMemo(() => weekAxis(asOfDate, period), [asOfDate, period]);
   const [collapsed, setCollapsed] = useState(() => new Set(groups.slice(defaultOpenCount).map(g => g.section)));
+  const scrollRef = useRef(null);
+  // Wide tables (26w/52w) overflow horizontally, and the columns run oldest
+  // to newest left-to-right -- left unscrolled, the browser default shows
+  // the oldest weeks first and the current week is hidden off the right
+  // edge. Start scrolled all the way to that edge instead, so the latest
+  // week is what's visible without scrolling and scrolling only ever goes
+  // further back in time, never forward to "catch up" to the present.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [dates]);
   function toggle(section) {
     setCollapsed(prev => {
       const next = new Set(prev);
@@ -193,7 +213,7 @@ function MetricTable({ groups, asOfDate, period, defaultOpenCount = 2 }) {
   if (!groups.length) return <div className="card p-8 text-center text-sm text-gray-400">Nothing to show yet.</div>;
   return (
     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto" ref={scrollRef}>
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr>
@@ -214,11 +234,8 @@ function MetricTable({ groups, asOfDate, period, defaultOpenCount = 2 }) {
               return (
                 <React.Fragment key={section || '_summary'}>
                   <tr>
-                    <td
-                      colSpan={dates.length + 1}
-                      className="sticky left-0 p-0"
-                    >
-                      <SectionHeader label={label} count={metrics.length} isCollapsed={isCollapsed} onClick={() => toggle(section)} />
+                    <td colSpan={dates.length + 1} className="p-0">
+                      <SectionHeader label={label} count={metrics.length} isCollapsed={isCollapsed} onClick={() => toggle(section)} sticky />
                     </td>
                   </tr>
                   {!isCollapsed && metrics.map((m, i) => (
