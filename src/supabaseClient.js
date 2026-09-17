@@ -1680,7 +1680,10 @@ export const db = {
   // Saving a guide never edits it in place: the previous active version
   // (if any) is archived, and the new step list is inserted as a fresh
   // version, so old guides stay in the table instead of being overwritten.
-  async saveDrinkGuide(orgId, { productionItemId, steps, previousGuideId, previousVersion, userId }) {
+  // A guide's subject is either a menu item (productionItemId) or a
+  // recipe_component (componentId, e.g. a Cold Foam batch) -- exactly
+  // one is ever passed.
+  async saveDrinkGuide(orgId, { productionItemId, componentId, steps, previousGuideId, previousVersion, userId }) {
     if (previousGuideId) {
       const { error: archiveError } = await supabase
         .from('drink_guides')
@@ -1693,7 +1696,8 @@ export const db = {
       .from('drink_guides')
       .insert([{
         org_id: orgId,
-        production_item_id: productionItemId,
+        production_item_id: productionItemId || null,
+        component_id: componentId || null,
         version: (previousVersion || 0) + 1,
         active: true,
         created_by: userId || null,

@@ -4,15 +4,20 @@ import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
 
 // Ingredients are never authored here -- they're always read live from
-// R-Recipe's recipe_menu_item_lines, so a recipe change never leaves a
+// R-Recipe (recipe_menu_item_lines for a menu item, recipe_component_lines
+// for a Cold Foam-style batch prep), so a recipe change never leaves a
 // guide's ingredient list out of sync. This only resolves a line's
 // display name/uom for that read-only summary; no costing involved.
+// The "other component" pointer is named differently on the two line
+// tables (component_id on a menu item line, sub_component_id on a
+// component line, since that table's own component_id already means
+// "which component this line belongs to") -- checking both covers either.
 function lineDisplay(line, skuById, componentById) {
   if (line.stock_item_id) {
     const sku = skuById.get(line.stock_item_id);
     return { name: sku?.name ?? 'Unknown SKU', uom: sku?.uom ?? '' };
   }
-  const component = componentById.get(line.component_id);
+  const component = componentById.get(line.sub_component_id ?? line.component_id);
   return { name: component?.name ?? 'Unknown component', uom: component?.uom ?? '' };
 }
 
@@ -21,17 +26,28 @@ function fmtQty(n) {
   return num % 1 === 0 ? String(num) : num.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
+// A guide's subject is either a menu item (Coffee & Tea, served as-is)
+// or a recipe_component (a batch prep like a Cold Foam, scaled off its
+// batch_yield). Wrapping both in the same {id, kind, name, category}
+// shape lets the sidebar/detail view treat them identically everywhere
+// except the one place they actually differ: ingredient source and
+// (for components) the reference batch yield.
+function toSubject(row, kind) {
+  return { id: row.id, kind, name: row.name, category: kind === 'item' ? 'Coffee & Tea' : (row.category || 'Other'), raw: row };
+}
+
 export default function BaristaApp({ org, user }) {
   const orgId = org?.id;
   const [items, setItems] = useState([]);
   const [skus, setSkus] = useState([]);
   const [components, setComponents] = useState([]);
   const [menuItemLines, setMenuItemLines] = useState([]);
+  const [componentLines, setComponentLines] = useState([]);
   const [guides, setGuides] = useState([]);
   const [stepsByGuide, setStepsByGuide] = useState(new Map());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedKey, setSelectedKey] = useState(null); // `${kind}:${id}`
   const [editing, setEditing] = useState(false);
   const [draftSteps, setDraftSteps] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -40,14 +56,18 @@ export default function BaristaApp({ org, user }) {
     if (!orgId) return;
     setLoading(true);
     try {
-      const [allItems, skuList, componentList, lines, guideList] = await Promise.all([
+      const [allItems, skuList, componentList, lines, compLines, guideList] = await Promise.all([
         db.getProductionItems(orgId),
         db.getStockItems(orgId),
         db.getRecipeComponents(orgId),
         db.getRecipeMenuItemLines(orgId),
+        db.getRecipeComponentLines(orgId),
         db.getDrinkGuides(orgId),
       ]);
       const relevant = allItems.filter(i => i.active !== false && i.category === 'Coffee & Tea');
+      // Only components with a category (e.g. 'Cold Foam') are guide
+      // subjects -- the many sandwich-filling-style components stay out.
+      const guideComponents = componentList.filter(c => c.active !== false && c.category);
       const steps = await db.getDrinkGuideSteps(orgId, guideList.map(g => g.id));
       const byGuide = new Map();
       steps.forEach(s => {
@@ -55,13 +75,21 @@ export default function BaristaApp({ org, user }) {
         byGuide.get(s.guide_id).push(s);
       });
 
-      setItems(relevant);
+      setItems([
+        ...relevant.map(i => toSubject(i, 'item')),
+        ...guideComponents.map(c => toSubject(c, 'component')),
+      ]);
       setSkus(skuList);
       setComponents(componentList);
       setMenuItemLines(lines);
+      setComponentLines(compLines);
       setGuides(guideList);
       setStepsByGuide(byGuide);
-      setSelectedId(prev => (prev && relevant.some(i => i.id === prev)) ? prev : (relevant[0]?.id ?? null));
+      setSelectedKey(prev => {
+        const all = [...relevant.map(i => `item:${i.id}`), ...guideComponents.map(c => `component:${c.id}`)];
+        if (prev && all.includes(prev)) return prev;
+        return all[0] ?? null;
+      });
     } catch (err) {
       toast.error('Failed to load drinks: ' + (err.message || 'unknown error'));
     } finally {
@@ -70,7 +98,7 @@ export default function BaristaApp({ org, user }) {
   }, [orgId]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setEditing(false); }, [selectedId]);
+  useEffect(() => { setEditing(false); }, [selectedKey]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -78,15 +106,29 @@ export default function BaristaApp({ org, user }) {
     return items.filter(i => i.name.toLowerCase().includes(q));
   }, [items, search]);
 
+  // Grouped by category, in first-seen order (Coffee & Tea, then
+  // whatever other categories exist -- currently just Cold Foam).
+  const grouped = useMemo(() => {
+    const order = [];
+    const byCategory = new Map();
+    filtered.forEach(subject => {
+      if (!byCategory.has(subject.category)) { byCategory.set(subject.category, []); order.push(subject.category); }
+      byCategory.get(subject.category).push(subject);
+    });
+    return order.map(category => ({ category, subjects: byCategory.get(category) }));
+  }, [filtered]);
+
   const skuById = useMemo(() => new Map(skus.map(s => [s.id, s])), [skus]);
   const componentById = useMemo(() => new Map(components.map(c => [c.id, c])), [components]);
 
-  const selectedItem = items.find(i => i.id === selectedId);
-  const guide = selectedItem ? guides.find(g => g.production_item_id === selectedItem.id) : null;
+  const selectedItem = items.find(i => `${i.kind}:${i.id}` === selectedKey);
+  const guide = selectedItem
+    ? guides.find(g => selectedItem.kind === 'item' ? g.production_item_id === selectedItem.id : g.component_id === selectedItem.id)
+    : null;
   const steps = guide ? (stepsByGuide.get(guide.id) || []) : [];
-  const ingredientLines = selectedItem
+  const ingredientLines = !selectedItem ? [] : selectedItem.kind === 'item'
     ? menuItemLines.filter(l => l.item_id === selectedItem.id && !l.is_packaging)
-    : [];
+    : componentLines.filter(l => l.component_id === selectedItem.id);
 
   function startEditing() {
     setDraftSteps(steps.length ? steps.map(s => s.instruction_text) : ['']);
@@ -117,7 +159,8 @@ export default function BaristaApp({ org, user }) {
     setSaving(true);
     try {
       await db.saveDrinkGuide(orgId, {
-        productionItemId: selectedItem.id,
+        productionItemId: selectedItem.kind === 'item' ? selectedItem.id : null,
+        componentId: selectedItem.kind === 'component' ? selectedItem.id : null,
         steps: draftSteps,
         previousGuideId: guide?.id ?? null,
         previousVersion: guide?.version ?? 0,
@@ -158,23 +201,29 @@ export default function BaristaApp({ org, user }) {
             <div className="flex items-center justify-center py-10"><Loader2 size={18} className="animate-spin text-gray-400" /></div>
           ) : (
             <div className="px-2 pb-3">
-              {filtered.map(it => {
-                const hasGuide = guides.some(g => g.production_item_id === it.id);
-                const isSelected = selectedId === it.id;
-                return (
-                  <button
-                    key={it.id}
-                    onClick={() => setSelectedId(it.id)}
-                    className={`w-full flex items-center gap-2 text-left px-2.5 py-1.5 rounded-lg text-sm transition-colors ${isSelected ? 'text-white' : 'text-gray-700 hover:bg-gray-50'}`}
-                    style={isSelected ? { background: 'var(--primary)' } : {}}
-                  >
-                    <span className="flex-1 truncate">{it.name}</span>
-                    {!hasGuide && (
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSelected ? 'bg-white/60' : 'bg-gray-300'}`} title="No guide yet" />
-                    )}
-                  </button>
-                );
-              })}
+              {grouped.map(({ category, subjects }) => (
+                <div key={category} className="mb-2">
+                  <p className="px-2.5 pt-2 pb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{category}</p>
+                  {subjects.map(it => {
+                    const key = `${it.kind}:${it.id}`;
+                    const hasGuide = guides.some(g => it.kind === 'item' ? g.production_item_id === it.id : g.component_id === it.id);
+                    const isSelected = selectedKey === key;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => setSelectedKey(key)}
+                        className={`w-full flex items-center gap-2 text-left px-2.5 py-1.5 rounded-lg text-sm transition-colors ${isSelected ? 'text-white' : 'text-gray-700 hover:bg-gray-50'}`}
+                        style={isSelected ? { background: 'var(--primary)' } : {}}
+                      >
+                        <span className="flex-1 truncate">{it.name}</span>
+                        {!hasGuide && (
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSelected ? 'bg-white/60' : 'bg-gray-300'}`} title="No guide yet" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
               {!loading && filtered.length === 0 && (
                 <p className="text-center text-sm text-gray-400 py-8">No drinks match.</p>
               )}
@@ -206,7 +255,15 @@ export default function BaristaApp({ org, user }) {
               )}
 
               <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-4">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Ingredients (from R-Recipe)</p>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Ingredients (from R-Recipe)
+                  {selectedItem.kind === 'component' && (
+                    <span className="normal-case font-normal text-gray-400"> — reference batch: {fmtQty(selectedItem.raw.batch_yield)}{selectedItem.raw.uom}</span>
+                  )}
+                </p>
+                {selectedItem.kind === 'component' && (
+                  <p className="text-xs text-gray-400 mb-2 -mt-1">Staff scale this to their own target yield on the mobile Drinks Guide.</p>
+                )}
                 {ingredientLines.length === 0 ? (
                   <p className="text-sm text-gray-400">No ingredients set up in R-Recipe yet.</p>
                 ) : (

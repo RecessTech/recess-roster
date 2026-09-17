@@ -14,9 +14,18 @@ function fmtQty(n) {
   return num % 1 === 0 ? String(num) : num.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-// Item picker -- a short tappable list of drinks, matching the pattern
-// the other staff-facing public pages (Build Guides, Prep List) use.
-export function BaristaPickerScreen({ businessName, token, items, onSelect }) {
+// iOS Safari auto-zooms the whole page on focus for any text input under
+// 16px -- 16px avoids it without disabling pinch-zoom.
+const yieldInputStyle = {
+  width: 90, fontSize: 16, padding: '7px 10px', borderRadius: 10,
+  border: '1px solid #E7DFD3', color: '#1E293B', fontFamily: FONT, boxSizing: 'border-box',
+  background: '#FDF8F3', fontWeight: 700, textAlign: 'center',
+};
+
+// Item picker -- a short tappable list of drinks, grouped into sections
+// (e.g. "Coffee & Tea", "Cold Foam") matching the pattern the other
+// staff-facing public pages (Build Guides, Prep List) use for a flat list.
+export function BaristaPickerScreen({ businessName, token, sections, guides, onSelect }) {
   return (
     <div style={{ minHeight: '100vh', background: '#FDF8F3', padding: '14px 4px', fontFamily: FONT }}>
       <div style={{ maxWidth: 480, margin: '0 auto' }}>
@@ -44,31 +53,36 @@ export function BaristaPickerScreen({ businessName, token, items, onSelect }) {
         </div>
 
         <div style={{ padding: '14px 12px 4px' }}>
-          {items.length === 0 ? (
+          {sections.length === 0 ? (
             <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '32px 20px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
               No coffee or tea items found.
             </div>
-          ) : (
-            <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, overflow: 'hidden' }}>
-              {items.map((it, i) => (
-                <button
-                  key={it.id}
-                  onClick={() => onSelect(it.id)}
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '13px 14px',
-                    background: 'none', border: 'none', borderTop: i > 0 ? '1px solid #F1F5F9' : 'none',
-                    textAlign: 'left', cursor: 'pointer', fontFamily: FONT,
-                  }}
-                >
-                  <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: '#1E293B' }}>{it.name}</span>
-                  {!it.hasGuide && (
-                    <span style={{ fontSize: 10, fontWeight: 600, color: '#CBD5E1' }}>No guide</span>
-                  )}
-                  <span style={{ fontSize: 15, color: '#CBD5E1' }}>›</span>
-                </button>
-              ))}
+          ) : sections.map(section => (
+            <div key={section.category} style={{ marginBottom: 14 }}>
+              <p style={{ fontSize: 10.5, fontWeight: 700, color: '#B08968', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 6px 4px' }}>
+                {section.category}
+              </p>
+              <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, overflow: 'hidden' }}>
+                {section.items.map((it, i) => (
+                  <button
+                    key={it.key}
+                    onClick={() => onSelect(it.key)}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '13px 14px',
+                      background: 'none', border: 'none', borderTop: i > 0 ? '1px solid #F1F5F9' : 'none',
+                      textAlign: 'left', cursor: 'pointer', fontFamily: FONT,
+                    }}
+                  >
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: '#1E293B' }}>{it.name}</span>
+                    {!guides[it.key] && (
+                      <span style={{ fontSize: 10, fontWeight: 600, color: '#CBD5E1' }}>No guide</span>
+                    )}
+                    <span style={{ fontSize: 15, color: '#CBD5E1' }}>›</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
+          ))}
         </div>
 
         <p style={{ textAlign: 'center', color: '#CBD5E1', fontSize: 11, marginTop: 20, marginBottom: 0 }}>
@@ -80,8 +94,24 @@ export function BaristaPickerScreen({ businessName, token, items, onSelect }) {
 }
 
 // Detail view -- ingredients (read from R-Recipe) at the top, then the
-// numbered method underneath.
-export function BaristaDetailScreen({ token, item, guide, ingredients, onBack }) {
+// numbered method underneath. For a batch-prep subject (a recipe
+// component with a batch_yield, e.g. a Cold Foam), a "Yield" input lets
+// staff enter how much they're actually making, scaling every ingredient
+// by enteredYield/batchYield live -- the recipe's own qty and batch_yield
+// already encode its ratios, so no separate scaling data is needed.
+export function BaristaDetailScreen({ token, subject, guide, ingredients, onBack }) {
+  const isBatch = subject.kind === 'component' && subject.batchYield > 0;
+  const [yieldInput, setYieldInput] = useState(() => fmtQty(subject.batchYield ?? ''));
+
+  useEffect(() => { setYieldInput(fmtQty(subject.batchYield ?? '')); }, [subject.id, subject.batchYield]);
+
+  const scale = useMemo(() => {
+    if (!isBatch) return 1;
+    const entered = parseFloat(yieldInput);
+    if (!Number.isFinite(entered) || entered <= 0) return 1;
+    return entered / subject.batchYield;
+  }, [isBatch, yieldInput, subject.batchYield]);
+
   return (
     <div style={{ minHeight: '100vh', background: '#FDF8F3', fontFamily: FONT }}>
       <div style={{ maxWidth: 480, margin: '0 auto', paddingBottom: 24 }}>
@@ -96,7 +126,7 @@ export function BaristaDetailScreen({ token, item, guide, ingredients, onBack })
             ← Drinks
           </button>
           <div style={{ flex: 1, minWidth: 0, color: 'white', fontSize: 15.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {item.name}
+            {subject.name}
           </div>
           <a
             href={`/hub/${token}`}
@@ -110,6 +140,26 @@ export function BaristaDetailScreen({ token, item, guide, ingredients, onBack })
         </div>
 
         <div style={{ padding: '12px 10px 0' }}>
+          {isBatch && (
+            <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '14px 16px', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <p style={{ fontSize: 10.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>
+                  Making how much?
+                </p>
+                <p style={{ fontSize: 11.5, color: '#B08968' }}>Recipe below scales automatically</p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexShrink: 0 }}>
+                <input
+                  type="number" min="0" step="any" inputMode="decimal"
+                  value={yieldInput}
+                  onChange={e => setYieldInput(e.target.value)}
+                  style={yieldInputStyle}
+                />
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#78350F' }}>{subject.uom}</span>
+              </div>
+            </div>
+          )}
+
           {ingredients.length > 0 && (
             <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '14px 16px', marginBottom: 10 }}>
               <p style={{ fontSize: 10.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
@@ -118,7 +168,7 @@ export function BaristaDetailScreen({ token, item, guide, ingredients, onBack })
               {ingredients.map((ing, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 13.5 }}>
                   <span style={{ color: '#334155', fontWeight: 600 }}>{ing.name}</span>
-                  <span style={{ color: '#94A3B8' }}>{fmtQty(ing.qty)} {ing.uom}</span>
+                  <span style={{ color: '#94A3B8' }}>{fmtQty(ing.qty * scale)} {ing.uom}</span>
                 </div>
               ))}
             </div>
@@ -156,7 +206,7 @@ export default function PublicBaristaView({ token }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedKey, setSelectedKey] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -178,15 +228,17 @@ export default function PublicBaristaView({ token }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const items = useMemo(() => {
-    const raw = data?.items || [];
-    const guides = data?.guides || {};
-    return raw.map(i => ({ ...i, hasGuide: !!guides[i.id] }));
-  }, [data]);
+  const sections = useMemo(() => data?.sections || [], [data]);
+  const selectedItem = useMemo(() => {
+    for (const section of sections) {
+      const found = section.items.find(i => i.key === selectedKey);
+      if (found) return found;
+    }
+    return null;
+  }, [sections, selectedKey]);
 
-  const selectedItem = items.find(i => i.id === selectedId);
-  const guide = selectedItem ? (data?.guides || {})[selectedItem.id] : null;
-  const ingredients = selectedItem ? ((data?.ingredients || {})[selectedItem.id] || []) : [];
+  const guide = selectedItem ? (data?.guides || {})[selectedItem.key] : null;
+  const ingredients = selectedItem ? ((data?.ingredients || {})[selectedItem.key] || []) : [];
 
   if (loading) {
     return (
@@ -222,8 +274,9 @@ export default function PublicBaristaView({ token }) {
       <BaristaPickerScreen
         businessName={data.businessName}
         token={token}
-        items={items}
-        onSelect={setSelectedId}
+        sections={sections}
+        guides={data.guides || {}}
+        onSelect={setSelectedKey}
       />
     );
   }
@@ -231,10 +284,10 @@ export default function PublicBaristaView({ token }) {
   return (
     <BaristaDetailScreen
       token={token}
-      item={selectedItem}
+      subject={selectedItem}
       guide={guide}
       ingredients={ingredients}
-      onBack={() => setSelectedId(null)}
+      onBack={() => setSelectedKey(null)}
     />
   );
 }
