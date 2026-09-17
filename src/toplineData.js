@@ -108,7 +108,7 @@ function compareMetricNames(a, b) {
 // this dataset is overwhelmingly a P&L/revenue sheet.
 const COUNT_SECTIONS = new Set(['Customers by Hour', 'Daily Customers', 'Category Units Sold', 'Subcat Units Sold #']);
 const PERCENT_SECTIONS = new Set(['COGS Evolution']); // a ratio section the sheet didn't suffix with "%"
-const COUNT_METRIC = /\bcustomers?\b|\bfollowers?\b|\bmembers?\b|\breviews?\b|\brating\b|\bhours\b|\bunits?\b|^#\s*of\b/i;
+const COUNT_METRIC = /\bcustomers?\b|\bfollowers?\b|\bmembers?\b|\breviews?\b|\brating\b|\bhours\b|\bunits?\b|\blikes?\b|^#\s*of\b/i;
 
 export function classifyMetric(tab, section, metric) {
   // The "%" usually lives on the SECTION (e.g. "Daily Revenue Evolution %"),
