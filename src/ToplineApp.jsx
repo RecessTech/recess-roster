@@ -575,15 +575,19 @@ function CustomerTab({ topline, period }) {
 const PNL_SUMMARY_METRICS = ['Gross Revenue', 'Net Revenue', 'PC1 Total', 'PC1 Margin', 'Operating Profit $', 'Operating Profit %'];
 // Revenue, COGS and Labour give the three biggest levers on profit; Net
 // Revenue was dropped in favour of the two cost lines since it tracks
-// Gross Revenue too closely to add its own signal on this chart.
+// Gross Revenue too closely to add its own signal on this chart. PC1 Margin
+// (gross profit after COGS, before opex) sits between those cost lines and
+// Gross Revenue -- a genuinely new layer, unlike PC1 Total which nearly
+// overlaps the COGS line already on the chart.
 const PNL_TREND_LINES = [
   { section: '', metric: 'Gross Revenue', label: 'Gross Revenue' },
+  { section: '', metric: 'PC1 Margin', label: 'PC1 Margin' },
   { section: 'PC1', metric: 'COGS', label: 'COGS' },
   { section: 'Labour', metric: 'Labour Costs (Wages)', label: 'Labour' },
 ];
 // Picked away from the teal/green in CATEGORICAL so a cost line never reads
 // like the profit bar's own green.
-const PNL_TREND_LINE_COLORS = [CATEGORICAL[0], CATEGORICAL[1], CATEGORICAL[3]];
+const PNL_TREND_LINE_COLORS = [CATEGORICAL[0], CATEGORICAL[5], CATEGORICAL[1], CATEGORICAL[3]];
 const PNL_TREND_PROFIT_METRIC = 'Operating Profit $';
 
 function PnlTab({ topline, period }) {
@@ -610,7 +614,7 @@ function PnlTab({ topline, period }) {
           <StatTile key={m.metric} label={m.metric} value={formatMetricValue(valueAt(m.series, asOfDate), m.kind)} delta={wowDeltaAt(m.series, asOfDate)} />
         ))}
       </div>
-      <ChartCard title="Gross Revenue, COGS & Labour" subtitle={`Weekly, last ${period} weeks — bars show profitable (green) vs loss-making (red) weeks`}>
+      <ChartCard title="Gross Revenue, PC1 Margin, COGS & Labour" subtitle={`Weekly, last ${period} weeks — bars show profitable (green) vs loss-making (red) weeks`}>
         <PnlTrendChart rows={trendRows} lineKeys={PNL_TREND_LINES.map(l => l.label)} barKey={PNL_TREND_PROFIT_METRIC} colors={PNL_TREND_LINE_COLORS} />
       </ChartCard>
       {summaryGroup && (
