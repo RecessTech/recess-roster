@@ -121,6 +121,8 @@ export default function PublicProductionView({ token, fetchPlan = defaultFetchPl
     return params.get('d') || todayStr();
   });
   const [activeSiteId, setActiveSiteId] = useState(null);
+  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'order'
+  const [checkedOff, setCheckedOff] = useState({}); // local-only tick marks, `${itemId}:${idx}` -> true
 
   // Edit-mode state -- entirely local until a re-lock actually saves it.
   // Unlocking never touches the server; only "Save & Lock" does.
@@ -163,6 +165,7 @@ export default function PublicProductionView({ token, fetchPlan = defaultFetchPl
     setDraft({});
     setShowConfirm(false);
     setSaveError(null);
+    setCheckedOff({});
   }, [date, activeSiteId]);
 
   const channelsForSite = useMemo(() => {
@@ -212,6 +215,43 @@ export default function PublicProductionView({ token, fetchPlan = defaultFetchPl
     return [...groups.entries()];
   }, [data]);
 
+  // Production Order -- an opt-in priority list an admin sets on desktop
+  // (see ProductionOrderPanel in ProductionApp.jsx). A "split" item shows
+  // up as two rows here, each with its own share of the day's total --
+  // computed live against totalsByItemForSite so it stays correct even if
+  // the plan changes after the order was set.
+  const priorityForSite = useMemo(() => {
+    if (!data) return [];
+    return (data.priority || []).filter(p => p.site_id === activeSiteId);
+  }, [data, activeSiteId]);
+
+  const rankedItemIds = useMemo(() => new Set(priorityForSite.map(p => p.item_id)), [priorityForSite]);
+
+  const orderedRows = useMemo(() => {
+    if (!data) return [];
+    const itemById = new Map(data.items.map(i => [i.id, i]));
+    return priorityForSite
+      .map(p => {
+        const item = itemById.get(p.item_id);
+        if (!item) return null;
+        const total = totalsByItemForSite.get(p.item_id) || 0;
+        return {
+          item,
+          qty: Math.round((p.share_pct / 100) * total),
+          sharePct: p.share_pct,
+          splitCount: priorityForSite.filter(r => r.item_id === p.item_id).length,
+        };
+      })
+      .filter(Boolean);
+  }, [data, priorityForSite, totalsByItemForSite]);
+
+  const unorderedRows = useMemo(() => {
+    if (!data) return [];
+    return data.items
+      .filter(it => (totalsByItemForSite.get(it.id) || 0) > 0 && !rankedItemIds.has(it.id))
+      .map(it => ({ item: it, qty: totalsByItemForSite.get(it.id) || 0 }));
+  }, [data, totalsByItemForSite, rankedItemIds]);
+
   const activeLock = data ? (data.locks || []).find(l => l.site_id === activeSiteId) : null;
   const lastEdit = data ? (data.editLog || []).find(l => l.site_id === activeSiteId) : null;
 
@@ -236,6 +276,7 @@ export default function PublicProductionView({ token, fetchPlan = defaultFetchPl
     setDraft(next);
     setEditMode(true);
     setSavedNotice(null);
+    setViewMode('grid'); // editing quantities only happens in the by-channel grid
   }
 
   function handleCellChange(itemId, channelId, qty) {
@@ -422,6 +463,25 @@ export default function PublicProductionView({ token, fetchPlan = defaultFetchPl
                 </div>
               )}
 
+              {!editMode && (
+                <div style={{ display: 'flex', gap: 6, padding: '12px 16px 0' }}>
+                  {[{ id: 'grid', label: 'By Channel' }, { id: 'order', label: 'Priority Order' }].map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setViewMode(t.id)}
+                      style={{
+                        flex: 1, padding: '7px 0', borderRadius: 999, fontSize: 12, fontWeight: 700,
+                        cursor: 'pointer', border: viewMode === t.id ? 'none' : '1px solid #E2E8F0',
+                        background: viewMode === t.id ? '#1E293B' : 'white',
+                        color: viewMode === t.id ? 'white' : '#64748B',
+                      }}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {activeLock && (
                 <div style={{ padding: '10px 16px 0' }}>
                   <span style={{
@@ -443,6 +503,61 @@ export default function PublicProductionView({ token, fetchPlan = defaultFetchPl
               {channelsForSite.length === 0 ? (
                 <div style={{ padding: '32px 20px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
                   No channels set up for {activeSite?.name ?? 'this site'} yet.
+                </div>
+              ) : viewMode === 'order' ? (
+                <div style={{ borderTop: '1px solid #F1F5F9', padding: '14px 16px 18px' }}>
+                  <h3 style={{ fontSize: 10, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Make in this order</h3>
+                  {orderedRows.length === 0 ? (
+                    <p style={{ fontSize: 13, color: '#94A3B8', textAlign: 'center', padding: '16px 0' }}>No priority order set for today yet.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: unorderedRows.length > 0 ? 18 : 0 }}>
+                      {orderedRows.map((row, idx) => {
+                        const key = `${row.item.id}:${idx}`;
+                        const checked = !!checkedOff[key];
+                        return (
+                          <label
+                            key={key}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+                              borderRadius: 10, border: '1px solid #F1F5F9', background: checked ? '#F8FAFC' : 'white',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={e => setCheckedOff(prev => ({ ...prev, [key]: e.target.checked }))}
+                              style={{ width: 18, height: 18, flexShrink: 0, accentColor: GREEN }}
+                            />
+                            <span style={{ width: 16, textAlign: 'center', fontSize: 11, fontWeight: 800, color: '#CBD5E1', flexShrink: 0 }}>{idx + 1}</span>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: row.item.color, flexShrink: 0 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13.5, fontWeight: 600, color: checked ? '#94A3B8' : '#1E293B', textDecoration: checked ? 'line-through' : 'none' }}>
+                                {row.item.name}
+                              </div>
+                              {row.splitCount > 1 && <div style={{ fontSize: 10, color: '#94A3B8' }}>{row.sharePct}% batch</div>}
+                            </div>
+                            <span style={{ fontSize: 14, fontWeight: 800, color: GREEN, flexShrink: 0 }}>{row.qty}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {unorderedRows.length > 0 && (
+                    <>
+                      <h3 style={{ fontSize: 10, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Then, in any order</h3>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {unorderedRows.map(row => (
+                          <div key={row.item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px' }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: row.item.color, flexShrink: 0 }} />
+                            <span style={{ flex: 1, fontSize: 12.5, color: '#64748B' }}>{row.item.name}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: '#94A3B8' }}>{row.qty}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div style={{ borderTop: '1px solid #F1F5F9', overflowX: 'auto' }}>

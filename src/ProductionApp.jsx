@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, Trash2, Edit2, X, Settings, ChevronLeft, ChevronRight,
   ClipboardList, Loader2, ChevronUp, ChevronDown, ChefHat, CheckCircle, BarChart3, Wheat, Sparkles,
+  Scissors,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -619,6 +620,243 @@ function SettingsModal({ orgId, sites, channels, items, onClose, onRefresh }) {
   );
 }
 
+// ── Production Order (per site/date priority list) ───────────────────────────
+
+// Tap-to-edit percentage box for a split row -- same commit-on-blur idiom
+// as EditableCell/QtyInput, clamped to 1-100 rather than treated as a
+// free-form quantity.
+function ShareInput({ pct, onCommit, disabled }) {
+  const [draft, setDraft] = useState(String(pct));
+  useEffect(() => { setDraft(String(pct)); }, [pct]);
+
+  function commit() {
+    const n = parseInt(draft, 10);
+    const clamped = isNaN(n) ? pct : Math.min(100, Math.max(1, n));
+    setDraft(String(clamped));
+    if (clamped !== pct) onCommit(clamped);
+  }
+
+  return (
+    <input
+      type="number"
+      min="1"
+      max="100"
+      disabled={disabled}
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+      className="w-12 text-center text-xs font-bold border border-gray-200 rounded-md px-1 py-0.5 disabled:opacity-50 disabled:bg-gray-50"
+    />
+  );
+}
+
+// Opt-in priority order for one site/date: only items an admin has
+// actively ranked show up here, in the order staff should make them.
+// Everything else with a planned quantity today just hasn't been ranked
+// yet, and stays in "Not yet ordered" below (grouped by category, same as
+// the planner) rather than forcing the admin to rank the whole menu daily.
+//
+// A "50/50 split" is modelled as two rows for the same item, each with its
+// own position and share_pct -- the displayed quantity for each row is
+// computed against the item's live total for the day, so it stays correct
+// if the planned quantity changes later rather than going stale like a
+// fixed split amount would.
+function ProductionOrderPanel({ orgId, userId, siteId, date, items, totalsByItemForSite, locked }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    if (!orgId || !siteId) return;
+    setLoading(true);
+    try {
+      const data = await db.getProductionPriority(orgId, siteId, date);
+      setRows(data.map(r => ({ item_id: r.item_id, share_pct: r.share_pct })));
+    } catch (err) {
+      toast.error('Failed to load production order: ' + (err.message || 'unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  }, [orgId, siteId, date]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function persist(next) {
+    const prev = rows;
+    setRows(next);
+    try {
+      await db.saveProductionPriority(orgId, userId, siteId, date, next.map(r => ({ itemId: r.item_id, sharePct: r.share_pct })));
+    } catch (err) {
+      toast.error('Failed to save order: ' + (err.message || 'unknown error'));
+      setRows(prev);
+    }
+  }
+
+  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+
+  const eligible = useMemo(
+    () => items.filter(i => (totalsByItemForSite.get(i.id) || 0) > 0),
+    [items, totalsByItemForSite]
+  );
+
+  const rankedItemIds = useMemo(() => new Set(rows.map(r => r.item_id)), [rows]);
+
+  const unranked = useMemo(() => {
+    const groups = new Map();
+    eligible.filter(i => !rankedItemIds.has(i.id)).forEach(i => {
+      const cat = i.category || 'Other';
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat).push(i);
+    });
+    return [...groups.entries()];
+  }, [eligible, rankedItemIds]);
+
+  function addToOrder(itemId) {
+    persist([...rows, { item_id: itemId, share_pct: 100 }]);
+  }
+
+  function removeRow(idx) {
+    persist(rows.filter((_, i) => i !== idx));
+  }
+
+  function move(idx, dir) {
+    const other = idx + dir;
+    if (other < 0 || other >= rows.length) return;
+    const next = [...rows];
+    [next[idx], next[other]] = [next[other], next[idx]];
+    persist(next);
+  }
+
+  // Splits one row into two: the first half keeps its current spot, the
+  // second is appended near the end of the order -- so the second batch
+  // gets made later in the run, not right after the first.
+  function splitRow(idx) {
+    const row = rows[idx];
+    const firstShare = Math.ceil(row.share_pct / 2);
+    const secondShare = row.share_pct - firstShare;
+    const next = [...rows];
+    next[idx] = { ...row, share_pct: firstShare };
+    next.push({ item_id: row.item_id, share_pct: secondShare });
+    persist(next);
+  }
+
+  // Collapses every row for this item back into a single 100%-share row,
+  // at the position of its first occurrence.
+  function mergeItem(itemId) {
+    const firstIdx = rows.findIndex(r => r.item_id === itemId);
+    const withoutItem = rows.filter(r => r.item_id !== itemId);
+    const insertAt = Math.min(firstIdx, withoutItem.length);
+    withoutItem.splice(insertAt, 0, { item_id: itemId, share_pct: 100 });
+    persist(withoutItem);
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 size={18} className="animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-auto px-3 sm:px-4 py-3">
+      <div className="max-w-xl mx-auto space-y-5">
+        {locked && (
+          <div className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg" style={{ background: '#DCFCE7', color: 'var(--primary)' }}>
+            <CheckCircle size={13} /> Day finalized — order is locked too. Unlock on the Planner tab to make changes.
+          </div>
+        )}
+
+        <div>
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Make in this order</h3>
+          {rows.length === 0 ? (
+            <p className="text-sm text-gray-400 italic py-4 text-center">Nothing ordered yet — add items below to set a priority.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {rows.map((row, idx) => {
+                const item = itemById.get(row.item_id);
+                if (!item) return null;
+                const total = totalsByItemForSite.get(row.item_id) || 0;
+                const qty = Math.round((row.share_pct / 100) * total);
+                const splitCount = rows.filter(r => r.item_id === row.item_id).length;
+                return (
+                  <div key={idx} className="flex items-center gap-2 bg-white border border-gray-100 rounded-xl px-3 py-2 shadow-sm">
+                    <span className="w-5 text-center text-xs font-extrabold text-gray-300">{idx + 1}</span>
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: item.color }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-gray-800 truncate">{item.name}</div>
+                      {splitCount > 1 && <div className="text-[10px] text-gray-400">{row.share_pct}% of {total}</div>}
+                    </div>
+                    <span className="text-sm font-extrabold tabular-nums" style={{ color: 'var(--primary)' }}>{qty}</span>
+                    {splitCount > 1 && !locked && (
+                      <ShareInput pct={row.share_pct} disabled={locked} onCommit={pct => {
+                        const next = [...rows];
+                        next[idx] = { ...row, share_pct: pct };
+                        persist(next);
+                      }} />
+                    )}
+                    {!locked && (
+                      <div className="flex items-center gap-0.5 flex-shrink-0">
+                        <button onClick={() => move(idx, -1)} disabled={idx === 0} className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-20 transition-colors">
+                          <ChevronUp size={14} />
+                        </button>
+                        <button onClick={() => move(idx, 1)} disabled={idx === rows.length - 1} className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-20 transition-colors">
+                          <ChevronDown size={14} />
+                        </button>
+                        {splitCount > 1 ? (
+                          <button onClick={() => mergeItem(row.item_id)} className="text-[10px] font-semibold text-gray-400 hover:text-amber-600 px-1 transition-colors">
+                            Merge
+                          </button>
+                        ) : (
+                          <button onClick={() => splitRow(idx)} title="Split into two batches" className="p-1 text-gray-400 hover:text-amber-600 transition-colors">
+                            <Scissors size={14} />
+                          </button>
+                        )}
+                        <button onClick={() => removeRow(idx)} title="Remove from order" className="p-1 text-gray-400 hover:text-red-500 transition-colors">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Not yet ordered</h3>
+          {unranked.length === 0 ? (
+            <p className="text-sm text-gray-400 italic py-2">Every item with a planned quantity today is in the order.</p>
+          ) : (
+            <div className="space-y-3">
+              {unranked.map(([cat, its]) => (
+                <div key={cat}>
+                  <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{cat}</div>
+                  <div className="space-y-1">
+                    {its.map(item => (
+                      <div key={item.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors">
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: item.color }} />
+                        <span className="flex-1 text-sm text-gray-600 truncate">{item.name}</span>
+                        <span className="text-xs text-gray-400 tabular-nums">{totalsByItemForSite.get(item.id) || 0}</span>
+                        {!locked && (
+                          <button onClick={() => addToOrder(item.id)} title="Add to order" className="p-1 rounded-md text-white transition-transform hover:scale-105 active:scale-95" style={{ background: 'var(--primary)' }}>
+                            <Plus size={12} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main ProductionApp ───────────────────────────────────────────────────────
 
 export default function ProductionApp({ org, user }) {
@@ -632,7 +870,7 @@ export default function ProductionApp({ org, user }) {
   const [date, setDate] = useState(todayStr());
   const [activeSiteId, setActiveSiteId] = useState(null);
   const [hideZero, setHideZero] = useState(false);
-  const [viewMode, setViewMode] = useState('planner'); // 'planner' | 'insights'
+  const [viewMode, setViewMode] = useState('planner'); // 'planner' | 'order' | 'insights'
   const [showSettings, setShowSettings] = useState(false);
   const [dayLock, setDayLock] = useState(null);
   const [finalizing, setFinalizing] = useState(false);
@@ -837,7 +1075,12 @@ export default function ProductionApp({ org, user }) {
     <div className="h-full flex flex-col" style={{ background: 'var(--app-bg)' }}>
       {/* Date bar */}
       <div className="shrink-0 border-b px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2 bg-white flex-wrap" style={{ borderColor: 'var(--top-border)' }}>
-        {viewMode === 'planner' ? (
+        {viewMode === 'insights' ? (
+          <div className="flex items-center gap-1.5">
+            <BarChart3 size={16} className="text-gray-400" />
+            <span className="text-sm font-bold text-gray-900">Insights</span>
+          </div>
+        ) : (
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => setDate(d => addDays(d, -1))}
@@ -858,15 +1101,10 @@ export default function ProductionApp({ org, user }) {
               <ChevronRight size={20} strokeWidth={2.5} />
             </button>
           </div>
-        ) : (
-          <div className="flex items-center gap-1.5">
-            <BarChart3 size={16} className="text-gray-400" />
-            <span className="text-sm font-bold text-gray-900">Insights</span>
-          </div>
         )}
         <div className="flex items-center gap-2">
           <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
-            {[{ id: 'planner', label: 'Planner' }, { id: 'insights', label: 'Insights' }].map(t => (
+            {[{ id: 'planner', label: 'Planner' }, { id: 'order', label: 'Order' }, { id: 'insights', label: 'Insights' }].map(t => (
               <button
                 key={t.id}
                 onClick={() => setViewMode(t.id)}
@@ -877,7 +1115,7 @@ export default function ProductionApp({ org, user }) {
               </button>
             ))}
           </div>
-          {viewMode === 'planner' && (
+          {viewMode !== 'insights' && (
             <div className="flex items-center gap-1.5">
               {date !== todayStr() && (
                 <button onClick={() => setDate(todayStr())} className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors">
@@ -922,6 +1160,16 @@ export default function ProductionApp({ org, user }) {
 
           {channelsForSite.length === 0 ? (
             <NoChannelsForSite siteName={activeSite?.name ?? 'this site'} onOpenSettings={() => setShowSettings(true)} />
+          ) : viewMode === 'order' ? (
+            <ProductionOrderPanel
+              orgId={orgId}
+              userId={user.id}
+              siteId={activeSiteId}
+              date={date}
+              items={planningItems}
+              totalsByItemForSite={totalsByItemForSite}
+              locked={!!dayLock}
+            />
           ) : (
             <>
               {/* Toolbar */}

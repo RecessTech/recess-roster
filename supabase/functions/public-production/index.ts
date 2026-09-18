@@ -123,13 +123,14 @@ serve(async (req) => {
       .eq('org_id', org.id)
       .single();
 
-    const [{ data: sites }, { data: channels }, { data: items }, { data: entries }, { data: locks }, { data: editLog }] = await Promise.all([
+    const [{ data: sites }, { data: channels }, { data: items }, { data: entries }, { data: locks }, { data: editLog }, { data: priority }] = await Promise.all([
       supabase.from('production_sites').select('id, name, sort_order').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
       supabase.from('production_channels').select('id, name, site_id, sort_order').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
       supabase.from('production_items').select('id, name, category, color, sort_order, needs_prod_planning, is_special').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
       supabase.from('production_plan_entries').select('item_id, channel_id, qty').eq('org_id', org.id).eq('plan_date', planDate),
       supabase.from('production_day_locks').select('site_id, locked_at').eq('org_id', org.id).eq('plan_date', planDate),
       supabase.from('production_plan_edit_log').select('site_id, edited_by_name, edited_at').eq('org_id', org.id).eq('plan_date', planDate).order('edited_at', { ascending: false }).limit(5),
+      supabase.from('production_priority').select('site_id, item_id, share_pct, sort_order').eq('org_id', org.id).eq('plan_date', planDate).order('sort_order'),
     ]);
 
     // Same rule as the desktop planner: an item opted out of production
@@ -148,6 +149,7 @@ serve(async (req) => {
       entries: entries || [],
       locks: locks || [],
       editLog: editLog || [],
+      priority: priority || [],
     });
 
   } catch (err) {
