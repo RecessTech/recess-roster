@@ -1458,6 +1458,49 @@ export const db = {
     if (error) throw error;
   },
 
+  // Production Order (per site/date, opt-in ranking) -- items not in this
+  // list simply fall in after, in normal category order. A "50/50 split"
+  // is just two rows for the same item_id, each with its own sort_order
+  // and share_pct. The whole list is replaced on every save (delete then
+  // re-insert in order) rather than diffed, since edits here are
+  // low-frequency admin actions, not per-keystroke.
+  async getProductionPriority(orgId, siteId, date) {
+    const { data, error } = await supabase
+      .from('production_priority')
+      .select('*')
+      .eq('org_id', orgId)
+      .eq('site_id', siteId)
+      .eq('plan_date', date)
+      .order('sort_order', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async saveProductionPriority(orgId, userId, siteId, date, rows) {
+    const { error: delError } = await supabase
+      .from('production_priority')
+      .delete()
+      .eq('site_id', siteId)
+      .eq('plan_date', date);
+    if (delError) throw delError;
+    if (rows.length === 0) return [];
+    const { data, error } = await supabase
+      .from('production_priority')
+      .insert(rows.map((r, idx) => ({
+        org_id: orgId,
+        site_id: siteId,
+        plan_date: date,
+        item_id: r.itemId,
+        share_pct: r.sharePct ?? 100,
+        sort_order: idx,
+        updated_by: userId,
+        updated_at: new Date().toISOString(),
+      })))
+      .select();
+    if (error) throw error;
+    return data;
+  },
+
   // ── Recipes & COGS (R-Recipe) ───────────────────────────────────────────────
 
   async getRecipeComponents(orgId) {
