@@ -919,14 +919,12 @@ function RevenueTab({ topline, period, itemMovers, itemMoversLoading, subcatInsi
         <StatTile label="3rd Party Apps" value={thirdPartyM ? formatMetricValue(valueAt(thirdPartyM.series, asOfDate), 'money') : '—'} delta={thirdPartyM && wowDeltaAt(thirdPartyM.series, asOfDate)} />
         <StatTile label="Catering / B2B" value={b2bM ? formatMetricValue(valueAt(b2bM.series, asOfDate), 'money') : '—'} delta={b2bM && wowDeltaAt(b2bM.series, asOfDate)} />
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="Revenue by Channel" subtitle={`Weekly, last ${period} weeks`}>
-          <StackedBarChart rows={channelRows} dataKeys={REVENUE_CHANNELS.map(c => c.label)} colors={CATEGORICAL} money />
-        </ChartCard>
-        <ChartCard title="Revenue by Category" subtitle={`Food / Drinks / Snacks / Merch, last ${period} weeks`}>
-          <StackedBarChart rows={categoryRows} dataKeys={REVENUE_CATEGORIES} colors={CATEGORICAL} money />
-        </ChartCard>
-      </div>
+      <ChartCard title="Revenue by Channel" subtitle={`Weekly, last ${period} weeks`}>
+        <StackedBarChart rows={channelRows} dataKeys={REVENUE_CHANNELS.map(c => c.label)} colors={CATEGORICAL} money />
+      </ChartCard>
+      <ChartCard title="Revenue by Category" subtitle={`Food / Drinks / Snacks / Merch, last ${period} weeks`}>
+        <StackedBarChart rows={categoryRows} dataKeys={REVENUE_CATEGORIES} colors={CATEGORICAL} money />
+      </ChartCard>
 
       <div>
         <h3 className="text-sm font-bold text-gray-900 mb-2">Channel Mix</h3>
@@ -1009,14 +1007,12 @@ function RevenueTab({ topline, period, itemMovers, itemMoversLoading, subcatInsi
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <ChartCard title="Channel Mix by Subcategory" subtitle={`Share of each subcategory's own revenue, last ${period} weeks`}>
-            <CategoryBarChart rows={subcatChannelPctRows} dataKeys={SUBCAT_CHANNEL_LABELS} colors={CATEGORICAL} percent loading={subcatLoading} />
-          </ChartCard>
-          <ChartCard title="Weekday Mix by Subcategory" subtitle={`Share of each subcategory's own revenue, last ${period} weeks`}>
-            <CategoryBarChart rows={subcatDayPctRows} dataKeys={WEEKDAY_MIX_GROUPS} colors={CATEGORICAL} percent loading={subcatLoading} />
-          </ChartCard>
-        </div>
+        <ChartCard title="Channel Mix by Subcategory" subtitle={`Share of each subcategory's own revenue, last ${period} weeks`}>
+          <CategoryBarChart rows={subcatChannelPctRows} dataKeys={SUBCAT_CHANNEL_LABELS} colors={CATEGORICAL} percent loading={subcatLoading} />
+        </ChartCard>
+        <ChartCard title="Weekday Mix by Subcategory" subtitle={`Share of each subcategory's own revenue, last ${period} weeks`}>
+          <CategoryBarChart rows={subcatDayPctRows} dataKeys={WEEKDAY_MIX_GROUPS} colors={CATEGORICAL} percent loading={subcatLoading} />
+        </ChartCard>
 
         <ParetoTable rows={subcatInsights?.pareto} loading={subcatLoading} />
       </div>
