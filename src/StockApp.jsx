@@ -23,7 +23,6 @@ const STATUS_CONFIG = {
   low_stock: { label: 'Low Stock',              bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-400' },
   order_moq: { label: 'Order if MOQ Required',  bg: 'bg-purple-100',text: 'text-purple-700',border: 'border-purple-200',dot: 'bg-purple-500'},
   in_stock:  { label: 'In Stock',               bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200', dot: 'bg-green-500' },
-  request_transfer: { label: 'Request Transfer', bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500' },
 };
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -987,114 +986,6 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
                         </td>
                       </tr>
                     </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))
-      )}
-    </div>
-  );
-}
-
-// ── Transfers Tab ─────────────────────────────────────────────────────────────
-// Cross-site worklist for items flagged "Request Transfer" in Stocktake —
-// unlike Ordering (scoped to one site's supplier orders), this pools every
-// site's requests so whichever site is fulfilling them can see the lot.
-// "Transferred" reuses the same ordered/ordered_at fields as Ordering's
-// "Ordered" checkbox, so the nightly archive job picks these up for free.
-
-function TransfersTab({ items, sites, locations, onUpdateOrderQty, onUpdateOrdered }) {
-  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
-  const locationById = useMemo(() => new Map(locations.map(l => [l.id, l])), [locations]);
-
-  const transferRows = useMemo(() => {
-    return sites
-      .filter(s => s.current_status === 'request_transfer')
-      .map(s => ({ ...s, item: itemById.get(s.item_id), location: locationById.get(s.location_id) }))
-      .filter(r => r.item && r.location);
-  }, [sites, itemById, locationById]);
-
-  const grouped = useMemo(() => {
-    const groups = {};
-    for (const row of transferRows) {
-      (groups[row.location.name] = groups[row.location.name] || []).push(row);
-    }
-    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
-  }, [transferRows]);
-
-  const transferredCount = transferRows.filter(r => r.ordered).length;
-
-  if (locations.length === 0) {
-    return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
-  }
-
-  return (
-    <div className="space-y-4 animate-fade-in">
-      {transferRows.length > 0 && (
-        <div className="flex items-center gap-2.5 rounded-xl px-4 py-3 border" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 8%, white)', borderColor: 'color-mix(in srgb, var(--primary) 20%, white)' }}>
-          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 18%, white)' }}>
-            <ArrowLeftRight size={14} style={{ color: 'var(--primary)' }} />
-          </div>
-          <span className="text-sm font-medium" style={{ color: 'var(--primary-dk)' }}>
-            {transferRows.length} item{transferRows.length !== 1 ? 's' : ''} requested for transfer
-            {transferredCount > 0 && ` · ${transferredCount} already marked as transferred`}
-          </span>
-        </div>
-      )}
-
-      {transferRows.length === 0 ? (
-        <EmptyState
-          Icon={ArrowLeftRight}
-          title="No transfer requests right now"
-          hint="Flag an item as &ldquo;Request Transfer&rdquo; in Stocktake and it'll show up here for whichever site fulfils it."
-        />
-      ) : (
-        grouped.map(([locationName, rows]) => (
-          <div key={locationName}>
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-              <MapPin size={12} className="text-gray-400" />
-              {locationName} needs
-            </h3>
-            <div className="card overflow-hidden">
-              <table className="w-full text-sm table-fixed">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50/80">
-                    <th className="w-1/2 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
-                    <th className="w-1/4 px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Qty</th>
-                    <th className="w-1/4 px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Transferred</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map(row => {
-                    const qty = row.order_qty ?? row.reference_order_qty ?? 0;
-                    return (
-                      <tr key={row.id} className={`border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors ${row.ordered ? 'opacity-50' : ''}`}>
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-gray-900">{row.item.name}</div>
-                          <div className="text-xs text-gray-400">{row.item.sku} · {row.item.uom}</div>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <EditableQty
-                            value={qty}
-                            isSet={row.order_qty !== null && row.order_qty !== undefined}
-                            item={row.item}
-                            onCommit={val => onUpdateOrderQty(row.id, val)}
-                          />
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <input
-                            type="checkbox"
-                            checked={!!row.ordered}
-                            onChange={e => onUpdateOrdered(row.id, e.target.checked)}
-                            className="w-4 h-4 rounded border-gray-300 cursor-pointer accent-current"
-                            style={{ color: 'var(--primary)' }}
-                            title={row.ordered_at ? `Transferred ${new Date(row.ordered_at).toLocaleDateString('en-AU')}` : 'Confirm transferred'}
-                          />
-                        </td>
-                      </tr>
                     );
                   })}
                 </tbody>
@@ -2433,7 +2324,6 @@ export default function StockApp({ user, org }) {
     { id: 'stocktake', label: 'Stocktake', Icon: ClipboardList },
     { id: 'packaging', label: 'Packaging', Icon: Box },
     { id: 'ordering',  label: 'Ordering',  Icon: ShoppingCart },
-    { id: 'transfers', label: 'Transfers', Icon: ArrowLeftRight },
     { id: 'history',   label: 'History',   Icon: History },
     { id: 'insights',  label: 'Insights',  Icon: TrendingUp },
     { id: 'locations', label: 'Locations', Icon: MapPin },
@@ -2539,15 +2429,6 @@ export default function StockApp({ user, org }) {
           onUpdateOrdered={handleOrderedUpdate}
           mySuppliers={mySuppliers}
           onManageSuppliers={() => setShowAssignmentsModal(true)}
-        />
-      )}
-      {activeTab === 'transfers' && (
-        <TransfersTab
-          items={items}
-          sites={sites}
-          locations={activeLocations}
-          onUpdateOrderQty={handleOrderQtyUpdate}
-          onUpdateOrdered={handleOrderedUpdate}
         />
       )}
       {activeTab === 'history' && (
