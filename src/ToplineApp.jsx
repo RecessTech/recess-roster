@@ -9,26 +9,26 @@ import {
   fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts,
 } from './toplineData';
 
-// Validated categorical palette, all 6 slots muted rather than at full UI-
-// chrome or reference saturation -- a saturated hue works fine on a small
-// button but reads as neon once it fills bars/lines across a whole chart.
-// Orange leans toward R-Shift's own brand hue but at a calmer step
-// (#eb6834 vs the brand's #E85018); violet and green are softened the
-// same way (#7d6bc4 / #4c9a4f vs the deep-saturated #4a3aa7 / neon-pure
-// #008300). Aqua/magenta were already the calm dataviz-reference steps.
-// Blue leads (rather than orange) and orange is pushed to the *last*
-// slot: this org's UI chrome (sidebar, buttons, active tab) is already
-// orange everywhere via var(--primary), so a chart that also opens on
-// orange doubles up and reads hottest of all; leading with the cooler,
-// more neutral blue instead gives the eye relief from the rest of the
-// page. Re-validated as its own theme in this order: worst adjacent CVD
-// Delta E 9.2 (was a 6-8 floor-band WARN under the old orange-first
-// order), worst adjacent normal-vision Delta E 25.8 -- every light-mode
-// gate now clears clean, not just floor-legal. Used for anything with
-// 2+ series. Single-series charts use the module's own accent
-// (var(--primary), this org's brand orange) instead, so a lone trend
-// line still reads as "this module's colour", not just "series 1".
-const CATEGORICAL = ['#2a78d6', '#e87ba4', '#4c9a4f', '#7d6bc4', '#1baf7a', '#eb6834'];
+// Validated categorical palette, engineered for actual colorimetric balance
+// rather than six hues picked one at a time. Earlier passes swapped
+// individual hexes for calmer steps but never fixed the underlying issue:
+// the six lived at wildly different OKLCH lightness (0.43-0.72) and chroma
+// (0.14-0.18), so some slots read heavy/saturated and others pale/washed
+// out no matter which hue led. This set holds L and C IDENTICAL across all
+// six (L 0.60, C 0.102) and varies only hue -- so no series is visually
+// "louder" than another; the eye reads six equally-weighted, dusty, muted
+// tones (a blue, a dusty rose, a deep teal, a warm ochre, a muted mauve, a
+// sage green) rather than a rainbow of mismatched intensities. Also drops
+// the reference palette's built-in accent-orange bias entirely, so nothing
+// in the chart set doubles up with this org's brand orange in the
+// surrounding UI chrome (var(--primary)). Re-validated as its own theme:
+// worst adjacent CVD Delta E 10.0, worst adjacent normal-vision Delta E
+// 16.7, all 6 clear 3:1 contrast outright -- no WARN/relief band anywhere,
+// unlike every prior version of this palette. Used for anything with 2+
+// series. Single-series charts use the module's own accent (var(--primary),
+// this org's brand orange) instead, so a lone trend line still reads as
+// "this module's colour", not just "series 1".
+const CATEGORICAL = ['#5882bd', '#b56669', '#1190a4', '#ab723a', '#956eac', '#54915c'];
 const AXIS_COLOR = '#8a8578';
 const GRID_COLOR = '#e8e4d8';
 const CHART_HEIGHT = 320;
@@ -933,9 +933,9 @@ const PNL_TREND_LINES = [
   { section: 'PC1', metric: 'COGS', label: 'COGS' },
   { section: 'Labour', metric: 'Labour Costs (Wages)', label: 'Labour' },
 ];
-// Picked away from the teal/green in CATEGORICAL so a cost line never reads
-// like the profit bar's own green.
-const PNL_TREND_LINE_COLORS = [CATEGORICAL[0], CATEGORICAL[5], CATEGORICAL[1], CATEGORICAL[3]];
+// Picked away from CATEGORICAL's teal (index 2) and green (index 5) so a
+// cost line never reads like the profit bar's own green.
+const PNL_TREND_LINE_COLORS = [CATEGORICAL[0], CATEGORICAL[1], CATEGORICAL[3], CATEGORICAL[4]];
 const PNL_TREND_PROFIT_METRIC = 'Operating Profit $';
 
 function PnlTab({ topline, period }) {
