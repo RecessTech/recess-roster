@@ -9,24 +9,22 @@ import {
   fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts,
 } from './toplineData';
 
-// User-supplied palette: Blue Bell, Lobster Pink, Saffron, Jungle Green,
-// Deep Lilac -- kept in that exact order and otherwise untouched. Only
-// Saffron needed a nudge: #e1bc29 as given sits at OKLCH L 0.805, above
-// the 0.77 band ceiling (reads washed-out on a white chart surface), so
-// it's stepped down to #cca917 at the same hue -- same fix as the last two
-// "too pale" yellows this palette hit. Re-validated as given: adjacent
-// Saffron/Jungle Green sits in the CVD 6-8 floor band (Delta E 7.8, not
-// the 8+ target) rather than failing outright; legal per the dataviz skill
-// because every chart already ships a legend and hover tooltip as the
-// required secondary encoding. (Reordering to keep them apart clears it
-// outright -- worst adjacent Delta E 19.6 -- but that changes which color
-// leads, so left as given rather than substituted unasked.) Used for
-// anything with 2+ series; only 5 slots needed since no chart on this page
-// carries more than 5 series (REVENUE_CHANNELS, the widest, has exactly
-// 5). Single-series charts use the module's own accent (var(--primary),
-// this org's brand orange) instead, so a lone trend line still reads as
-// "this module's colour", not just "series 1".
-const CATEGORICAL = ['#4d9de0', '#e15554', '#cca917', '#3bb273', '#7768ae'];
+// User-supplied palette: Blue Bell, Lobster Pink, Jungle Green, Saffron,
+// Deep Lilac -- green moved ahead of yellow on request, otherwise the
+// exact order given. Only Saffron needed a nudge: #e1bc29 as given sits at
+// OKLCH L 0.805, above the 0.77 band ceiling (reads washed-out on a white
+// chart surface), so it's stepped down to #cca917 at the same hue -- same
+// fix as the last two "too pale" yellows this palette hit. Re-validated as
+// given: adjacent Jungle Green/Saffron sits in the CVD 6-8 floor band
+// (Delta E 7.8, not the 8+ target) rather than failing outright; legal per
+// the dataviz skill because every chart already ships a legend and hover
+// tooltip as the required secondary encoding. Used for anything with 2+
+// series; only 5 slots needed since no chart on this page carries more
+// than 5 series (REVENUE_CHANNELS, the widest, has exactly 5).
+// Single-series charts use the module's own accent (var(--primary), this
+// org's brand orange) instead, so a lone trend line still reads as "this
+// module's colour", not just "series 1".
+const CATEGORICAL = ['#4d9de0', '#e15554', '#3bb273', '#cca917', '#7768ae'];
 const AXIS_COLOR = '#8a8578';
 const GRID_COLOR = '#e8e4d8';
 const CHART_HEIGHT = 320;
@@ -931,9 +929,9 @@ const PNL_TREND_LINES = [
   { section: 'PC1', metric: 'COGS', label: 'COGS' },
   { section: 'Labour', metric: 'Labour Costs (Wages)', label: 'Labour' },
 ];
-// Picked away from CATEGORICAL's Jungle Green (index 3) so a cost line
+// Picked away from CATEGORICAL's Jungle Green (index 2) so a cost line
 // never reads like the profit bar's own green.
-const PNL_TREND_LINE_COLORS = [CATEGORICAL[0], CATEGORICAL[1], CATEGORICAL[2], CATEGORICAL[4]];
+const PNL_TREND_LINE_COLORS = [CATEGORICAL[0], CATEGORICAL[1], CATEGORICAL[3], CATEGORICAL[4]];
 const PNL_TREND_PROFIT_METRIC = 'Operating Profit $';
 
 function PnlTab({ topline, period }) {
