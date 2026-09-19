@@ -117,7 +117,8 @@ export const db = {
         hourlyRate: staff.hourly_rate,
         weekendRate: staff.weekend_rate,
         employmentType,
-        active: staff.active !== false
+        active: staff.active !== false,
+        locationId: staff.location_id || null
       };
     });
   },
