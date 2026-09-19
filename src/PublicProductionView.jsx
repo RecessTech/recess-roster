@@ -464,21 +464,24 @@ export default function PublicProductionView({ token, fetchPlan = defaultFetchPl
               )}
 
               {!editMode && (
-                <div style={{ display: 'flex', gap: 6, padding: '12px 16px 0' }}>
-                  {[{ id: 'grid', label: 'By Channel' }, { id: 'order', label: 'Priority Order' }].map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => setViewMode(t.id)}
-                      style={{
-                        flex: 1, padding: '7px 0', borderRadius: 999, fontSize: 12, fontWeight: 700,
-                        cursor: 'pointer', border: viewMode === t.id ? 'none' : '1px solid #E2E8F0',
-                        background: viewMode === t.id ? '#1E293B' : 'white',
-                        color: viewMode === t.id ? 'white' : '#64748B',
-                      }}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
+                <div style={{ padding: '12px 16px 0' }}>
+                  <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: 10, padding: 3, gap: 2 }}>
+                    {[{ id: 'grid', label: 'By Channel' }, { id: 'order', label: 'Priority Order' }].map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => setViewMode(t.id)}
+                        style={{
+                          flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 12.5, fontWeight: 700,
+                          border: 'none', cursor: 'pointer', transition: 'background 0.15s ease, color 0.15s ease',
+                          background: viewMode === t.id ? 'white' : 'transparent',
+                          color: viewMode === t.id ? GREEN : '#94A3B8',
+                          boxShadow: viewMode === t.id ? '0 1px 2px rgba(15,23,42,0.08)' : 'none',
+                        }}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
