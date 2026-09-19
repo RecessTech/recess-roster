@@ -197,9 +197,14 @@ export async function fetchItemMovers(orgId, asOfDate) {
     // excluded from gainers/decliners rather than shown as an infinite gain.
     .filter(r => r.pct != null && Math.max(r.current, r.prior) >= MIN_ITEM_MOVER_VOLUME);
 
+  // Full sorted lists (every actual gainer / actual decliner, not just a
+  // top-N slice) -- the UI shows the first 10 and lets the rest scroll open
+  // on demand. Split by sign first: without it, "decliners" was the same
+  // full pool as "gainers" just sorted the other way, so expanding either
+  // list eventually surfaced items moving the wrong direction.
   return {
-    gainers: [...moves].sort((a, b) => b.pct - a.pct).slice(0, 8),
-    decliners: [...moves].sort((a, b) => a.pct - b.pct).slice(0, 8),
+    gainers: moves.filter(r => r.pct > 0).sort((a, b) => b.pct - a.pct),
+    decliners: moves.filter(r => r.pct < 0).sort((a, b) => a.pct - b.pct),
     currentLabel: `${fmt(curStart)} – ${fmt(curEnd)}`,
     priorLabel: `${fmt(priorStart)} – ${fmt(priorEnd)}`,
   };
