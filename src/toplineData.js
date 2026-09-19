@@ -210,6 +210,190 @@ export async function fetchItemMovers(orgId, asOfDate) {
   };
 }
 
+// Raw sales_history.channel values -> the same channel labels the rest of
+// the Revenue tab uses. Only 3 show up in the line-item data (Catering/B2B
+// and Vending are tracked in aggregate only, never per-item), which is
+// exactly what the subcategory channel-mix chart below is honest about --
+// it shows the mix of what's actually itemized, not the full channel list.
+const CHANNEL_LABELS = { pos: 'In-Store', ubereats: '3rd Party Apps', doordash: '3rd Party Apps', classpass: 'Classpass / TGTG' };
+
+function weekdayGroupOf(dateStr) {
+  const day = new Date(dateStr + 'T12:00:00Z').getUTCDay(); // 0=Sun..6=Sat
+  if (day === 0) return 'Sunday';
+  if (day === 6) return 'Saturday';
+  return 'Weekdays (Mon-Fri)';
+}
+
+const SUBCAT_MOVER_WEEKS = 4; // mirrors ITEM_MOVER_WEEKS -- same comparison window, one level up
+const MIN_SUBCAT_MOVER_VOLUME = 50;
+const PARETO_TOP_N = 3;
+
+// Six subcategory-level views, all derived from the same single pass over
+// raw sales_history + production_items -- there's no pre-aggregated
+// "subcategory x channel" or "subcategory x weekday" series anywhere in
+// analytics_metrics, so this reads line items directly the same way
+// fetchItemMovers does, then rolls them up by category instead of by item.
+export async function fetchSubcategoryInsights(orgId, asOfDate, period) {
+  if (!orgId || !asOfDate) return null;
+  const fmt = d => d.toISOString().slice(0, 10);
+
+  const dates = weekAxis(asOfDate, period);
+  const periodStart = dates[0];
+  const endDate = new Date(asOfDate + 'T12:00:00Z');
+  endDate.setUTCDate(endDate.getUTCDate() + 6); // Sunday of the as-of week
+  const periodEnd = fmt(endDate);
+
+  // Fixed 4-vs-4-week window for movers and the price/volume split -- same
+  // reasoning as fetchItemMovers: a stable "what's trending right now"
+  // comparison shouldn't stretch or shrink with the page's period selector.
+  const spanDays = SUBCAT_MOVER_WEEKS * 7;
+  const curStart = new Date(endDate);
+  curStart.setUTCDate(curStart.getUTCDate() - spanDays + 1);
+  const priorEnd = new Date(curStart);
+  priorEnd.setUTCDate(priorEnd.getUTCDate() - 1);
+  const priorStart = new Date(priorEnd);
+  priorStart.setUTCDate(priorStart.getUTCDate() - spanDays + 1);
+  const curStartKey = fmt(curStart);
+  const priorStartKey = fmt(priorStart);
+
+  // One fetch wide enough to cover both windows -- the period window (which
+  // follows the page's 4/8/12/26/52-week selector) and the fixed 4-vs-4
+  // mover window, whichever starts earlier.
+  const fetchStart = periodStart < priorStartKey ? periodStart : priorStartKey;
+
+  const [rows, items] = await Promise.all([
+    db.getItemSalesByRange(orgId, fetchStart, periodEnd),
+    db.getProductionItems(orgId),
+  ]);
+  const itemById = new Map(items.map(i => [i.id, i]));
+  const activeCountByCategory = new Map();
+  items.forEach(i => {
+    if (!i.active || !i.category) return;
+    activeCountByCategory.set(i.category, (activeCountByCategory.get(i.category) || 0) + 1);
+  });
+
+  const periodTotals = new Map();  // category -> { revenue, qty }
+  const moverTotals = new Map();   // category -> { current, prior, curQty, priorQty }
+  const channelTotals = new Map(); // category -> { [channelLabel]: revenue }
+  const dayTotals = new Map();     // category -> { [dayGroup]: revenue }
+  const itemTotals = new Map();    // category -> Map(itemId -> revenue), period window only
+
+  rows.forEach(r => {
+    const category = itemById.get(r.item_id)?.category;
+    if (!category) return; // unclassified line items carry no subcategory story to tell
+    const revenue = Number(r.revenue) || 0;
+    const qty = Number(r.qty) || 0;
+
+    if (r.sale_date >= periodStart && r.sale_date <= periodEnd) {
+      const pt = periodTotals.get(category) || { revenue: 0, qty: 0 };
+      pt.revenue += revenue; pt.qty += qty;
+      periodTotals.set(category, pt);
+
+      const channelLabel = CHANNEL_LABELS[r.channel] || 'Other';
+      const ct = channelTotals.get(category) || {};
+      ct[channelLabel] = (ct[channelLabel] || 0) + revenue;
+      channelTotals.set(category, ct);
+
+      const dayGroup = weekdayGroupOf(r.sale_date);
+      const dt = dayTotals.get(category) || {};
+      dt[dayGroup] = (dt[dayGroup] || 0) + revenue;
+      dayTotals.set(category, dt);
+
+      const it = itemTotals.get(category) || new Map();
+      it.set(r.item_id, (it.get(r.item_id) || 0) + revenue);
+      itemTotals.set(category, it);
+    }
+
+    if (r.sale_date >= priorStartKey && r.sale_date <= periodEnd) {
+      const bucket = r.sale_date >= curStartKey ? 'current' : 'prior';
+      const mt = moverTotals.get(category) || { current: 0, prior: 0, curQty: 0, priorQty: 0 };
+      mt[bucket] += revenue;
+      mt[bucket === 'current' ? 'curQty' : 'priorQty'] += qty;
+      moverTotals.set(category, mt);
+    }
+  });
+
+  // #1 Menu efficiency: revenue per active menu item, this period. A
+  // subcategory earning less than another while spread across far more
+  // active SKUs is a menu-rationalization candidate.
+  const efficiency = [...periodTotals.entries()]
+    .map(([category, t]) => {
+      const activeItems = activeCountByCategory.get(category) || 0;
+      return { category, revenue: t.revenue, activeItems, revenuePerItem: activeItems ? t.revenue / activeItems : null };
+    })
+    .filter(r => r.revenuePerItem != null)
+    .sort((a, b) => b.revenuePerItem - a.revenuePerItem);
+
+  // #2 / #3 Price-mix vs volume decomposition, and subcategory movers --
+  // both fall out of the same current-vs-prior split. Revenue growth from
+  // more units sold (qtyPct) reads very differently to a category than
+  // growth from a higher average selling price (aspPct); moversPct is the
+  // same current-vs-prior split rolled up to gainers/decliners lists in
+  // the same shape fetchItemMovers already uses.
+  const decomposed = [...moverTotals.entries()]
+    .map(([category, t]) => {
+      const aspCurrent = t.curQty ? t.current / t.curQty : null;
+      const aspPrior = t.priorQty ? t.prior / t.priorQty : null;
+      return {
+        category,
+        revenueCurrent: t.current,
+        revenuePrior: t.prior,
+        revenuePct: t.prior > 0 ? (t.current - t.prior) / t.prior : null,
+        qtyPct: t.priorQty > 0 ? (t.curQty - t.priorQty) / t.priorQty : null,
+        aspPct: aspPrior > 0 && aspCurrent != null ? (aspCurrent - aspPrior) / aspPrior : null,
+      };
+    })
+    .filter(r => Math.max(r.revenueCurrent, r.revenuePrior) >= MIN_SUBCAT_MOVER_VOLUME && r.revenuePct != null);
+
+  const movers = {
+    gainers: decomposed
+      .filter(r => r.revenuePct > 0)
+      .map(r => ({ name: r.category, current: r.revenueCurrent, pct: r.revenuePct }))
+      .sort((a, b) => b.pct - a.pct),
+    decliners: decomposed
+      .filter(r => r.revenuePct < 0)
+      .map(r => ({ name: r.category, current: r.revenueCurrent, pct: r.revenuePct }))
+      .sort((a, b) => a.pct - b.pct),
+    currentLabel: `${curStartKey} – ${fmt(endDate)}`,
+    priorLabel: `${priorStartKey} – ${fmt(priorEnd)}`,
+  };
+  const priceMix = [...decomposed].sort((a, b) => Math.abs(b.revenuePct) - Math.abs(a.revenuePct));
+
+  // Categories ranked by their own period revenue -- the order the channel
+  // mix, day mix and concentration views below all read in, largest first.
+  const byRevenueDesc = (a, b) => (periodTotals.get(b.category)?.revenue || 0) - (periodTotals.get(a.category)?.revenue || 0);
+
+  // #4 Channel mix per subcategory (this period's totals, one bar per
+  // subcategory rather than one bar per week -- the dimension of interest
+  // here is the subcategory, not time).
+  const channelMix = [...channelTotals.entries()]
+    .map(([category, byChannel]) => ({ category, ...byChannel }))
+    .sort(byRevenueDesc);
+
+  // #5 Weekday vs Saturday vs Sunday mix per subcategory, same shape.
+  const dayMix = [...dayTotals.entries()]
+    .map(([category, byDay]) => ({ category, ...byDay }))
+    .sort(byRevenueDesc);
+
+  // #6 Within-subcategory concentration: how much of each subcategory's
+  // revenue its top 3 items carry -- a evenly-spread subcategory vs. one
+  // hero SKU carrying passengers.
+  const pareto = [...itemTotals.entries()]
+    .map(([category, itemMap]) => {
+      const total = [...itemMap.values()].reduce((sum, v) => sum + v, 0);
+      const top = [...itemMap.entries()]
+        .map(([itemId, revenue]) => ({ name: itemById.get(itemId)?.name || 'Unknown item', revenue }))
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, PARETO_TOP_N);
+      const topShare = total ? top.reduce((sum, r) => sum + r.revenue, 0) / total : null;
+      return { category, total, top, topShare };
+    })
+    .filter(r => r.total > 0)
+    .sort(byRevenueDesc);
+
+  return { efficiency, priceMix, movers, channelMix, dayMix, pareto, periodLabel: `${periodStart} – ${periodEnd}` };
+}
+
 // The sheet isn't a live feed -- it's a point-in-time export, and different
 // metrics stop at slightly different dates (a stray trailing week with only
 // partial data entered for a handful of metrics, a couple of short series

@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import toast from 'react-hot-toast';
 import {
-  fetchTopline, fetchItemMovers, valueAt, wowDeltaAt, chartRowsForWindow, findMetric, weekAxis,
+  fetchTopline, fetchItemMovers, fetchSubcategoryInsights, valueAt, wowDeltaAt, chartRowsForWindow, findMetric, weekAxis,
   fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts,
 } from './toplineData';
 
@@ -364,10 +364,13 @@ function StackedBarChart({ rows, dataKeys, colors, money, percent }) {
 // stacked bar reads as "share of the week" instead of "$ that week" -- same
 // shape StackedBarChart already draws, just pre-divided. A $0 week (closure)
 // has no share to show, so it's left out rather than divide-by-zero.
-function toPercentRows(rows, dataKeys) {
+// keyField defaults to 'date' (every week-indexed chart on this page) but
+// takes 'category' for the subcategory-indexed charts below -- same math,
+// different row identity.
+function toPercentRows(rows, dataKeys, keyField = 'date') {
   return rows.map(row => {
     const total = dataKeys.reduce((sum, k) => sum + (row[k] || 0), 0);
-    const out = { date: row.date };
+    const out = { [keyField]: row[keyField] };
     if (!total) return out;
     dataKeys.forEach(k => { if (row[k] != null) out[k] = row[k] / total; });
     return out;
@@ -386,6 +389,58 @@ function sumGroupsRows(dates, groups) {
     });
     return row;
   });
+}
+
+// Same stacked-bar shape as StackedBarChart, but indexed by subcategory
+// instead of week -- the dimension of interest in the subcategory views is
+// the category, not time, so each bar is one subcategory's period total
+// rather than one week. Longer category names (e.g. "Coffee & Tea") need
+// the tick label angled to avoid overlap, which week labels never did.
+function CategoryBarChart({ rows, dataKeys, colors, money, percent, loading }) {
+  if (loading) return <div className="flex items-center justify-center" style={{ height: CHART_HEIGHT }}><Loader2 size={16} className="animate-spin text-gray-300" /></div>;
+  if (!rows.length || !hasChartData(rows, dataKeys)) return <EmptyChart label="No data in this period" />;
+  const yFmt = v => (percent ? fmtPct(v) : money ? fmtMoney(v, { compact: true }) : fmtNumber(v));
+  return (
+    <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+      <BarChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 24 }}>
+        <CartesianGrid stroke={GRID_COLOR} vertical={false} />
+        <XAxis dataKey="category" tick={{ fontSize: 11, fill: AXIS_COLOR }} axisLine={{ stroke: GRID_COLOR }} tickLine={false} interval={0} angle={-30} textAnchor="end" height={50} />
+        <YAxis tickFormatter={yFmt} domain={percent ? [0, 1] : undefined} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={money ? 64 : 46} />
+        <Tooltip formatter={v => yFmt(v)} contentStyle={{ fontSize: 13, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        {dataKeys.map((k, i) => (
+          <Bar key={k} dataKey={k} stackId="a" fill={colors[i % colors.length]} radius={i === dataKeys.length - 1 ? [3, 3, 0, 0] : undefined} />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Ranked horizontal bar, single series -- same "module accent, no palette
+// needed" rule as every other single-series chart on this page. Revenue per
+// active SKU is the point (menu efficiency), so it's what sorts the bars;
+// the tooltip adds back the two numbers that ratio is made of.
+function EfficiencyChart({ rows, loading }) {
+  if (loading) return <div className="flex items-center justify-center" style={{ height: CHART_HEIGHT }}><Loader2 size={16} className="animate-spin text-gray-300" /></div>;
+  if (!rows.length) return <EmptyChart label="No data in this period" />;
+  const height = Math.max(CHART_HEIGHT, rows.length * 34);
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>
+        <CartesianGrid stroke={GRID_COLOR} horizontal={false} />
+        <XAxis type="number" tickFormatter={v => fmtMoney(v, { compact: true })} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} />
+        <YAxis type="category" dataKey="category" width={100} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} />
+        <Tooltip
+          formatter={(value, _name, props) => [
+            `${fmtMoney(value, { compact: true })} / item · ${fmtMoney(props.payload.revenue, { compact: true })} across ${props.payload.activeItems} active item${props.payload.activeItems === 1 ? '' : 's'}`,
+            'Revenue per active item',
+          ]}
+          contentStyle={{ fontSize: 13, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }}
+        />
+        <Bar dataKey="revenuePerItem" fill="var(--primary)" radius={[0, 3, 3, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
 }
 
 const MINI_CHART_HEIGHT = 120;
@@ -486,6 +541,97 @@ function ItemMoversTable({ title, rows, loading }) {
             </>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// Revenue growth splits into "sold more" (qtyPct) vs "sold at a higher
+// price" (aspPct) -- very different stories that a single revenue-delta %
+// can't tell apart. A table beats a chart here: three precise numbers per
+// subcategory across up to ~10 rows is exactly the case where reading exact
+// values matters more than seeing shape.
+function PriceMixRow({ r, idx }) {
+  const base = idx % 2 === 1 ? '#fafaf9' : 'white';
+  const cell = v => (v == null ? { text: '—', color: undefined } : { text: `${v >= 0 ? '+' : ''}${fmtPct(v)}`, color: v > 0 ? GOOD : v < 0 ? BAD : undefined });
+  const rev = cell(r.revenuePct), qty = cell(r.qtyPct), asp = cell(r.aspPct);
+  return (
+    <tr>
+      <td className="text-sm font-medium text-gray-800 px-4 py-1.5 border-b border-gray-50 whitespace-nowrap" style={{ background: base }}>{r.category}</td>
+      <td className="text-right text-xs font-semibold tabular-nums px-3 py-1.5 border-b border-gray-50" style={{ background: base, color: rev.color }}>{rev.text}</td>
+      <td className="text-right text-xs font-semibold tabular-nums px-3 py-1.5 border-b border-gray-50" style={{ background: base, color: qty.color }}>{qty.text}</td>
+      <td className="text-right text-xs font-semibold tabular-nums px-3 py-1.5 border-b border-gray-50" style={{ background: base, color: asp.color }}>{asp.text}</td>
+    </tr>
+  );
+}
+function PriceMixTable({ rows, loading }) {
+  return (
+    <div className="card p-4">
+      <p className="text-sm font-bold text-gray-900 mb-2">Price Mix vs Volume</p>
+      {loading ? (
+        <div className="flex items-center justify-center h-24 text-gray-300"><Loader2 size={16} className="animate-spin" /></div>
+      ) : !rows?.length ? (
+        <p className="text-xs text-gray-400 py-6 text-center">Not enough data yet</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th className="text-left text-[11px] font-bold text-gray-400 uppercase tracking-wide px-4 py-2 border-b border-gray-100">Subcategory</th>
+                <th className="text-right text-[11px] font-bold text-gray-400 uppercase tracking-wide px-3 py-2 border-b border-gray-100">Revenue</th>
+                <th className="text-right text-[11px] font-bold text-gray-400 uppercase tracking-wide px-3 py-2 border-b border-gray-100">Volume</th>
+                <th className="text-right text-[11px] font-bold text-gray-400 uppercase tracking-wide px-3 py-2 border-b border-gray-100">Avg. Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, idx) => <PriceMixRow key={r.category} r={r} idx={idx} />)}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Top-3-items' share of each subcategory's own revenue -- an evenly-spread
+// subcategory vs. one hero SKU carrying the rest. Item names as chart labels
+// would be unreadable at this row count, so this stays a table too.
+function ParetoRow({ r, idx }) {
+  const base = idx % 2 === 1 ? '#fafaf9' : 'white';
+  return (
+    <tr>
+      <td className="text-sm font-medium text-gray-800 px-4 py-1.5 border-b border-gray-50 whitespace-nowrap align-top" style={{ background: base }}>{r.category}</td>
+      <td className="text-xs text-gray-600 px-3 py-1.5 border-b border-gray-50" style={{ background: base }}>
+        {r.top.map(t => t.name).join(', ')}
+      </td>
+      <td className="text-right text-xs font-semibold tabular-nums px-3 py-1.5 border-b border-gray-50 align-top" style={{ background: base }}>{fmtPct(r.topShare)}</td>
+    </tr>
+  );
+}
+function ParetoTable({ rows, loading }) {
+  return (
+    <div className="card p-4">
+      <p className="text-sm font-bold text-gray-900 mb-2">Within-Subcategory Concentration</p>
+      <p className="text-xs text-gray-400 mb-2">Share of each subcategory's revenue its top 3 items carry</p>
+      {loading ? (
+        <div className="flex items-center justify-center h-24 text-gray-300"><Loader2 size={16} className="animate-spin" /></div>
+      ) : !rows?.length ? (
+        <p className="text-xs text-gray-400 py-6 text-center">Not enough data yet</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th className="text-left text-[11px] font-bold text-gray-400 uppercase tracking-wide px-4 py-2 border-b border-gray-100">Subcategory</th>
+                <th className="text-left text-[11px] font-bold text-gray-400 uppercase tracking-wide px-3 py-2 border-b border-gray-100">Top items</th>
+                <th className="text-right text-[11px] font-bold text-gray-400 uppercase tracking-wide px-3 py-2 border-b border-gray-100">Top-3 share</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, idx) => <ParetoRow key={r.category} r={r} idx={idx} />)}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -624,6 +770,12 @@ const REVENUE_CHANNELS = [
 ];
 const REVENUE_CATEGORIES = ['Food', 'Drinks', 'Snacks', 'Merch'];
 
+// Fixed channel order for the subcategory channel-mix chart -- matches
+// CHANNEL_LABELS in toplineData.js, the only 3 channels sales_history
+// carries at the line-item level (Catering/B2B and Vending are aggregate-
+// only, never per-item, so they can't appear in a per-subcategory split).
+const SUBCAT_CHANNEL_LABELS = ['In-Store', '3rd Party Apps', 'Classpass / TGTG'];
+
 // The composition chart folds the 7 weekdays into 3 groups -- a 7th ad hoc
 // palette color beyond the validated 6-color CATEGORICAL set would break
 // the dataviz rule that an overflow series folds into a composite rather
@@ -647,7 +799,7 @@ const HOUR_GROUPS = [
 const HOUR_GROUP_LABELS = HOUR_GROUPS.map(g => g.label);
 const ALL_HOURS = HOUR_GROUPS.flatMap(g => g.hours);
 
-function RevenueTab({ topline, period, itemMovers, itemMoversLoading }) {
+function RevenueTab({ topline, period, itemMovers, itemMoversLoading, subcatInsights, subcatLoading }) {
   const { asOfDate } = topline;
   const revGroup = topline.revenue;
   const dates = weekAxis(asOfDate, period);
@@ -755,6 +907,10 @@ function RevenueTab({ topline, period, itemMovers, itemMoversLoading }) {
   const pctAt = series => (valueAt(series, asOfDate) != null ? fmtPct(valueAt(series, asOfDate)) : '—');
   const moneyAt = series => (valueAt(series, asOfDate) != null ? fmtMoney(valueAt(series, asOfDate)) : '—');
 
+  // ── Subcategory channel/day mix (percent-of-own-revenue, category-indexed) ──
+  const subcatChannelPctRows = subcatInsights ? toPercentRows(subcatInsights.channelMix, SUBCAT_CHANNEL_LABELS, 'category') : [];
+  const subcatDayPctRows = subcatInsights ? toPercentRows(subcatInsights.dayMix, WEEKDAY_MIX_GROUPS, 'category') : [];
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -828,6 +984,41 @@ function RevenueTab({ topline, period, itemMovers, itemMoversLoading }) {
           <ItemMoversTable title="Top Gainers" rows={itemMovers?.gainers} loading={itemMoversLoading} />
           <ItemMoversTable title="Top Decliners" rows={itemMovers?.decliners} loading={itemMoversLoading} />
         </div>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-gray-900">Subcategories</h3>
+        <p className="text-xs text-gray-400">
+          Menu-level breakdowns from item-level sales -- only channels and dates with line-item data are included, so this reads a shorter history than the rest of the page.
+        </p>
+
+        <ChartCard title="Menu Efficiency" subtitle={`Revenue per active menu item, last ${period} weeks -- a low bar spread across many SKUs is a rationalization candidate`}>
+          <EfficiencyChart rows={subcatInsights?.efficiency || []} loading={subcatLoading} />
+        </ChartCard>
+
+        <PriceMixTable rows={subcatInsights?.priceMix} loading={subcatLoading} />
+
+        <div className="space-y-2">
+          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Subcategory Movers</h4>
+          <p className="text-xs text-gray-400">
+            {subcatInsights?.movers?.currentLabel ? `${subcatInsights.movers.currentLabel} vs ${subcatInsights.movers.priorLabel}` : 'Last 4 complete weeks vs the 4 before that'}
+          </p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <ItemMoversTable title="Gaining" rows={subcatInsights?.movers?.gainers} loading={subcatLoading} />
+            <ItemMoversTable title="Declining" rows={subcatInsights?.movers?.decliners} loading={subcatLoading} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <ChartCard title="Channel Mix by Subcategory" subtitle={`Share of each subcategory's own revenue, last ${period} weeks`}>
+            <CategoryBarChart rows={subcatChannelPctRows} dataKeys={SUBCAT_CHANNEL_LABELS} colors={CATEGORICAL} percent loading={subcatLoading} />
+          </ChartCard>
+          <ChartCard title="Weekday Mix by Subcategory" subtitle={`Share of each subcategory's own revenue, last ${period} weeks`}>
+            <CategoryBarChart rows={subcatDayPctRows} dataKeys={WEEKDAY_MIX_GROUPS} colors={CATEGORICAL} percent loading={subcatLoading} />
+          </ChartCard>
+        </div>
+
+        <ParetoTable rows={subcatInsights?.pareto} loading={subcatLoading} />
       </div>
 
       <KpiSection groups={revGroup} defaultOpenCount={2} asOfDate={asOfDate} period={period} />
@@ -1030,6 +1221,8 @@ export default function ToplineApp({ org }) {
   const [period, setPeriod] = useState(26);
   const [itemMovers, setItemMovers] = useState(null);
   const [itemMoversLoading, setItemMoversLoading] = useState(false);
+  const [subcatInsights, setSubcatInsights] = useState(null);
+  const [subcatLoading, setSubcatLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!orgId) return;
@@ -1058,6 +1251,21 @@ export default function ToplineApp({ org }) {
       .finally(() => { if (!cancelled) setItemMoversLoading(false); });
     return () => { cancelled = true; };
   }, [orgId, topline?.asOfDate]);
+
+  // Unlike item movers, the subcategory views follow the page's period
+  // selector (the channel/day-mix snapshots and menu-efficiency ranking are
+  // all "over the currently selected window", not a fixed comparison), so
+  // this refetches on period change too.
+  useEffect(() => {
+    if (!orgId || !topline?.asOfDate) return;
+    let cancelled = false;
+    setSubcatLoading(true);
+    fetchSubcategoryInsights(orgId, topline.asOfDate, period)
+      .then(res => { if (!cancelled) setSubcatInsights(res); })
+      .catch(err => { if (!cancelled) toast.error('Failed to load subcategory insights: ' + (err.message || 'unknown error')); })
+      .finally(() => { if (!cancelled) setSubcatLoading(false); });
+    return () => { cancelled = true; };
+  }, [orgId, topline?.asOfDate, period]);
 
   if (loading) {
     return (
@@ -1103,7 +1311,7 @@ export default function ToplineApp({ org }) {
         </div>
 
         {activeTab === 'overview' && <OverviewTab topline={topline} period={period} />}
-        {activeTab === 'revenue' && <RevenueTab topline={topline} period={period} itemMovers={itemMovers} itemMoversLoading={itemMoversLoading} />}
+        {activeTab === 'revenue' && <RevenueTab topline={topline} period={period} itemMovers={itemMovers} itemMoversLoading={itemMoversLoading} subcatInsights={subcatInsights} subcatLoading={subcatLoading} />}
         {activeTab === 'costs' && <CostsTab topline={topline} period={period} />}
         {activeTab === 'customer' && <CustomerTab topline={topline} period={period} />}
         {activeTab === 'pnl' && <PnlTab topline={topline} period={period} />}
