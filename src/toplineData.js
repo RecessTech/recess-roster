@@ -145,6 +145,66 @@ export async function fetchTopline(orgId) {
   };
 }
 
+// "What's actually moving" at the menu-item level: total revenue (every
+// channel) over the most recent 4 complete weeks vs. the 4 weeks before
+// that. Fixed at 4-vs-4 rather than following the page's period selector --
+// a 52-week comparison would be mostly noise for "what's trending right
+// now", and would also mean fetching a year of raw sales_history rows for
+// a stat tile. asOfDate is the Monday of the last COMPLETE week (see
+// findAsOfDate), so the current window ends there -- it runs backward from
+// that week's Sunday, not forward from asOfDate into weeks with no data yet.
+const ITEM_MOVER_WEEKS = 4;
+const MIN_ITEM_MOVER_VOLUME = 20; // ignore items too small for a % move to mean anything
+
+export async function fetchItemMovers(orgId, asOfDate) {
+  if (!orgId || !asOfDate) return { gainers: [], decliners: [] };
+  const fmt = d => d.toISOString().slice(0, 10);
+  const spanDays = ITEM_MOVER_WEEKS * 7;
+
+  const curEnd = new Date(asOfDate + 'T12:00:00Z');
+  curEnd.setUTCDate(curEnd.getUTCDate() + 6); // Sunday of the as-of week
+  const curStart = new Date(curEnd);
+  curStart.setUTCDate(curStart.getUTCDate() - spanDays + 1);
+  const priorEnd = new Date(curStart);
+  priorEnd.setUTCDate(priorEnd.getUTCDate() - 1);
+  const priorStart = new Date(priorEnd);
+  priorStart.setUTCDate(priorStart.getUTCDate() - spanDays + 1);
+
+  const [rows, items] = await Promise.all([
+    db.getItemSalesByRange(orgId, fmt(priorStart), fmt(curEnd)),
+    db.getProductionItems(orgId),
+  ]);
+  const itemById = new Map(items.map(i => [i.id, i]));
+  const curStartKey = fmt(curStart);
+
+  const totals = new Map(); // item_id -> { current, prior }
+  rows.forEach(r => {
+    const bucket = r.sale_date >= curStartKey ? 'current' : 'prior';
+    const t = totals.get(r.item_id) || { current: 0, prior: 0 };
+    t[bucket] += Number(r.revenue) || 0;
+    totals.set(r.item_id, t);
+  });
+
+  const moves = [...totals.entries()]
+    .map(([itemId, t]) => ({
+      name: itemById.get(itemId)?.name || 'Unknown item',
+      category: itemById.get(itemId)?.category || '',
+      current: t.current,
+      prior: t.prior,
+      pct: t.prior > 0 ? (t.current - t.prior) / t.prior : null,
+    }))
+    // A brand-new item (zero prior revenue) has no meaningful % move --
+    // excluded from gainers/decliners rather than shown as an infinite gain.
+    .filter(r => r.pct != null && Math.max(r.current, r.prior) >= MIN_ITEM_MOVER_VOLUME);
+
+  return {
+    gainers: [...moves].sort((a, b) => b.pct - a.pct).slice(0, 8),
+    decliners: [...moves].sort((a, b) => a.pct - b.pct).slice(0, 8),
+    currentLabel: `${fmt(curStart)} – ${fmt(curEnd)}`,
+    priorLabel: `${fmt(priorStart)} – ${fmt(priorEnd)}`,
+  };
+}
+
 // The sheet isn't a live feed -- it's a point-in-time export, and different
 // metrics stop at slightly different dates (a stray trailing week with only
 // partial data entered for a handful of metrics, a couple of short series

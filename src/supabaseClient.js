@@ -1848,6 +1848,32 @@ export const db = {
     return data || [];
   },
 
+  // Raw per-item sales rows for a date range, across every channel -- the
+  // analytics_metrics tables only carry pre-aggregated weekly KPIs, so
+  // anything at item granularity (e.g. "what's actually moving") reads
+  // straight from sales_history instead and aggregates client-side.
+  // Paginated: a multi-week range easily exceeds PostgREST's default
+  // 1000-row cap, which would otherwise silently truncate the result.
+  async getItemSalesByRange(orgId, startDate, endDate) {
+    const PAGE = 1000;
+    let all = [];
+    let from = 0;
+    for (;;) {
+      const { data, error } = await supabase
+        .from('sales_history')
+        .select('item_id, sale_date, revenue')
+        .eq('org_id', orgId)
+        .gte('sale_date', startDate)
+        .lte('sale_date', endDate)
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      all = all.concat(data || []);
+      if (!data || data.length < PAGE) break;
+      from += PAGE;
+    }
+    return all;
+  },
+
   // ── Transfer Hub ─────────────────────────────────────────────────────────────
   // Deliberately separate from stock_item_sites' "Request Transfer" status --
   // this is its own worklist, not tied to a stocktake count. SKUs come from
