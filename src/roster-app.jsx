@@ -124,6 +124,8 @@ const RosterApp = () => {
   ];
 
   const [staff, setStaff] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [selectedLocationId, setSelectedLocationId] = useState(null); // null = all locations
   const [roles, setRoles] = useState(defaultRoles);
   const [schedule, setSchedule] = useState({});
   const [selectedRole, setSelectedRole] = useState(null);
@@ -386,17 +388,19 @@ const RosterApp = () => {
           return `${year}-${month}-${day}`;
         };
 
-        const [staffData, scheduleData, orderData, settingsData, templatesData, publishedData, swapData] = await Promise.all([
+        const [staffData, scheduleData, orderData, settingsData, templatesData, publishedData, swapData, locationsData] = await Promise.all([
           db.getStaff(org.id),
           db.getSchedules(org.id, formatLocalDate(startDate), formatLocalDate(endDate)),
           db.getStaffOrder(org.id),
           db.getSettings(org.id),
           db.getTemplates ? db.getTemplates(org.id) : Promise.resolve([]),
           db.getPublishedWeeks ? db.getPublishedWeeks(org.id).catch(() => []) : Promise.resolve([]),
-          db.getSwapRequests ? db.getSwapRequests(org.id, formatLocalDate(startDate), formatLocalDate(endDate)).catch(() => []) : Promise.resolve([])
+          db.getSwapRequests ? db.getSwapRequests(org.id, formatLocalDate(startDate), formatLocalDate(endDate)).catch(() => []) : Promise.resolve([]),
+          db.getLocations ? db.getLocations(org.id).catch(() => []) : Promise.resolve([])
         ]);
         setPublishedWeeks(publishedData || []);
         setSwapRequests(new Set((swapData || []).map(r => `${r.date_key}|${r.staff_id}`)));
+        setLocations((locationsData || []).filter(l => l.active !== false));
 
         setStaff(staffData);
         
@@ -548,7 +552,10 @@ const RosterApp = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps, no-use-before-define
   }, [org, staff.length, avWeekStart.toISOString()]); // use staff.length (state) not activeStaff.length (const after this effect)
 
-  const activeStaff = useMemo(() => staff.filter(s => s.active !== false), [staff]);
+  const activeStaff = useMemo(() => {
+    const base = staff.filter(s => s.active !== false);
+    return selectedLocationId ? base.filter(s => s.locationId === selectedLocationId) : base;
+  }, [staff, selectedLocationId]);
   // eslint-disable-next-line no-unused-vars
   const archivedStaff = useMemo(() => staff.filter(s => s.active === false), [staff]);
 
@@ -1324,10 +1331,11 @@ const RosterApp = () => {
           hourlyRate: editingStaff.hourlyRate || '',
           weekendRate: editingStaff.weekendRate || '',
           employmentType: editingStaff.employmentType || 'FT',
+          locationId: editingStaff.locationId || '',
           annualSalary: existingSalary
         };
       }
-      return { name: '', email: '', hourlyRate: '', weekendRate: '', employmentType: 'FT', annualSalary: '' };
+      return { name: '', email: '', hourlyRate: '', weekendRate: '', employmentType: 'FT', locationId: '', annualSalary: '' };
     });
 
     // When annual salary changes for FT, derive hourly rate
@@ -1353,7 +1361,8 @@ const RosterApp = () => {
         email: formData.email || null,
         hourly_rate: hourlyRate,
         weekend_rate: weekendRate,
-        employment_type: formData.employmentType
+        employment_type: formData.employmentType,
+        location_id: formData.locationId || null
       };
 
       try {
@@ -1365,7 +1374,8 @@ const RosterApp = () => {
             email: updated.email || '',
             hourlyRate: updated.hourly_rate,
             weekendRate: updated.weekend_rate,
-            employmentType: updated.employment_type
+            employmentType: updated.employment_type,
+            locationId: updated.location_id || null
           } : s));
           // Save annual salary to extraConfig if FT
           if (formData.employmentType === 'FT') {
@@ -1386,7 +1396,8 @@ const RosterApp = () => {
             email: created.email || '',
             hourlyRate: created.hourly_rate,
             weekendRate: created.weekend_rate,
-            employmentType: created.employment_type
+            employmentType: created.employment_type,
+            locationId: created.location_id || null
           }]);
           // Save annual salary to extraConfig if FT
           if (formData.employmentType === 'FT') {
@@ -1471,6 +1482,21 @@ const RosterApp = () => {
                 <option value="Casual">Casual</option>
               </select>
             </div>
+            {locations.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                <select
+                  value={formData.locationId}
+                  onChange={(e) => setFormData(prev => ({ ...prev, locationId: e.target.value }))}
+                  className="input-base"
+                >
+                  <option value="">Unassigned</option>
+                  {locations.map(l => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {(formData.employmentType === 'FT' || /full/i.test(formData.employmentType)) && (
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
                 <p className="text-xs text-blue-700 font-medium">Full Time — Salaried</p>
@@ -3949,6 +3975,12 @@ const RosterApp = () => {
                           <div className="min-w-0 flex-1">
                             <h3 className="font-semibold text-gray-900">{s.name}</h3>
                             {s.email && <p className="text-xs text-gray-400 truncate">{s.email}</p>}
+                            {locations.length > 0 && (
+                              <p className="text-xs text-gray-400 truncate flex items-center gap-1 mt-0.5">
+                                <MapPin size={10} />
+                                {locations.find(l => l.id === s.locationId)?.name || 'Unassigned'}
+                              </p>
+                            )}
                           </div>
                           <span className={`text-xs font-semibold px-2 py-0.5 rounded-md shrink-0 ml-2 ${empColor}`}>{s.employmentType}</span>
                         </div>
@@ -4022,6 +4054,12 @@ const RosterApp = () => {
                           <tr key={s.id} className="hover:bg-blue-50 transition-colors">
                             <td className="px-4 py-4">
                               <div className="font-semibold text-gray-800">{s.name}</div>
+                              {locations.length > 0 && (
+                                <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                                  <MapPin size={10} />
+                                  {locations.find(l => l.id === s.locationId)?.name || 'Unassigned'}
+                                </div>
+                              )}
                             </td>
                             <td className="px-4 py-4">
                               <span className="inline-block px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-medium">
@@ -6696,6 +6734,25 @@ Key things to verify after rebuild:
                   </button>
                   <button onClick={() => setCurrentDate(d => { const n = new Date(d); n.setDate(n.getDate() + 7); return n; })} className="p-1 rounded hover:bg-gray-100 text-gray-500 transition-colors" title="Next week"><ChevronRight size={16} /></button>
                 </div>
+                {locations.length > 0 && (
+                  <>
+                    <div className="h-4 w-px bg-gray-200"></div>
+                    <div className="flex items-center gap-1.5">
+                      <MapPin size={13} className="text-gray-400" />
+                      <select
+                        value={selectedLocationId || ''}
+                        onChange={(e) => setSelectedLocationId(e.target.value || null)}
+                        className="text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded px-2 py-1 border-none transition-colors cursor-pointer"
+                        title="Filter roster by location"
+                      >
+                        <option value="">All Locations</option>
+                        {locations.map(l => (
+                          <option key={l.id} value={l.id}>{l.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg">
