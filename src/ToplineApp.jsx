@@ -378,7 +378,31 @@ function DayShareCard({ day, series, dates, asOfDate }) {
   );
 }
 
+function ItemMoverRow({ r }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-gray-800 truncate">{r.name}</p>
+        {r.category && <p className="text-[11px] text-gray-400 truncate">{r.category}</p>}
+      </div>
+      <div className="text-right shrink-0">
+        <p className="text-sm font-semibold text-gray-700 tabular-nums">{fmtMoney(r.current, { compact: true })}</p>
+        <p className="text-[11px] font-semibold tabular-nums" style={{ color: r.pct >= 0 ? GOOD : BAD }}>{r.pct >= 0 ? '+' : ''}{fmtPct(r.pct)}</p>
+      </div>
+    </div>
+  );
+}
+
+const ITEM_MOVERS_VISIBLE = 10;
+// Beyond the top 10, the rest collapses behind a toggle instead of just
+// dumping the whole (unbounded) list into the page -- a long tail of
+// barely-moved items would otherwise push everything below it off-screen.
+// The expanded portion scrolls in its own capped-height panel rather than
+// growing the card indefinitely.
 function ItemMoversTable({ title, rows, loading }) {
+  const [expanded, setExpanded] = useState(false);
+  const head = rows?.slice(0, ITEM_MOVERS_VISIBLE) || [];
+  const rest = rows?.slice(ITEM_MOVERS_VISIBLE) || [];
   return (
     <div className="card p-4">
       <p className="text-sm font-bold text-gray-900 mb-2">{title}</p>
@@ -387,20 +411,27 @@ function ItemMoversTable({ title, rows, loading }) {
       ) : !rows?.length ? (
         <p className="text-xs text-gray-400 py-6 text-center">Not enough data yet</p>
       ) : (
-        <div className="divide-y divide-gray-100">
-          {rows.map(r => (
-            <div key={r.name} className="flex items-center justify-between gap-3 py-1.5">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-gray-800 truncate">{r.name}</p>
-                {r.category && <p className="text-[11px] text-gray-400 truncate">{r.category}</p>}
-              </div>
-              <div className="text-right shrink-0">
-                <p className="text-sm font-semibold text-gray-700 tabular-nums">{fmtMoney(r.current, { compact: true })}</p>
-                <p className="text-[11px] font-semibold tabular-nums" style={{ color: r.pct >= 0 ? GOOD : BAD }}>{r.pct >= 0 ? '+' : ''}{fmtPct(r.pct)}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="divide-y divide-gray-100">
+            {head.map(r => <ItemMoverRow key={r.name} r={r} />)}
+          </div>
+          {rest.length > 0 && (
+            <>
+              {expanded && (
+                <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto border-t border-gray-100">
+                  {rest.map(r => <ItemMoverRow key={r.name} r={r} />)}
+                </div>
+              )}
+              <button
+                onClick={() => setExpanded(e => !e)}
+                aria-expanded={expanded}
+                className="w-full flex items-center justify-center gap-1 text-xs font-semibold text-gray-400 hover:text-gray-600 pt-2 mt-1 border-t border-gray-100"
+              >
+                {expanded ? <>Show less <ChevronUp size={12} /></> : <>Show {rest.length} more <ChevronDown size={12} /></>}
+              </button>
+            </>
+          )}
+        </>
       )}
     </div>
   );
