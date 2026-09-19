@@ -12,17 +12,23 @@ import {
 // Validated categorical palette, all 6 slots muted rather than at full UI-
 // chrome or reference saturation -- a saturated hue works fine on a small
 // button but reads as neon once it fills bars/lines across a whole chart.
-// Orange and blue lean toward R-Shift's own brand hues at a calmer step
-// (#eb6834 / #2a78d6 vs the brand's #E85018 / #3B5BDB); violet and green
-// are softened the same way (#7d6bc4 / #4c9a4f vs the deep-saturated
-// #4a3aa7 / neon-pure #008300), each re-validated to hold its CVD
-// separation from its neighbours. Aqua/magenta were already the calm
-// dataviz-reference steps. Re-validated as its own theme: worst adjacent
-// normal-vision Delta E 24.5, all light-mode gates clear. Used for anything
-// with 2+ series. Single-series charts use the module's own accent
-// (var(--primary), R-Shift blue) instead, so a lone trend line still reads
-// as "this module's colour", not just "series 1".
-const CATEGORICAL = ['#eb6834', '#7d6bc4', '#1baf7a', '#e87ba4', '#4c9a4f', '#2a78d6'];
+// Orange leans toward R-Shift's own brand hue but at a calmer step
+// (#eb6834 vs the brand's #E85018); violet and green are softened the
+// same way (#7d6bc4 / #4c9a4f vs the deep-saturated #4a3aa7 / neon-pure
+// #008300). Aqua/magenta were already the calm dataviz-reference steps.
+// Blue leads (rather than orange) and orange is pushed to the *last*
+// slot: this org's UI chrome (sidebar, buttons, active tab) is already
+// orange everywhere via var(--primary), so a chart that also opens on
+// orange doubles up and reads hottest of all; leading with the cooler,
+// more neutral blue instead gives the eye relief from the rest of the
+// page. Re-validated as its own theme in this order: worst adjacent CVD
+// Delta E 9.2 (was a 6-8 floor-band WARN under the old orange-first
+// order), worst adjacent normal-vision Delta E 25.8 -- every light-mode
+// gate now clears clean, not just floor-legal. Used for anything with
+// 2+ series. Single-series charts use the module's own accent
+// (var(--primary), this org's brand orange) instead, so a lone trend
+// line still reads as "this module's colour", not just "series 1".
+const CATEGORICAL = ['#2a78d6', '#e87ba4', '#4c9a4f', '#7d6bc4', '#1baf7a', '#eb6834'];
 const AXIS_COLOR = '#8a8578';
 const GRID_COLOR = '#e8e4d8';
 const CHART_HEIGHT = 320;
