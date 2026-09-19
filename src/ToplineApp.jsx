@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import toast from 'react-hot-toast';
 import {
-  fetchTopline, fetchItemMovers, sortedDates, valueAt, wowDeltaAt, chartRowsForWindow, findMetric, weekAxis,
+  fetchTopline, fetchItemMovers, valueAt, wowDeltaAt, chartRowsForWindow, findMetric, weekAxis,
   fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts,
 } from './toplineData';
 
@@ -53,14 +53,24 @@ function StatTile({ label, value, delta }) {
   );
 }
 
-function Sparkline({ series, color, period }) {
-  const dates = sortedDates(series).slice(-Math.min(period, 20));
-  if (dates.length < 2) return <div style={{ width: 90, height: 28 }} />;
-  const data = dates.map(d => ({ date: d, value: series[d] }));
+// `dates` is the same shared weekAxis(asOfDate, period) window every other
+// chart on the page draws from -- previously this took a raw point-count
+// capped at 20 regardless of the page's period selector, so a row's
+// sparkline silently ignored the 4/8/12/26/52-week control everyone else
+// respects. A bare Tooltip (no visible axis -- there's no room for one at
+// 90x28) still gives the exact week/value on hover.
+function Sparkline({ series, color, dates, kind }) {
+  const rows = dates.filter(d => series[d] != null).map(d => ({ date: d, value: series[d] }));
+  if (rows.length < 2) return <div style={{ width: 90, height: 28 }} />;
   return (
     <div style={{ width: 90, height: 28 }}>
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data}>
+        <LineChart data={rows}>
+          <Tooltip
+            labelFormatter={fmtWeekLabel}
+            formatter={v => formatMetricValue(v, kind)}
+            contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }}
+          />
           <Line type="monotone" dataKey="value" stroke={color} strokeWidth={1.5} dot={false} isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>
@@ -68,13 +78,13 @@ function Sparkline({ series, color, period }) {
   );
 }
 
-function MetricRow({ m, idx, asOfDate }) {
+function MetricRow({ m, idx, asOfDate, dates }) {
   const value = valueAt(m.series, asOfDate);
   const delta = wowDeltaAt(m.series, asOfDate);
   return (
     <div className={`flex items-center justify-between gap-3 px-4 py-2 ${idx % 2 === 1 ? 'bg-gray-50/40' : ''}`}>
       <p className="text-sm font-medium text-gray-800 truncate flex-1 min-w-0">{m.metric}</p>
-      <Sparkline series={m.series} color="var(--primary)" period={16} />
+      <Sparkline series={m.series} color="var(--primary)" dates={dates} kind={m.kind} />
       <div className="text-right w-24 shrink-0">
         <p className="text-sm font-semibold text-gray-700 tabular-nums">{formatMetricValue(value, m.kind)}</p>
         {delta != null && (
@@ -109,7 +119,15 @@ function SectionHeader({ label, count, isCollapsed, onClick, sticky }) {
   );
 }
 
-function MetricGroupList({ groups, defaultOpenCount = 2, asOfDate }) {
+// A section small enough to read as a proper trend grid (name + value +
+// mini chart per metric, same treatment as the Day-of-Week share cards)
+// gets one; a bigger section (hourly buckets, subcat breakdowns, ...) stays
+// the compact row list -- a card per metric would otherwise turn a
+// 12-metric section into a wall of tiles instead of a scannable list.
+const CARD_GRID_MAX_METRICS = 8;
+
+function MetricGroupList({ groups, defaultOpenCount = 2, asOfDate, period }) {
+  const dates = useMemo(() => weekAxis(asOfDate, period), [asOfDate, period]);
   const [collapsed, setCollapsed] = useState(() => new Set(groups.slice(defaultOpenCount).map(g => g.section)));
   function toggle(section) {
     setCollapsed(prev => {
@@ -124,13 +142,22 @@ function MetricGroupList({ groups, defaultOpenCount = 2, asOfDate }) {
       {groups.map(({ section, metrics }) => {
         const label = section || 'Summary';
         const isCollapsed = collapsed.has(section);
+        const asGrid = metrics.length <= CARD_GRID_MAX_METRICS;
         return (
           <div key={section || '_summary'} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
             <SectionHeader label={label} count={metrics.length} isCollapsed={isCollapsed} onClick={() => toggle(section)} />
             {!isCollapsed && (
-              <div className="divide-y divide-gray-50 border-t border-gray-100">
-                {metrics.map((m, i) => <MetricRow key={m.metric} m={m} idx={i} asOfDate={asOfDate} />)}
-              </div>
+              asGrid ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 border-t border-gray-100">
+                  {metrics.map(m => (
+                    <MetricMiniCard key={m.metric} label={m.metric} series={m.series} kind={m.kind} dates={dates} asOfDate={asOfDate} />
+                  ))}
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-50 border-t border-gray-100">
+                  {metrics.map((m, i) => <MetricRow key={m.metric} m={m} idx={i} asOfDate={asOfDate} dates={dates} />)}
+                </div>
+              )
             )}
           </div>
         );
@@ -274,15 +301,31 @@ function ChartCard({ title, subtitle, children }) {
   );
 }
 
-function TrendChart({ rows, dataKeys, colors, money, percent }) {
+// A 0-anchored axis on a series that only ever moves within a narrow band
+// (AOV hovering $13-18, say) squashes real week-to-week swings into a
+// nearly flat line near the top of the chart. Padding tightly around the
+// actual data range instead keeps 0 out of frame (nothing here is ever
+// negative) so the same swings read as visible movement. Floors at 0
+// regardless, since a padded-down AOV/revenue axis still shouldn't cross it.
+function tightYDomain(rows, dataKeys) {
+  const vals = rows.flatMap(r => dataKeys.map(k => r[k]).filter(v => v != null));
+  if (!vals.length) return undefined;
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const pad = (max - min) * 0.15 || Math.abs(max) * 0.1 || 1;
+  return [Math.max(0, min - pad), max + pad];
+}
+
+function TrendChart({ rows, dataKeys, colors, money, percent, tightDomain }) {
   if (!rows.length || !hasChartData(rows, dataKeys)) return <EmptyChart label="No data in this period" />;
   const yFmt = v => (percent ? fmtPct(v) : money ? fmtMoney(v, { compact: true }) : fmtNumber(v));
+  const domain = tightDomain ? tightYDomain(rows, dataKeys) : undefined;
   return (
     <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
       <LineChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke={GRID_COLOR} vertical={false} />
         <XAxis dataKey="date" tickFormatter={fmtWeekLabel} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={{ stroke: GRID_COLOR }} tickLine={false} minTickGap={28} />
-        <YAxis tickFormatter={yFmt} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={money ? 64 : 46} />
+        <YAxis tickFormatter={yFmt} domain={domain} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={money ? 64 : 46} />
         <Tooltip labelFormatter={fmtWeekLabel} formatter={v => yFmt(v)} contentStyle={{ fontSize: 13, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
         {dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
         {dataKeys.map((k, i) => (
@@ -343,37 +386,43 @@ function sumGroupsRows(dates, groups) {
 const MINI_CHART_HEIGHT = 120;
 
 // A single-series, axis-light line chart for a small-multiples grid (one
-// card per weekday) -- no legend or x-axis labels since the card title
-// already names the series and 7 of these side by side have no room for
-// per-chart chrome; the shared Tooltip still gives the exact week on hover.
-function MiniTrendChart({ rows, dataKey }) {
+// card per metric) -- no legend or x-axis labels since the card title
+// already names the series and several of these side by side have no room
+// for per-chart chrome; the shared Tooltip still gives the exact week and
+// value on hover. `kind` drives axis/tooltip formatting the same way every
+// other chart on this page is money/percent/count-aware.
+function MiniTrendChart({ rows, dataKey, kind }) {
   if (!rows.length || !hasChartData(rows, [dataKey])) {
     return <div style={{ height: MINI_CHART_HEIGHT }} className="flex items-center justify-center text-xs text-gray-300">No data</div>;
   }
+  const yFmt = v => formatMetricValue(v, kind);
   return (
     <ResponsiveContainer width="100%" height={MINI_CHART_HEIGHT}>
       <LineChart data={rows} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
         <XAxis dataKey="date" tick={false} axisLine={false} tickLine={false} />
-        <YAxis tickFormatter={fmtPct} tick={{ fontSize: 10, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={36} />
-        <Tooltip labelFormatter={fmtWeekLabel} formatter={v => fmtPct(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
+        <YAxis tickFormatter={yFmt} tick={{ fontSize: 10, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={kind === 'money' ? 46 : 36} />
+        <Tooltip labelFormatter={fmtWeekLabel} formatter={v => yFmt(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
         <Line type="monotone" dataKey={dataKey} stroke="var(--primary)" strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
       </LineChart>
     </ResponsiveContainer>
   );
 }
 
-function DayShareCard({ day, series, dates, asOfDate }) {
-  const rows = chartRowsForWindow([{ name: day, series }], dates);
+// One card in a small-multiples grid: name, latest value + WoW delta, and
+// its own mini trend line -- used both for the day-of-week share cards and
+// (below) any "legacy" KPI section small enough to read well this way.
+function MetricMiniCard({ label, series, kind, dates, asOfDate }) {
+  const rows = chartRowsForWindow([{ name: label, series }], dates);
   const current = valueAt(series, asOfDate);
   const delta = wowDeltaAt(series, asOfDate);
   return (
     <div className="card p-3">
-      <div className="flex items-baseline justify-between">
-        <p className="text-xs font-bold text-gray-900">{day}</p>
-        <p className="text-sm font-bold text-gray-900 tabular-nums">{current != null ? fmtPct(current) : '—'}</p>
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-xs font-bold text-gray-900 truncate">{label}</p>
+        <p className="text-sm font-bold text-gray-900 tabular-nums shrink-0">{current != null ? formatMetricValue(current, kind) : '—'}</p>
       </div>
       <DeltaPill delta={delta} />
-      <MiniTrendChart rows={rows} dataKey={day} />
+      <MiniTrendChart rows={rows} dataKey={label} kind={kind} />
     </div>
   );
 }
@@ -520,7 +569,7 @@ function KpiSection({ title, groups, asOfDate, period, defaultOpenCount, default
         <ViewToggle view={view} onChange={setView} />
       </div>
       {view === 'cards'
-        ? <MetricGroupList groups={groups} defaultOpenCount={defaultOpenCount} asOfDate={asOfDate} />
+        ? <MetricGroupList groups={groups} defaultOpenCount={defaultOpenCount} asOfDate={asOfDate} period={period} />
         : <MetricTable groups={groups} asOfDate={asOfDate} period={period} defaultOpenCount={defaultOpenCount} />}
     </div>
   );
@@ -678,7 +727,7 @@ function RevenueTab({ topline, period, itemMovers, itemMoversLoading }) {
   // customer equally instead, which is what "AOV" is supposed to mean.
   const custMs = {};
   ALL_WEEKDAYS.forEach(d => { custMs[d] = findMetric(revGroup, 'Daily Customers', d); });
-  const weekdayAOVSeries = {}, weekendAOVSeries = {};
+  const weekdayAOVSeries = {}, weekendAOVSeries = {}, blendedAOVSeries = {};
   Object.keys(dayTotalByDate).forEach(date => {
     const wdRev = WEEKDAYS.reduce((sum, d) => sum + (dayMs[d]?.series[date] || 0), 0);
     const wdCust = WEEKDAYS.reduce((sum, d) => sum + (custMs[d]?.series[date] || 0), 0);
@@ -686,9 +735,15 @@ function RevenueTab({ topline, period, itemMovers, itemMoversLoading }) {
     const weRev = (dayMs.Saturday?.series[date] || 0) + (dayMs.Sunday?.series[date] || 0);
     const weCust = (custMs.Saturday?.series[date] || 0) + (custMs.Sunday?.series[date] || 0);
     if (weCust) weekendAOVSeries[date] = weRev / weCust;
+    const allCust = ALL_WEEKDAYS.reduce((sum, d) => sum + (custMs[d]?.series[date] || 0), 0);
+    if (allCust) blendedAOVSeries[date] = dayTotalByDate[date] / allCust;
   });
   const aovRows = chartRowsForWindow(
-    [{ name: 'Weekday AOV', series: weekdayAOVSeries }, { name: 'Weekend AOV', series: weekendAOVSeries }],
+    [
+      { name: 'Blended AOV', series: blendedAOVSeries },
+      { name: 'Weekday AOV', series: weekdayAOVSeries },
+      { name: 'Weekend AOV', series: weekendAOVSeries },
+    ],
     dates,
   );
 
@@ -733,7 +788,7 @@ function RevenueTab({ topline, period, itemMovers, itemMoversLoading }) {
           <p className="text-xs text-gray-400 mb-2">Each day's own share of that week's in-store revenue, evolving over the same period</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {ALL_WEEKDAYS.map(d => (
-              <DayShareCard key={d} day={d} series={dayShareSeries[d]} dates={dates} asOfDate={asOfDate} />
+              <MetricMiniCard key={d} label={d} series={dayShareSeries[d]} kind="percent" dates={dates} asOfDate={asOfDate} />
             ))}
           </div>
         </div>
@@ -748,13 +803,14 @@ function RevenueTab({ topline, period, itemMovers, itemMoversLoading }) {
       </div>
 
       <div className="space-y-3">
-        <h3 className="text-sm font-bold text-gray-900">Weekend vs Weekday AOV</h3>
-        <div className="grid grid-cols-2 gap-3">
+        <h3 className="text-sm font-bold text-gray-900">Average Order Value</h3>
+        <div className="grid grid-cols-3 gap-3">
+          <StatTile label="Blended AOV" value={moneyAt(blendedAOVSeries)} delta={wowDeltaAt(blendedAOVSeries, asOfDate)} />
           <StatTile label="Weekday AOV" value={moneyAt(weekdayAOVSeries)} delta={wowDeltaAt(weekdayAOVSeries, asOfDate)} />
           <StatTile label="Weekend AOV" value={moneyAt(weekendAOVSeries)} delta={wowDeltaAt(weekendAOVSeries, asOfDate)} />
         </div>
-        <ChartCard title="Average Order Value" subtitle={`Blended AOV (revenue / customers), weekday vs weekend -- last ${period} weeks`}>
-          <TrendChart rows={aovRows} dataKeys={['Weekday AOV', 'Weekend AOV']} colors={CATEGORICAL} money />
+        <ChartCard title="Average Order Value" subtitle={`Blended AOV (revenue / customers), overall vs weekday vs weekend -- last ${period} weeks`}>
+          <TrendChart rows={aovRows} dataKeys={['Blended AOV', 'Weekday AOV', 'Weekend AOV']} colors={CATEGORICAL} money tightDomain />
         </ChartCard>
       </div>
 
