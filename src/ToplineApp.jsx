@@ -9,17 +9,19 @@ import {
   fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts,
 } from './toplineData';
 
-// Validated categorical palette, bookended with R-Shift's own brand orange
-// and blue (rather than the generic dataviz-reference hues in those slots)
-// so multi-series charts read as "this app's colours", with three more
-// validated hues filling the gap and the two greens kept apart -- that
+// Validated categorical palette. Orange and blue lean toward R-Shift's brand
+// hues but use the dataviz-reference's softer steps (#eb6834 / #2a78d6)
+// rather than the saturated UI-chrome values (#E85018 / #3B5BDB) -- full
+// brand saturation reads as neon once it's filling bars/lines across a whole
+// chart, so charts get a calmer step of the same hue instead. Three more
+// validated hues fill the gap, with the two greens kept apart -- that
 // pairing barely cleared the CVD floor and was genuinely hard to tell apart
 // in a 4-series stacked bar. Re-validated as its own theme: worst adjacent
 // normal-vision Delta E 28.3, both light-mode gates clear. Used for anything
 // with 2+ series. Single-series charts use the module's own accent
 // (var(--primary), R-Shift blue) instead, so a lone trend line still reads
 // as "this module's colour", not just "series 1".
-const CATEGORICAL = ['#E85018', '#4a3aa7', '#1baf7a', '#e87ba4', '#008300', '#3B5BDB'];
+const CATEGORICAL = ['#eb6834', '#4a3aa7', '#1baf7a', '#e87ba4', '#008300', '#2a78d6'];
 const AXIS_COLOR = '#8a8578';
 const GRID_COLOR = '#e8e4d8';
 const CHART_HEIGHT = 320;
