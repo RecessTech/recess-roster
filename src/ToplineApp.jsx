@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import toast from 'react-hot-toast';
 import {
-  fetchTopline, sortedDates, valueAt, wowDeltaAt, chartRowsForWindow, findMetric, weekAxis,
+  fetchTopline, fetchItemMovers, sortedDates, valueAt, wowDeltaAt, chartRowsForWindow, findMetric, weekAxis,
   fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts,
 } from './toplineData';
 
@@ -326,6 +326,86 @@ function toPercentRows(rows, dataKeys) {
   });
 }
 
+// Sums named groups of metrics into {date, [group]: $} rows -- the shared
+// shape any "% of the whole" chart reduces to (weekday mix, hour-of-day
+// mix, ...): bucket some metrics together per week, then hand the result to
+// toPercentRows.
+function sumGroupsRows(dates, groups) {
+  return dates.map(date => {
+    const row = { date };
+    groups.forEach(({ label, metrics }) => {
+      row[label] = metrics.reduce((sum, m) => sum + (m?.series[date] || 0), 0);
+    });
+    return row;
+  });
+}
+
+const MINI_CHART_HEIGHT = 120;
+
+// A single-series, axis-light line chart for a small-multiples grid (one
+// card per weekday) -- no legend or x-axis labels since the card title
+// already names the series and 7 of these side by side have no room for
+// per-chart chrome; the shared Tooltip still gives the exact week on hover.
+function MiniTrendChart({ rows, dataKey }) {
+  if (!rows.length || !hasChartData(rows, [dataKey])) {
+    return <div style={{ height: MINI_CHART_HEIGHT }} className="flex items-center justify-center text-xs text-gray-300">No data</div>;
+  }
+  return (
+    <ResponsiveContainer width="100%" height={MINI_CHART_HEIGHT}>
+      <LineChart data={rows} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+        <XAxis dataKey="date" tick={false} axisLine={false} tickLine={false} />
+        <YAxis tickFormatter={fmtPct} tick={{ fontSize: 10, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={36} />
+        <Tooltip labelFormatter={fmtWeekLabel} formatter={v => fmtPct(v)} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
+        <Line type="monotone" dataKey={dataKey} stroke="var(--primary)" strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function DayShareCard({ day, series, dates, asOfDate }) {
+  const rows = chartRowsForWindow([{ name: day, series }], dates);
+  const current = valueAt(series, asOfDate);
+  const delta = wowDeltaAt(series, asOfDate);
+  return (
+    <div className="card p-3">
+      <div className="flex items-baseline justify-between">
+        <p className="text-xs font-bold text-gray-900">{day}</p>
+        <p className="text-sm font-bold text-gray-900 tabular-nums">{current != null ? fmtPct(current) : '—'}</p>
+      </div>
+      <DeltaPill delta={delta} />
+      <MiniTrendChart rows={rows} dataKey={day} />
+    </div>
+  );
+}
+
+function ItemMoversTable({ title, rows, loading }) {
+  return (
+    <div className="card p-4">
+      <p className="text-sm font-bold text-gray-900 mb-2">{title}</p>
+      {loading ? (
+        <div className="flex items-center justify-center h-24 text-gray-300"><Loader2 size={16} className="animate-spin" /></div>
+      ) : !rows?.length ? (
+        <p className="text-xs text-gray-400 py-6 text-center">Not enough data yet</p>
+      ) : (
+        <div className="divide-y divide-gray-100">
+          {rows.map(r => (
+            <div key={r.name} className="flex items-center justify-between gap-3 py-1.5">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-800 truncate">{r.name}</p>
+                {r.category && <p className="text-[11px] text-gray-400 truncate">{r.category}</p>}
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-sm font-semibold text-gray-700 tabular-nums">{fmtMoney(r.current, { compact: true })}</p>
+                <p className="text-[11px] font-semibold tabular-nums" style={{ color: r.pct >= 0 ? GOOD : BAD }}>{r.pct >= 0 ? '+' : ''}{fmtPct(r.pct)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // A tab's KPI list can be scanned as cards (sparkline + latest value, good
 // for a quick glance) or as a table (every value for every visible week at
 // once, good for spotting a trend or an outlier across the period).
@@ -459,16 +539,30 @@ const REVENUE_CHANNELS = [
 ];
 const REVENUE_CATEGORIES = ['Food', 'Drinks', 'Snacks', 'Merch'];
 
-// The 7 individual weekdays would need a 7th ad hoc palette color (the
-// validated CATEGORICAL set has 6) -- folded into 3 groups instead, per the
-// dataviz rule that an overflow series folds into a composite rather than
-// inventing an unvalidated hue. Weekdays are summed (not averaged) so the
-// three groups still add to a true 100% of the week, same as the $-based
-// channel/category stacks above.
+// The composition chart folds the 7 weekdays into 3 groups -- a 7th ad hoc
+// palette color beyond the validated 6-color CATEGORICAL set would break
+// the dataviz rule that an overflow series folds into a composite rather
+// than inventing an unvalidated hue. Each individual day still gets its own
+// single-series small-multiple below (module accent color, no palette
+// needed for one line). Weekdays are summed (not averaged) so the three
+// groups still add to a true 100% of the week.
 const WEEKDAY_MIX_GROUPS = ['Weekdays (Mon-Fri)', 'Saturday', 'Sunday'];
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const ALL_WEEKDAYS = [...WEEKDAYS, 'Saturday', 'Sunday'];
 
-function RevenueTab({ topline, period }) {
+// A cafe's trading day folded into 4 dayparts rather than all 12 raw hour
+// buckets -- same "no 7th+ ad hoc color" reasoning as the weekday groups,
+// and 4 dayparts is a more readable story than 12 thin stack segments.
+const HOUR_GROUPS = [
+  { label: 'Morning', hours: ['5am-6am', '6am-7am', '7am-8am', '8am-9am'] },
+  { label: 'Late Morning', hours: ['9am-10am', '10am-11am'] },
+  { label: 'Lunch', hours: ['11am-12pm', '12pm-1pm', '1pm-2pm'] },
+  { label: 'Afternoon', hours: ['2pm-3pm', '3pm-4pm', '4pm-5pm'] },
+];
+const HOUR_GROUP_LABELS = HOUR_GROUPS.map(g => g.label);
+const ALL_HOURS = HOUR_GROUPS.flatMap(g => g.hours);
+
+function RevenueTab({ topline, period, itemMovers, itemMoversLoading }) {
   const { asOfDate } = topline;
   const revGroup = topline.revenue;
   const dates = weekAxis(asOfDate, period);
@@ -479,6 +573,7 @@ function RevenueTab({ topline, period }) {
     })
     .filter(Boolean);
   const channelRows = chartRowsForWindow(channelSeries, dates);
+  const channelShareRows = toPercentRows(channelRows, REVENUE_CHANNELS.map(c => c.label));
 
   const categorySeries = REVENUE_CATEGORIES
     .map(name => {
@@ -493,37 +588,81 @@ function RevenueTab({ topline, period }) {
   const thirdPartyM = findMetric(revGroup, 'Revenue', 'Revenue - UberEats / DD / Hey You');
   const b2bM = findMetric(revGroup, 'Revenue', 'Revenue - Catering / B2B');
 
-  const satM = findMetric(revGroup, 'Daily Revenue (In-Store)', 'Saturday');
-  const sunM = findMetric(revGroup, 'Daily Revenue (In-Store)', 'Sunday');
-  const weekdayMs = WEEKDAYS.map(d => findMetric(revGroup, 'Daily Revenue (In-Store)', d)).filter(Boolean);
-  const weekdayMixRows = weekdayMs.length
-    ? toPercentRows(
-        dates.map(date => ({
-          date,
-          'Weekdays (Mon-Fri)': weekdayMs.reduce((sum, m) => sum + (m.series[date] || 0), 0),
-          Saturday: satM?.series[date] || 0,
-          Sunday: sunM?.series[date] || 0,
-        })),
-        WEEKDAY_MIX_GROUPS,
-      )
-    : [];
-  // Same shares as a full history, keyed by date, so stat tiles can read the
-  // as-of week and its WoW delta the same way every other tile does.
-  const weekdayTotalByDate = {};
-  weekdayMs.forEach(m => Object.keys(m.series).forEach(d => {
-    weekdayTotalByDate[d] = (weekdayTotalByDate[d] || 0) + m.series[d];
+  // ── Day-of-week mix ──────────────────────────────────────────────────────
+  const dayMs = {};
+  ALL_WEEKDAYS.forEach(d => { dayMs[d] = findMetric(revGroup, 'Daily Revenue (In-Store)', d); });
+  const dayTotalByDate = {};
+  ALL_WEEKDAYS.forEach(d => Object.entries(dayMs[d]?.series || {}).forEach(([date, val]) => {
+    dayTotalByDate[date] = (dayTotalByDate[date] || 0) + val;
   }));
-  const allDates = new Set([...Object.keys(weekdayTotalByDate), ...Object.keys(satM?.series || {}), ...Object.keys(sunM?.series || {})]);
-  const satShareSeries = {}, sunShareSeries = {}, weekendShareSeries = {};
-  allDates.forEach(d => {
-    const sat = satM?.series[d] || 0;
-    const sun = sunM?.series[d] || 0;
-    const total = (weekdayTotalByDate[d] || 0) + sat + sun;
-    if (!total) return;
-    satShareSeries[d] = sat / total;
-    sunShareSeries[d] = sun / total;
-    weekendShareSeries[d] = (sat + sun) / total;
+  // Share-of-week series per individual day, keyed by date -- feeds both the
+  // small-multiples grid below and the Sat/Sun/Weekend stat tiles, so a
+  // closure week ($0 total) is excluded from all of them the same way.
+  const dayShareSeries = {};
+  ALL_WEEKDAYS.forEach(d => {
+    dayShareSeries[d] = {};
+    Object.entries(dayMs[d]?.series || {}).forEach(([date, val]) => {
+      const total = dayTotalByDate[date];
+      if (total) dayShareSeries[d][date] = val / total;
+    });
   });
+  const weekendShareSeries = {};
+  Object.keys(dayTotalByDate).forEach(date => {
+    const total = dayTotalByDate[date];
+    if (!total) return;
+    weekendShareSeries[date] = ((dayMs.Saturday?.series[date] || 0) + (dayMs.Sunday?.series[date] || 0)) / total;
+  });
+  const weekdayMixRows = toPercentRows(
+    sumGroupsRows(dates, [
+      { label: 'Weekdays (Mon-Fri)', metrics: WEEKDAYS.map(d => dayMs[d]) },
+      { label: 'Saturday', metrics: [dayMs.Saturday] },
+      { label: 'Sunday', metrics: [dayMs.Sunday] },
+    ]),
+    WEEKDAY_MIX_GROUPS,
+  );
+
+  // ── Time-of-day mix ──────────────────────────────────────────────────────
+  const hourMs = {};
+  ALL_HOURS.forEach(h => { hourMs[h] = findMetric(revGroup, 'Revenue by Hour', h); });
+  const hourTotalByDate = {};
+  ALL_HOURS.forEach(h => Object.entries(hourMs[h]?.series || {}).forEach(([date, val]) => {
+    hourTotalByDate[date] = (hourTotalByDate[date] || 0) + val;
+  }));
+  const lunchShareSeries = {};
+  const lunchHours = HOUR_GROUPS.find(g => g.label === 'Lunch').hours;
+  Object.keys(hourTotalByDate).forEach(date => {
+    const total = hourTotalByDate[date];
+    if (!total) return;
+    lunchShareSeries[date] = lunchHours.reduce((sum, h) => sum + (hourMs[h]?.series[date] || 0), 0) / total;
+  });
+  const hourMixRows = toPercentRows(
+    sumGroupsRows(dates, HOUR_GROUPS.map(g => ({ label: g.label, metrics: g.hours.map(h => hourMs[h]) }))),
+    HOUR_GROUP_LABELS,
+  );
+
+  // ── Weekend vs weekday AOV ───────────────────────────────────────────────
+  // Blended (revenue / customers), not an average of daily AOVs -- averaging
+  // 5 unequal-volume weekday AOVs would over-weight a quiet Monday against a
+  // busy Friday; dividing summed revenue by summed customers weights each
+  // customer equally instead, which is what "AOV" is supposed to mean.
+  const custMs = {};
+  ALL_WEEKDAYS.forEach(d => { custMs[d] = findMetric(revGroup, 'Daily Customers', d); });
+  const weekdayAOVSeries = {}, weekendAOVSeries = {};
+  Object.keys(dayTotalByDate).forEach(date => {
+    const wdRev = WEEKDAYS.reduce((sum, d) => sum + (dayMs[d]?.series[date] || 0), 0);
+    const wdCust = WEEKDAYS.reduce((sum, d) => sum + (custMs[d]?.series[date] || 0), 0);
+    if (wdCust) weekdayAOVSeries[date] = wdRev / wdCust;
+    const weRev = (dayMs.Saturday?.series[date] || 0) + (dayMs.Sunday?.series[date] || 0);
+    const weCust = (custMs.Saturday?.series[date] || 0) + (custMs.Sunday?.series[date] || 0);
+    if (weCust) weekendAOVSeries[date] = weRev / weCust;
+  });
+  const aovRows = chartRowsForWindow(
+    [{ name: 'Weekday AOV', series: weekdayAOVSeries }, { name: 'Weekend AOV', series: weekendAOVSeries }],
+    dates,
+  );
+
+  const pctAt = series => (valueAt(series, asOfDate) != null ? fmtPct(valueAt(series, asOfDate)) : '—');
+  const moneyAt = series => (valueAt(series, asOfDate) != null ? fmtMoney(valueAt(series, asOfDate)) : '—');
 
   return (
     <div className="space-y-5">
@@ -541,16 +680,64 @@ function RevenueTab({ topline, period }) {
           <StackedBarChart rows={categoryRows} dataKeys={REVENUE_CATEGORIES} colors={CATEGORICAL} money />
         </ChartCard>
       </div>
+
+      <div>
+        <h3 className="text-sm font-bold text-gray-900 mb-2">Channel Mix</h3>
+        <ChartCard title="Channel Share of Revenue" subtitle={`Same channels as above, as a share of total revenue -- last ${period} weeks`}>
+          <StackedBarChart rows={channelShareRows} dataKeys={REVENUE_CHANNELS.map(c => c.label)} colors={CATEGORICAL} percent />
+        </ChartCard>
+      </div>
+
       <div className="space-y-3">
+        <h3 className="text-sm font-bold text-gray-900">Day-of-Week Mix</h3>
         <div className="grid grid-cols-3 gap-3">
-          <StatTile label="Weekend Share" value={valueAt(weekendShareSeries, asOfDate) != null ? fmtPct(valueAt(weekendShareSeries, asOfDate)) : '—'} delta={wowDeltaAt(weekendShareSeries, asOfDate)} />
-          <StatTile label="Saturday Share" value={valueAt(satShareSeries, asOfDate) != null ? fmtPct(valueAt(satShareSeries, asOfDate)) : '—'} delta={wowDeltaAt(satShareSeries, asOfDate)} />
-          <StatTile label="Sunday Share" value={valueAt(sunShareSeries, asOfDate) != null ? fmtPct(valueAt(sunShareSeries, asOfDate)) : '—'} delta={wowDeltaAt(sunShareSeries, asOfDate)} />
+          <StatTile label="Weekend Share" value={pctAt(weekendShareSeries)} delta={wowDeltaAt(weekendShareSeries, asOfDate)} />
+          <StatTile label="Saturday Share" value={pctAt(dayShareSeries.Saturday)} delta={wowDeltaAt(dayShareSeries.Saturday, asOfDate)} />
+          <StatTile label="Sunday Share" value={pctAt(dayShareSeries.Sunday)} delta={wowDeltaAt(dayShareSeries.Sunday, asOfDate)} />
         </div>
         <ChartCard title="Weekday Mix" subtitle={`Share of in-store revenue by day-of-week group, last ${period} weeks`}>
           <StackedBarChart rows={weekdayMixRows} dataKeys={WEEKDAY_MIX_GROUPS} colors={CATEGORICAL} percent />
         </ChartCard>
+        <div>
+          <p className="text-xs text-gray-400 mb-2">Each day's own share of that week's in-store revenue, evolving over the same period</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {ALL_WEEKDAYS.map(d => (
+              <DayShareCard key={d} day={d} series={dayShareSeries[d]} dates={dates} asOfDate={asOfDate} />
+            ))}
+          </div>
+        </div>
       </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-gray-900">Time-of-Day Mix</h3>
+        <StatTile label="Lunch Rush Share" value={pctAt(lunchShareSeries)} delta={wowDeltaAt(lunchShareSeries, asOfDate)} />
+        <ChartCard title="Revenue by Daypart" subtitle={`Morning / Late Morning / Lunch / Afternoon, share of daily revenue -- last ${period} weeks`}>
+          <StackedBarChart rows={hourMixRows} dataKeys={HOUR_GROUP_LABELS} colors={CATEGORICAL} percent />
+        </ChartCard>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-gray-900">Weekend vs Weekday AOV</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <StatTile label="Weekday AOV" value={moneyAt(weekdayAOVSeries)} delta={wowDeltaAt(weekdayAOVSeries, asOfDate)} />
+          <StatTile label="Weekend AOV" value={moneyAt(weekendAOVSeries)} delta={wowDeltaAt(weekendAOVSeries, asOfDate)} />
+        </div>
+        <ChartCard title="Average Order Value" subtitle={`Blended AOV (revenue / customers), weekday vs weekend -- last ${period} weeks`}>
+          <TrendChart rows={aovRows} dataKeys={['Weekday AOV', 'Weekend AOV']} colors={CATEGORICAL} money />
+        </ChartCard>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-gray-900">Item Movers</h3>
+        <p className="text-xs text-gray-400">
+          {itemMovers?.currentLabel ? `${itemMovers.currentLabel} vs ${itemMovers.priorLabel}, every channel, items under $20 excluded` : 'Last 4 complete weeks vs the 4 before that'}
+        </p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <ItemMoversTable title="Top Gainers" rows={itemMovers?.gainers} loading={itemMoversLoading} />
+          <ItemMoversTable title="Top Decliners" rows={itemMovers?.decliners} loading={itemMoversLoading} />
+        </div>
+      </div>
+
       <KpiSection groups={revGroup} defaultOpenCount={2} asOfDate={asOfDate} period={period} />
     </div>
   );
@@ -749,6 +936,8 @@ export default function ToplineApp({ org }) {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [period, setPeriod] = useState(26);
+  const [itemMovers, setItemMovers] = useState(null);
+  const [itemMoversLoading, setItemMoversLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!orgId) return;
@@ -763,6 +952,20 @@ export default function ToplineApp({ org }) {
   }, [orgId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Fixed 4-vs-4-week comparison (see fetchItemMovers) -- doesn't depend on
+  // the page's period selector, only on which "as of" week the rest of the
+  // dashboard has settled on.
+  useEffect(() => {
+    if (!orgId || !topline?.asOfDate) return;
+    let cancelled = false;
+    setItemMoversLoading(true);
+    fetchItemMovers(orgId, topline.asOfDate)
+      .then(res => { if (!cancelled) setItemMovers(res); })
+      .catch(err => { if (!cancelled) toast.error('Failed to load item movers: ' + (err.message || 'unknown error')); })
+      .finally(() => { if (!cancelled) setItemMoversLoading(false); });
+    return () => { cancelled = true; };
+  }, [orgId, topline?.asOfDate]);
 
   if (loading) {
     return (
@@ -808,7 +1011,7 @@ export default function ToplineApp({ org }) {
         </div>
 
         {activeTab === 'overview' && <OverviewTab topline={topline} period={period} />}
-        {activeTab === 'revenue' && <RevenueTab topline={topline} period={period} />}
+        {activeTab === 'revenue' && <RevenueTab topline={topline} period={period} itemMovers={itemMovers} itemMoversLoading={itemMoversLoading} />}
         {activeTab === 'costs' && <CostsTab topline={topline} period={period} />}
         {activeTab === 'customer' && <CustomerTab topline={topline} period={period} />}
         {activeTab === 'pnl' && <PnlTab topline={topline} period={period} />}
