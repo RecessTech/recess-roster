@@ -1814,7 +1814,7 @@ export const db = {
     for (;;) {
       const { data, error } = await supabase
         .from('sales_history')
-        .select('item_id, sale_date, revenue')
+        .select('item_id, sale_date, channel, qty, revenue')
         .eq('org_id', orgId)
         .gte('sale_date', startDate)
         .lte('sale_date', endDate)
