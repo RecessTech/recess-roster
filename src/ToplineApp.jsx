@@ -293,15 +293,15 @@ function TrendChart({ rows, dataKeys, colors, money, percent }) {
   );
 }
 
-function StackedBarChart({ rows, dataKeys, colors, money }) {
+function StackedBarChart({ rows, dataKeys, colors, money, percent }) {
   if (!rows.length || !hasChartData(rows, dataKeys)) return <EmptyChart label="No data in this period" />;
-  const yFmt = v => (money ? fmtMoney(v, { compact: true }) : fmtNumber(v));
+  const yFmt = v => (percent ? fmtPct(v) : money ? fmtMoney(v, { compact: true }) : fmtNumber(v));
   return (
     <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
       <BarChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke={GRID_COLOR} vertical={false} />
         <XAxis dataKey="date" tickFormatter={fmtWeekLabel} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={{ stroke: GRID_COLOR }} tickLine={false} minTickGap={28} />
-        <YAxis tickFormatter={yFmt} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={money ? 64 : 46} />
+        <YAxis tickFormatter={yFmt} domain={percent ? [0, 1] : undefined} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={money ? 64 : 46} />
         <Tooltip labelFormatter={fmtWeekLabel} formatter={v => yFmt(v)} contentStyle={{ fontSize: 13, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         {dataKeys.map((k, i) => (
@@ -310,6 +310,20 @@ function StackedBarChart({ rows, dataKeys, colors, money }) {
       </BarChart>
     </ResponsiveContainer>
   );
+}
+
+// Normalizes each row's dataKeys to fractions of that row's own total, so a
+// stacked bar reads as "share of the week" instead of "$ that week" -- same
+// shape StackedBarChart already draws, just pre-divided. A $0 week (closure)
+// has no share to show, so it's left out rather than divide-by-zero.
+function toPercentRows(rows, dataKeys) {
+  return rows.map(row => {
+    const total = dataKeys.reduce((sum, k) => sum + (row[k] || 0), 0);
+    const out = { date: row.date };
+    if (!total) return out;
+    dataKeys.forEach(k => { if (row[k] != null) out[k] = row[k] / total; });
+    return out;
+  });
 }
 
 // A tab's KPI list can be scanned as cards (sparkline + latest value, good
@@ -445,6 +459,15 @@ const REVENUE_CHANNELS = [
 ];
 const REVENUE_CATEGORIES = ['Food', 'Drinks', 'Snacks', 'Merch'];
 
+// The 7 individual weekdays would need a 7th ad hoc palette color (the
+// validated CATEGORICAL set has 6) -- folded into 3 groups instead, per the
+// dataviz rule that an overflow series folds into a composite rather than
+// inventing an unvalidated hue. Weekdays are summed (not averaged) so the
+// three groups still add to a true 100% of the week, same as the $-based
+// channel/category stacks above.
+const WEEKDAY_MIX_GROUPS = ['Weekdays (Mon-Fri)', 'Saturday', 'Sunday'];
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
 function RevenueTab({ topline, period }) {
   const { asOfDate } = topline;
   const revGroup = topline.revenue;
@@ -470,6 +493,38 @@ function RevenueTab({ topline, period }) {
   const thirdPartyM = findMetric(revGroup, 'Revenue', 'Revenue - UberEats / DD / Hey You');
   const b2bM = findMetric(revGroup, 'Revenue', 'Revenue - Catering / B2B');
 
+  const satM = findMetric(revGroup, 'Daily Revenue (In-Store)', 'Saturday');
+  const sunM = findMetric(revGroup, 'Daily Revenue (In-Store)', 'Sunday');
+  const weekdayMs = WEEKDAYS.map(d => findMetric(revGroup, 'Daily Revenue (In-Store)', d)).filter(Boolean);
+  const weekdayMixRows = weekdayMs.length
+    ? toPercentRows(
+        dates.map(date => ({
+          date,
+          'Weekdays (Mon-Fri)': weekdayMs.reduce((sum, m) => sum + (m.series[date] || 0), 0),
+          Saturday: satM?.series[date] || 0,
+          Sunday: sunM?.series[date] || 0,
+        })),
+        WEEKDAY_MIX_GROUPS,
+      )
+    : [];
+  // Same shares as a full history, keyed by date, so stat tiles can read the
+  // as-of week and its WoW delta the same way every other tile does.
+  const weekdayTotalByDate = {};
+  weekdayMs.forEach(m => Object.keys(m.series).forEach(d => {
+    weekdayTotalByDate[d] = (weekdayTotalByDate[d] || 0) + m.series[d];
+  }));
+  const allDates = new Set([...Object.keys(weekdayTotalByDate), ...Object.keys(satM?.series || {}), ...Object.keys(sunM?.series || {})]);
+  const satShareSeries = {}, sunShareSeries = {}, weekendShareSeries = {};
+  allDates.forEach(d => {
+    const sat = satM?.series[d] || 0;
+    const sun = sunM?.series[d] || 0;
+    const total = (weekdayTotalByDate[d] || 0) + sat + sun;
+    if (!total) return;
+    satShareSeries[d] = sat / total;
+    sunShareSeries[d] = sun / total;
+    weekendShareSeries[d] = (sat + sun) / total;
+  });
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -484,6 +539,16 @@ function RevenueTab({ topline, period }) {
         </ChartCard>
         <ChartCard title="Revenue by Category" subtitle={`Food / Drinks / Snacks / Merch, last ${period} weeks`}>
           <StackedBarChart rows={categoryRows} dataKeys={REVENUE_CATEGORIES} colors={CATEGORICAL} money />
+        </ChartCard>
+      </div>
+      <div className="space-y-3">
+        <div className="grid grid-cols-3 gap-3">
+          <StatTile label="Weekend Share" value={valueAt(weekendShareSeries, asOfDate) != null ? fmtPct(valueAt(weekendShareSeries, asOfDate)) : '—'} delta={wowDeltaAt(weekendShareSeries, asOfDate)} />
+          <StatTile label="Saturday Share" value={valueAt(satShareSeries, asOfDate) != null ? fmtPct(valueAt(satShareSeries, asOfDate)) : '—'} delta={wowDeltaAt(satShareSeries, asOfDate)} />
+          <StatTile label="Sunday Share" value={valueAt(sunShareSeries, asOfDate) != null ? fmtPct(valueAt(sunShareSeries, asOfDate)) : '—'} delta={wowDeltaAt(sunShareSeries, asOfDate)} />
+        </div>
+        <ChartCard title="Weekday Mix" subtitle={`Share of in-store revenue by day-of-week group, last ${period} weeks`}>
+          <StackedBarChart rows={weekdayMixRows} dataKeys={WEEKDAY_MIX_GROUPS} colors={CATEGORICAL} percent />
         </ChartCard>
       </div>
       <KpiSection groups={revGroup} defaultOpenCount={2} asOfDate={asOfDate} period={period} />
