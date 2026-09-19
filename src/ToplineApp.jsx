@@ -9,26 +9,22 @@ import {
   fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts,
 } from './toplineData';
 
-// Validated categorical palette, engineered for actual colorimetric balance
-// rather than six hues picked one at a time. Earlier passes swapped
-// individual hexes for calmer steps but never fixed the underlying issue:
-// the six lived at wildly different OKLCH lightness (0.43-0.72) and chroma
-// (0.14-0.18), so some slots read heavy/saturated and others pale/washed
-// out no matter which hue led. This set holds L and C IDENTICAL across all
-// six (L 0.60, C 0.102) and varies only hue -- so no series is visually
-// "louder" than another; the eye reads six equally-weighted, dusty, muted
-// tones (a blue, a dusty rose, a deep teal, a warm ochre, a muted mauve, a
-// sage green) rather than a rainbow of mismatched intensities. Also drops
-// the reference palette's built-in accent-orange bias entirely, so nothing
-// in the chart set doubles up with this org's brand orange in the
-// surrounding UI chrome (var(--primary)). Re-validated as its own theme:
-// worst adjacent CVD Delta E 10.0, worst adjacent normal-vision Delta E
-// 16.7, all 6 clear 3:1 contrast outright -- no WARN/relief band anywhere,
-// unlike every prior version of this palette. Used for anything with 2+
-// series. Single-series charts use the module's own accent (var(--primary),
-// this org's brand orange) instead, so a lone trend line still reads as
-// "this module's colour", not just "series 1".
-const CATEGORICAL = ['#5882bd', '#b56669', '#1190a4', '#ab723a', '#956eac', '#54915c'];
+// Classic Excel/Office "Standard Colors" swatch row (dark red, light blue,
+// purple, gold, blue, green) -- plain, bold, unmistakably a spreadsheet
+// palette, not a designed one. Two colors needed a small nudge off their
+// textbook hex to clear the dataviz validator: gold #FFC000 was too light
+// (OKLCH L 0.84, above the 0.77 band ceiling) so it's stepped down to
+// #D9A700; everything else is the swatch as-is. Re-validated in this order:
+// worst adjacent CVD Delta E 25.9, worst adjacent normal-vision Delta E
+// 28.5 -- the widest margins of any palette tried here. Three slots (light
+// blue, gold, green) sit a little under 3:1 contrast, same as bold colors
+// on a white background in Excel itself; the legend and tooltips on every
+// chart are the required relief, so this stays legible without muting the
+// colors themselves. Used for anything with 2+ series. Single-series
+// charts use the module's own accent (var(--primary), this org's brand
+// orange) instead, so a lone trend line still reads as "this module's
+// colour", not just "series 1".
+const CATEGORICAL = ['#C00000', '#00B0F0', '#7030A0', '#D9A700', '#0070C0', '#00B050'];
 const AXIS_COLOR = '#8a8578';
 const GRID_COLOR = '#e8e4d8';
 const CHART_HEIGHT = 320;
@@ -933,7 +929,7 @@ const PNL_TREND_LINES = [
   { section: 'PC1', metric: 'COGS', label: 'COGS' },
   { section: 'Labour', metric: 'Labour Costs (Wages)', label: 'Labour' },
 ];
-// Picked away from CATEGORICAL's teal (index 2) and green (index 5) so a
+// Picked away from CATEGORICAL's purple (index 2) and green (index 5) so a
 // cost line never reads like the profit bar's own green.
 const PNL_TREND_LINE_COLORS = [CATEGORICAL[0], CATEGORICAL[1], CATEGORICAL[3], CATEGORICAL[4]];
 const PNL_TREND_PROFIT_METRIC = 'Operating Profit $';
