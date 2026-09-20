@@ -490,16 +490,6 @@ const RosterApp = () => {
       }
       
       setIsLoaded(true);
-      
-      // Check if user has completed tutorial (first login detection)
-      const tutorialCompleted = localStorage.getItem(`tutorial_completed_${user.id}`);
-      if (!tutorialCompleted) {
-        // First time user - auto-start tutorial after a brief delay
-        setTimeout(() => {
-          setShowTutorial(true);
-          setTutorialStep(0);
-        }, 1500);
-      }
     };
     
     loadData();
@@ -3151,7 +3141,7 @@ const RosterApp = () => {
 
     const tutorialSteps = [
       {
-        title: "Welcome to Recess Roster! 👋",
+        title: "Welcome to R-Shift! 👋",
         content: "Let's take a quick tour to get you started. This tutorial will show you how to create your first staff schedule in just a few steps.",
         highlight: null,
         position: "center"

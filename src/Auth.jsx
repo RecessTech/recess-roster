@@ -1,5 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import { CalendarDays, Clock, BarChart3 } from 'lucide-react';
 import { supabase } from './supabaseClient';
+
+const LOGO_URL = 'https://i.postimg.cc/76YSLjdw/rshift-on-cream.jpg';
+
+const FEATURES = [
+  { icon: CalendarDays, text: 'Build the week\'s roster in minutes, not hours' },
+  { icon: Clock, text: 'Timesheets and labour cost, calculated automatically' },
+  { icon: BarChart3, text: 'Live sales, costs and P&L built right in' },
+];
 
 export const useAuth = () => {
   const [user, setUser] = useState(null);
@@ -48,33 +57,14 @@ export const Auth = ({ onAuthenticated }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
-  const [businessSettings, setBusinessSettings] = useState({
-    businessName: 'Recess Roster',
-    logoUrl: ''
-  });
 
-  // Load business settings (public, no auth required)
+  // The signed-in app picks its own data-theme per active module (see
+  // roster-app.jsx) -- R-Shift's is 'blue'. Nothing has set that attribute
+  // yet at the sign-in screen, so it falls back to the root/orange default
+  // without this. Sets R-Shift's colourway explicitly rather than inheriting
+  // whichever theme happened to be active last.
   useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('settings')
-          .select('business_name, logo_url')
-          .limit(1)
-          .single();
-
-        if (data && !error) {
-          setBusinessSettings({
-            businessName: data.business_name || 'Recess Roster',
-            logoUrl: data.logo_url || ''
-          });
-        }
-      } catch (error) {
-        console.log('Could not load public settings, using defaults');
-      }
-    };
-
-    loadSettings();
+    document.documentElement.setAttribute('data-theme', 'blue');
   }, []);
 
   const handleAuth = async (e) => {
@@ -109,105 +99,121 @@ export const Auth = ({ onAuthenticated }) => {
   };
 
   return (
-    <div className="min-h-screen bg-surface-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-modal p-8 w-full max-w-sm animate-fade-in">
-        <div className="text-center mb-8">
-          {businessSettings.logoUrl ? (
-            <div className="relative">
-              <img
-                src={businessSettings.logoUrl}
-                alt={`${businessSettings.businessName} Logo`}
-                className="h-16 w-16 mx-auto mb-4 object-contain rounded-lg"
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                  const fallback = e.target.nextElementSibling;
-                  if (fallback) fallback.style.display = 'flex';
-                }}
-              />
-              <div style={{ display: 'none' }} className="bg-brand-500 w-12 h-12 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-brand-500 w-12 h-12 rounded-lg mx-auto mb-4 flex items-center justify-center">
-              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
-            </div>
-          )}
-
-          <h1 className="text-xl font-semibold text-gray-900 mb-1">
-            {businessSettings.businessName}
-          </h1>
-          <p className="text-sm text-gray-500">Staff Management System</p>
+    <div className="min-h-screen flex">
+      {/* Brand panel -- hidden below lg, where the compact header inside the
+          form panel carries the logo/wordmark instead. */}
+      <div
+        className="hidden lg:flex lg:w-[44%] xl:w-[40%] flex-col justify-between p-12 text-white"
+        style={{ background: 'linear-gradient(160deg, var(--sb-bg), var(--primary-dk))' }}
+      >
+        <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-elevated shrink-0">
+          <img src={LOGO_URL} alt="R-Shift" className="w-full h-full object-cover" />
         </div>
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-            {error}
-          </div>
-        )}
-
-        {message && (
-          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-            {message}
-          </div>
-        )}
-
-        <form onSubmit={handleAuth} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="input-base"
-              placeholder="your@email.com"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={6}
-              className="input-base"
-              placeholder="Enter password"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn-primary w-full py-2.5"
-          >
-            {loading ? 'Loading...' : isSignUp ? 'Sign Up' : 'Sign In'}
-          </button>
-        </form>
-
-        <div className="mt-5 text-center">
-          <button
-            onClick={() => setIsSignUp(!isSignUp)}
-            className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-          >
-            {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
-          </button>
-        </div>
-
-        <div className="mt-6 pt-5 border-t border-gray-100">
-          <p className="text-xs text-gray-400 text-center">
-            Secure authentication powered by Supabase
+        <div className="max-w-sm">
+          <h1 className="text-4xl font-extrabold tracking-tight mb-3">R-Shift</h1>
+          <p className="text-base text-white/80 mb-10 leading-relaxed">
+            Staff scheduling, timesheets and rostering -- built for cafes and hospitality teams.
           </p>
+          <div className="space-y-5">
+            {FEATURES.map(({ icon: Icon, text }) => (
+              <div key={text} className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-white/15">
+                  <Icon size={16} />
+                </div>
+                <p className="text-sm text-white/90 leading-relaxed pt-1.5">{text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <p className="text-xs text-white/50">© {new Date().getFullYear()} R-Shift</p>
+      </div>
+
+      {/* Form panel */}
+      <div className="flex-1 flex items-center justify-center p-6" style={{ background: 'var(--app-bg, #F5F5F5)' }}>
+        <div className="w-full max-w-sm animate-fade-in">
+          {/* Compact header for the brand panel's mobile/tablet equivalent */}
+          <div className="lg:hidden text-center mb-8">
+            <div className="w-14 h-14 rounded-2xl overflow-hidden shadow-elevated mx-auto mb-4">
+              <img src={LOGO_URL} alt="R-Shift" className="w-full h-full object-cover" />
+            </div>
+            <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">R-Shift</h1>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-modal p-8">
+            <div className="hidden lg:block mb-6">
+              <h2 className="text-xl font-bold text-gray-900">{isSignUp ? 'Create your account' : 'Welcome back'}</h2>
+              <p className="text-sm text-gray-500 mt-1">{isSignUp ? 'Set up sign-in for R-Shift.' : 'Sign in to R-Shift to continue.'}</p>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                {error}
+              </div>
+            )}
+
+            {message && (
+              <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+                {message}
+              </div>
+            )}
+
+            <form onSubmit={handleAuth} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="input-base"
+                  placeholder="your@email.com"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  className="input-base"
+                  placeholder="Enter password"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary w-full py-2.5"
+              >
+                {loading ? 'Loading...' : isSignUp ? 'Sign Up' : 'Sign In'}
+              </button>
+            </form>
+
+            <div className="mt-5 text-center">
+              <button
+                onClick={() => setIsSignUp(!isSignUp)}
+                className="text-sm font-medium"
+                style={{ color: 'var(--primary)' }}
+              >
+                {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+              </button>
+            </div>
+
+            <div className="mt-6 pt-5 border-t border-gray-100">
+              <p className="text-xs text-gray-400 text-center">
+                Secure sign-in
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
