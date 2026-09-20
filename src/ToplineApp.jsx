@@ -1174,7 +1174,7 @@ function RevenueTab({ topline, period, itemMovers, itemMoversLoading, subcatInsi
 
 const COGS_SUPPLIERS = ['Foodbyus', 'Ordermentum', 'Supermarket', 'Direct Supply'];
 
-function CostsTab({ topline, period }) {
+function CostsTab({ topline, period, periodTouched }) {
   const { asOfDate } = topline;
   const costsGroup = topline.costs;
   const dates = weekAxis(asOfDate, period);
@@ -1182,6 +1182,7 @@ function CostsTab({ topline, period }) {
   const cogsPct = findMetric(costsGroup, 'Average COGS', 'COGS % of Revenue');
   const labourPct = findMetric(costsGroup, 'Labour', 'Labour % Of Revenue');
   const totalLabour = findMetric(costsGroup, 'Labour', 'Total Labour Cost');
+  const revTotalM = findMetric(topline.revenue, 'Revenue', 'Revenue - Total');
 
   const supplierSeries = COGS_SUPPLIERS
     .map(s => {
@@ -1197,13 +1198,44 @@ function CostsTab({ topline, period }) {
   ].filter(Boolean);
   const ratioRows = chartRowsForWindow(ratioSeries, dates);
 
+  // Same open-to-current-week-then-aggregate pattern as the P&L tab: the
+  // tiles show a single-week snapshot until the period selector is
+  // actively touched, then switch to summing over the selected window
+  // (COGS $ / Labour $) or blending (COGS % / Labour %, sum of $ over sum
+  // of $ revenue -- never an average of weekly ratios, same reasoning as
+  // Operating Profit % there).
+  const priorAsOfDate = shiftWeeks(asOfDate, -period);
+  const priorDates = weekAxis(priorAsOfDate, period);
+  const caption = periodTouched ? `Sum, last ${period}w` : undefined;
+
+  const pick = (series, d) => (periodTouched ? sumOverWindow(series, d) : valueAt(series, d));
+
+  const curCogs = pick(cogsTotal?.series, dates);
+  const priorCogs = pick(cogsTotal?.series, priorDates);
+  const cogsDelta = priorCogs ? (curCogs - priorCogs) / Math.abs(priorCogs) : null;
+
+  const curLabour = pick(totalLabour?.series, dates);
+  const priorLabour = pick(totalLabour?.series, priorDates);
+  const labourDelta = priorLabour ? (curLabour - priorLabour) / Math.abs(priorLabour) : null;
+
+  const curRev = pick(revTotalM?.series, dates);
+  const priorRev = pick(revTotalM?.series, priorDates);
+
+  const curCogsPct = curRev ? curCogs / curRev : null;
+  const priorCogsPct = priorRev ? priorCogs / priorRev : null;
+  const cogsPctDelta = priorCogsPct ? (curCogsPct - priorCogsPct) / Math.abs(priorCogsPct) : null;
+
+  const curLabourPct = curRev ? curLabour / curRev : null;
+  const priorLabourPct = priorRev ? priorLabour / priorRev : null;
+  const labourPctDelta = priorLabourPct ? (curLabourPct - priorLabourPct) / Math.abs(priorLabourPct) : null;
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatTile label="COGS" value={cogsTotal ? formatMetricValue(valueAt(cogsTotal.series, asOfDate), 'money') : '—'} delta={cogsTotal && wowDeltaAt(cogsTotal.series, asOfDate)} good={cogsTotal && deltaGood(wowDeltaAt(cogsTotal.series, asOfDate), 'down')} />
-        <StatTile label="COGS % of Revenue" value={cogsPct ? fmtPct(valueAt(cogsPct.series, asOfDate)) : '—'} delta={cogsPct && wowDeltaAt(cogsPct.series, asOfDate)} good={cogsPct && deltaGood(wowDeltaAt(cogsPct.series, asOfDate), 'down')} />
-        <StatTile label="Total Labour Cost" value={totalLabour ? formatMetricValue(valueAt(totalLabour.series, asOfDate), 'money') : '—'} delta={totalLabour && wowDeltaAt(totalLabour.series, asOfDate)} good={totalLabour && deltaGood(wowDeltaAt(totalLabour.series, asOfDate), 'down')} />
-        <StatTile label="Labour % of Revenue" value={labourPct ? fmtPct(valueAt(labourPct.series, asOfDate)) : '—'} delta={labourPct && wowDeltaAt(labourPct.series, asOfDate)} good={labourPct && deltaGood(wowDeltaAt(labourPct.series, asOfDate), 'down')} />
+        <StatTile label="COGS" value={cogsTotal ? formatMetricValue(curCogs, 'money') : '—'} delta={cogsTotal && cogsDelta} good={cogsTotal && deltaGood(cogsDelta, 'down')} caption={caption} />
+        <StatTile label="COGS % of Revenue" value={cogsTotal && revTotalM ? fmtPct(curCogsPct) : '—'} delta={cogsTotal && revTotalM && cogsPctDelta} good={cogsTotal && revTotalM && deltaGood(cogsPctDelta, 'down')} caption={caption} />
+        <StatTile label="Total Labour Cost" value={totalLabour ? formatMetricValue(curLabour, 'money') : '—'} delta={totalLabour && labourDelta} good={totalLabour && deltaGood(labourDelta, 'down')} caption={caption} />
+        <StatTile label="Labour % of Revenue" value={totalLabour && revTotalM ? fmtPct(curLabourPct) : '—'} delta={totalLabour && revTotalM && labourPctDelta} good={totalLabour && revTotalM && deltaGood(labourPctDelta, 'down')} caption={caption} />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="COGS by Supplier" subtitle={`Weekly spend, last ${period} weeks`}>
@@ -1497,7 +1529,7 @@ export default function ToplineApp({ org }) {
 
         {activeTab === 'overview' && <OverviewTab topline={topline} period={period} />}
         {activeTab === 'revenue' && <RevenueTab topline={topline} period={period} itemMovers={itemMovers} itemMoversLoading={itemMoversLoading} subcatInsights={subcatInsights} subcatLoading={subcatLoading} />}
-        {activeTab === 'costs' && <CostsTab topline={topline} period={period} />}
+        {activeTab === 'costs' && <CostsTab topline={topline} period={period} periodTouched={periodTouched} />}
         {activeTab === 'customer' && <CustomerTab topline={topline} period={period} />}
         {activeTab === 'pnl' && <PnlTab topline={topline} period={period} periodTouched={periodTouched} />}
       </div>
