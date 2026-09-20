@@ -2,10 +2,12 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { TrendingUp, Loader2, ChevronDown, ChevronUp, ArrowUpRight, ArrowDownRight, Table2, LayoutGrid, CalendarDays } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, ComposedChart, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList,
+  ScatterChart, Scatter, ReferenceLine, ZAxis,
 } from 'recharts';
 import toast from 'react-hot-toast';
 import {
-  fetchTopline, fetchItemMovers, fetchSubcategoryInsights, valueAt, wowDeltaAt, chartRowsForWindow, findMetric, weekAxis, shiftWeeks,
+  fetchTopline, fetchItemMovers, fetchSubcategoryInsights, fetchHourlyStaffing, fetchLabourEfficiency, fetchMenuEngineering,
+  weeklyMoversDigest, valueAt, wowDeltaAt, chartRowsForWindow, findMetric, weekAxis, shiftWeeks,
   fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts, deltaGood,
 } from './toplineData';
 
@@ -555,6 +557,215 @@ function SupplierSpendChart({ rows, loading }) {
   );
 }
 
+// Revenue generated per rostered labour-hour, by hour of day -- a single
+// ratio (not "staff count" and "revenue" as two series on separate scales)
+// so over/under-staffed hours read directly off one bar. Chronological
+// x-axis (5am -> 5pm), not ranked by value, since time-of-day order is the
+// point here.
+function HourlyStaffingChart({ rows, loading }) {
+  if (loading) return <div className="flex items-center justify-center" style={{ height: CHART_HEIGHT }}><Loader2 size={16} className="animate-spin text-gray-300" /></div>;
+  if (!rows.length || !hasChartData(rows, ['revenuePerLabourHour'])) return <EmptyChart label="No data in this period" />;
+  return (
+    <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+      <BarChart data={rows} margin={{ top: 20, right: 8, left: 0, bottom: 0 }}>
+        <CartesianGrid stroke={GRID_COLOR} vertical={false} />
+        <XAxis dataKey="hour" tick={{ fontSize: 11, fill: AXIS_COLOR }} axisLine={{ stroke: GRID_COLOR }} tickLine={false} interval={0} angle={-30} textAnchor="end" height={50} />
+        <YAxis tickFormatter={v => fmtMoney(v, { compact: true })} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={64} />
+        <Tooltip
+          formatter={(value, _name, props) => [
+            `${fmtMoney(value, { compact: true })}/labour-hr · ${fmtMoney(props.payload.revenue, { compact: true })} revenue over ${fmtNumber(props.payload.labourHours, { decimals: 1 })} labour-hrs`,
+            'Revenue per labour-hour',
+          ]}
+          contentStyle={{ fontSize: 13, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }}
+        />
+        <Bar dataKey="revenuePerLabourHour" fill="var(--primary)" radius={[3, 3, 0, 0]}>
+          <LabelList dataKey="revenuePerLabourHour" position="top" formatter={v => fmtMoney(v, { compact: true })} style={{ fontSize: 10, fontWeight: 700, fill: AXIS_COLOR }} />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// One point per trading day: daily labour% (y) vs. daily revenue (x). Unlike
+// every other chart on this page, a scatter's two axes are genuinely
+// different measures of the same day, not the "never dual-axis" case (that
+// rule is about two y-scales sharing one x-axis) -- so this is the one place
+// a bivariate plot is the right form. The dashed reference line marks the
+// window's own average labour%, so days below it read as "more efficient
+// than usual" at a glance.
+function LabourEfficiencyScatter({ rows, loading }) {
+  if (loading) return <div className="flex items-center justify-center" style={{ height: CHART_HEIGHT }}><Loader2 size={16} className="animate-spin text-gray-300" /></div>;
+  if (!rows.length) return <EmptyChart label="No data in this period" />;
+  const withPct = rows.filter(r => r.labourPct != null);
+  const avgPct = withPct.length ? withPct.reduce((s, r) => s + r.labourPct, 0) / withPct.length : null;
+  return (
+    <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+      <ScatterChart margin={{ top: 4, right: 24, left: 0, bottom: 4 }}>
+        <CartesianGrid stroke={GRID_COLOR} />
+        <XAxis type="number" dataKey="revenue" name="Revenue" tickFormatter={v => fmtMoney(v, { compact: true })} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={{ stroke: GRID_COLOR }} tickLine={false} />
+        <YAxis type="number" dataKey="labourPct" name="Labour %" tickFormatter={fmtPct} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={46} />
+        <Tooltip
+          cursor={{ strokeDasharray: '3 3' }}
+          formatter={(value, name) => (name === 'Labour %' ? fmtPct(value) : fmtMoney(value, { compact: true }))}
+          labelFormatter={() => ''}
+          contentStyle={{ fontSize: 13, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }}
+        />
+        {avgPct != null && <ReferenceLine y={avgPct} stroke={AXIS_COLOR} strokeDasharray="4 4" label={{ value: `Avg ${fmtPct(avgPct)}`, position: 'right', fontSize: 11, fill: AXIS_COLOR }} />}
+        <Scatter data={rows} fill="var(--primary)" fillOpacity={0.65} isAnimationActive={false} />
+      </ScatterChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Star / Plow-horse / Puzzle / Dog -- fixed assignment (never cycled) from
+// the validated categorical set, chosen to read semantically: green for the
+// best quadrant, red for the worst, matching the GOOD/BAD colours used for
+// deltas everywhere else on this page.
+const QUADRANT_COLORS = { Star: CATEGORICAL[2], 'Plow-horse': CATEGORICAL[0], Puzzle: CATEGORICAL[4], Dog: CATEGORICAL[1] };
+const QUADRANTS = ['Star', 'Plow-horse', 'Puzzle', 'Dog'];
+
+// Popularity (units sold) vs. profitability (margin % on realized avg
+// price) -- the classic menu-engineering matrix, one point per menu item.
+// Point size encodes total $ contribution (qty x margin/unit) via ZAxis, so
+// a high-volume low-margin item and a low-volume high-margin item that
+// contribute the same dollars still look different-sized rather than
+// identical dots.
+function MenuEngineeringScatter({ data, loading }) {
+  if (loading) return <div className="flex items-center justify-center" style={{ height: CHART_HEIGHT + 40 }}><Loader2 size={16} className="animate-spin text-gray-300" /></div>;
+  if (!data.items.length) return <EmptyChart label="No items with enough volume and an attached recipe" />;
+  return (
+    <ResponsiveContainer width="100%" height={CHART_HEIGHT + 40}>
+      <ScatterChart margin={{ top: 4, right: 24, left: 0, bottom: 4 }}>
+        <CartesianGrid stroke={GRID_COLOR} />
+        <XAxis type="number" dataKey="qty" name="Units sold" tickFormatter={fmtNumber} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={{ stroke: GRID_COLOR }} tickLine={false} />
+        <YAxis type="number" dataKey="marginPct" name="Margin %" tickFormatter={fmtPct} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={46} />
+        <ZAxis type="number" dataKey="contribution" range={[40, 400]} name="Contribution" />
+        <Tooltip
+          cursor={{ strokeDasharray: '3 3' }}
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null;
+            const r = payload[0].payload;
+            return (
+              <div className="bg-white text-xs rounded-lg p-2.5 shadow" style={{ border: `1px solid ${GRID_COLOR}` }}>
+                <p className="font-bold text-gray-900">{r.name}</p>
+                <p className="text-gray-500">{r.category}</p>
+                <p className="mt-1">{fmtNumber(r.qty)} sold · {fmtPct(r.marginPct)} margin</p>
+                <p>{fmtMoney(r.avgPrice)} avg price − {fmtMoney(r.cogsPerUnit)} COGS</p>
+                <p className="font-semibold" style={{ color: QUADRANT_COLORS[r.quadrant] }}>{r.quadrant} · {fmtMoney(r.contribution, { compact: true })} contribution</p>
+              </div>
+            );
+          }}
+        />
+        <ReferenceLine x={data.avgQty} stroke={AXIS_COLOR} strokeDasharray="4 4" />
+        <ReferenceLine y={data.avgMarginPct} stroke={AXIS_COLOR} strokeDasharray="4 4" />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        {QUADRANTS.map(q => (
+          <Scatter key={q} name={q} data={data.items.filter(r => r.quadrant === q)} fill={QUADRANT_COLORS[q]} fillOpacity={0.75} isAnimationActive={false} />
+        ))}
+      </ScatterChart>
+    </ResponsiveContainer>
+  );
+}
+
+function MenuEngineeringRow({ r, idx }) {
+  const base = idx % 2 === 1 ? '#fafaf9' : 'white';
+  return (
+    <tr>
+      <td className="text-sm font-medium text-gray-800 px-4 py-1.5 border-b border-gray-50 whitespace-nowrap" style={{ background: base }}>{r.name}</td>
+      <td className="text-xs text-gray-400 px-3 py-1.5 border-b border-gray-50 whitespace-nowrap" style={{ background: base }}>{r.category}</td>
+      <td className="text-right text-xs font-semibold tabular-nums px-3 py-1.5 border-b border-gray-50" style={{ background: base }}>{fmtNumber(r.qty)}</td>
+      <td className="text-right text-xs font-semibold tabular-nums px-3 py-1.5 border-b border-gray-50" style={{ background: base }}>{fmtPct(r.marginPct)}</td>
+      <td className="text-right text-xs font-semibold tabular-nums px-3 py-1.5 border-b border-gray-50" style={{ background: base }}>{fmtMoney(r.contribution, { compact: true })}</td>
+      <td className="text-right text-xs font-bold px-4 py-1.5 border-b border-gray-50" style={{ background: base, color: QUADRANT_COLORS[r.quadrant] }}>{r.quadrant}</td>
+    </tr>
+  );
+}
+const MENU_ENGINEERING_VISIBLE = 12;
+function MenuEngineeringTable({ items, loading }) {
+  const [expanded, setExpanded] = useState(false);
+  const head = items.slice(0, MENU_ENGINEERING_VISIBLE);
+  const rest = items.slice(MENU_ENGINEERING_VISIBLE);
+  return (
+    <div className="card p-4">
+      <p className="text-sm font-bold text-gray-900 mb-2">Menu Engineering — by $ Contribution</p>
+      {loading ? (
+        <div className="flex items-center justify-center h-24 text-gray-300"><Loader2 size={16} className="animate-spin" /></div>
+      ) : !items.length ? (
+        <p className="text-xs text-gray-400 py-6 text-center">Not enough data yet</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th className="text-left text-[11px] font-bold text-gray-400 uppercase tracking-wide px-4 py-2 border-b border-gray-100">Item</th>
+                <th className="text-left text-[11px] font-bold text-gray-400 uppercase tracking-wide px-3 py-2 border-b border-gray-100">Category</th>
+                <th className="text-right text-[11px] font-bold text-gray-400 uppercase tracking-wide px-3 py-2 border-b border-gray-100">Units</th>
+                <th className="text-right text-[11px] font-bold text-gray-400 uppercase tracking-wide px-3 py-2 border-b border-gray-100">Margin</th>
+                <th className="text-right text-[11px] font-bold text-gray-400 uppercase tracking-wide px-3 py-2 border-b border-gray-100">Contribution</th>
+                <th className="text-right text-[11px] font-bold text-gray-400 uppercase tracking-wide px-4 py-2 border-b border-gray-100">Quadrant</th>
+              </tr>
+            </thead>
+            <tbody>
+              {head.map(r => <MenuEngineeringRow key={r.name} r={r} idx={head.indexOf(r)} />)}
+            </tbody>
+          </table>
+          {rest.length > 0 && (
+            <>
+              {expanded && (
+                <table className="w-full border-collapse">
+                  <tbody>
+                    {rest.map((r, i) => <MenuEngineeringRow key={r.name} r={r} idx={MENU_ENGINEERING_VISIBLE + i} />)}
+                  </tbody>
+                </table>
+              )}
+              <button
+                onClick={() => setExpanded(e => !e)}
+                aria-expanded={expanded}
+                className="w-full flex items-center justify-center gap-1 text-xs font-semibold text-gray-400 hover:text-gray-600 pt-2 mt-1 border-t border-gray-100"
+              >
+                {expanded ? <>Show less <ChevronUp size={12} /></> : <>Show {rest.length} more <ChevronDown size={12} /></>}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// One row per headline metric that moved the most this week (see
+// weeklyMoversDigest) -- an up/down arrow list, cheaper to scan than
+// hunting through every KPI section for what actually changed.
+function MoverDigestRow({ r }) {
+  const isGood = r.good;
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-gray-800 truncate">{r.metric}</p>
+        <p className="text-[11px] text-gray-400 truncate">{r.section || 'Summary'}</p>
+      </div>
+      <div className="text-right shrink-0">
+        <p className="text-sm font-semibold text-gray-700 tabular-nums">{formatMetricValue(r.value, r.kind)}</p>
+        <p className="text-[11px] font-semibold tabular-nums" style={{ color: isGood == null ? undefined : isGood ? GOOD : BAD }}>{r.delta >= 0 ? '+' : ''}{fmtPct(r.delta)}</p>
+      </div>
+    </div>
+  );
+}
+function MoverDigest({ rows }) {
+  return (
+    <div className="card p-4">
+      <p className="text-sm font-bold text-gray-900 mb-2">This Week's Biggest Movers</p>
+      {!rows.length ? (
+        <p className="text-xs text-gray-400 py-6 text-center">Not enough data yet</p>
+      ) : (
+        <div className="divide-y divide-gray-100">
+          {rows.map(r => <MoverDigestRow key={`${r.section}|${r.metric}`} r={r} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const MINI_CHART_HEIGHT = 120;
 
 // A single-series, axis-light line chart for a small-multiples grid (one
@@ -893,6 +1104,8 @@ function OverviewTab({ topline, period }) {
   ].filter(Boolean);
   const pnlTrendRows = chartRowsForWindow(pnlTrendSeries, dates);
 
+  const moverDigestRows = weeklyMoversDigest([...topline.revenue, ...topline.costs, ...topline.budget], asOfDate);
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -931,6 +1144,8 @@ function OverviewTab({ topline, period }) {
           </ChartCard>
         </div>
       </div>
+
+      <MoverDigest rows={moverDigestRows} />
     </div>
   );
 }
@@ -973,7 +1188,17 @@ const HOUR_GROUPS = [
 const HOUR_GROUP_LABELS = HOUR_GROUPS.map(g => g.label);
 const ALL_HOURS = HOUR_GROUPS.flatMap(g => g.hours);
 
-function RevenueTab({ topline, period, itemMovers, itemMoversLoading, subcatInsights, subcatLoading }) {
+// Mirrors MIN_MENU_ENG_VOLUME in toplineData.js -- UI copy only, the actual
+// filtering happens server-side in fetchMenuEngineering.
+const MENU_ENG_MIN_VOLUME = 20;
+
+const B2B_SERIES = [
+  { key: 'Catering Gross Revenue', label: 'Catering' },
+  { key: 'Direct B2B Gross Revenue', label: 'Direct B2B' },
+  { key: 'Vending Revenue', label: 'Vending' },
+];
+
+function RevenueTab({ topline, period, itemMovers, itemMoversLoading, subcatInsights, subcatLoading, menuEngineering, menuEngineeringLoading }) {
   const { asOfDate } = topline;
   const revGroup = topline.revenue;
   const dates = weekAxis(asOfDate, period);
@@ -1085,6 +1310,18 @@ function RevenueTab({ topline, period, itemMovers, itemMoversLoading, subcatInsi
   const subcatChannelPctRows = subcatInsights ? toPercentRows(subcatInsights.channelMix, SUBCAT_CHANNEL_LABELS, 'category') : [];
   const subcatDayPctRows = subcatInsights ? toPercentRows(subcatInsights.dayMix, WEEKDAY_MIX_GROUPS, 'category') : [];
 
+  // ── Catering/B2B & Vending growth panel ──────────────────────────────────
+  const b2bSeries = B2B_SERIES
+    .map(c => {
+      const m = findMetric(topline.budget, 'B2B', c.key);
+      return m ? { name: c.label, series: m.series } : null;
+    })
+    .filter(Boolean);
+  const b2bRows = chartRowsForWindow(b2bSeries, dates);
+  const cateringM = findMetric(topline.budget, 'B2B', 'Catering Gross Revenue');
+  const directB2bM = findMetric(topline.budget, 'B2B', 'Direct B2B Gross Revenue');
+  const vendingM = findMetric(topline.budget, 'B2B', 'Vending Revenue');
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1148,6 +1385,18 @@ function RevenueTab({ topline, period, itemMovers, itemMoversLoading, subcatInsi
       </div>
 
       <div className="space-y-3">
+        <h3 className="text-sm font-bold text-gray-900">Catering / B2B &amp; Vending</h3>
+        <div className="grid grid-cols-3 gap-3">
+          <StatTile label="Catering" value={cateringM ? formatMetricValue(valueAt(cateringM.series, asOfDate), 'money') : '—'} delta={cateringM && wowDeltaAt(cateringM.series, asOfDate)} />
+          <StatTile label="Direct B2B" value={directB2bM ? formatMetricValue(valueAt(directB2bM.series, asOfDate), 'money') : '—'} delta={directB2bM && wowDeltaAt(directB2bM.series, asOfDate)} />
+          <StatTile label="Vending" value={vendingM ? formatMetricValue(valueAt(vendingM.series, asOfDate), 'money') : '—'} delta={vendingM && wowDeltaAt(vendingM.series, asOfDate)} />
+        </div>
+        <ChartCard title="Catering / B2B & Vending Growth" subtitle={`Weekly, last ${period} weeks -- the smallest revenue lines, but the ones with the most room to scale`}>
+          <TrendChart rows={b2bRows} dataKeys={b2bSeries.map(s => s.name)} colors={CATEGORICAL} money tightDomain />
+        </ChartCard>
+      </div>
+
+      <div className="space-y-3">
         <h3 className="text-sm font-bold text-gray-900">Item Movers</h3>
         <p className="text-xs text-gray-400">
           {itemMovers?.currentLabel ? `${itemMovers.currentLabel} vs ${itemMovers.priorLabel}, every channel, items under $20 excluded` : 'Last 4 complete weeks vs the 4 before that'}
@@ -1156,6 +1405,19 @@ function RevenueTab({ topline, period, itemMovers, itemMoversLoading, subcatInsi
           <ItemMoversTable title="Top Gainers" rows={itemMovers?.gainers} loading={itemMoversLoading} />
           <ItemMoversTable title="Top Decliners" rows={itemMovers?.decliners} loading={itemMoversLoading} />
         </div>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-gray-900">Menu Engineering</h3>
+        <p className="text-xs text-gray-400">
+          Popularity (units sold) vs. profitability (margin % on realized average price) per item, costed from R-Recipe's own recipe data --
+          {menuEngineering?.coverage != null ? ` ${fmtPct(menuEngineering.coverage)} of active items have a recipe attached` : ' loading recipe coverage'}
+          {menuEngineering?.periodLabel ? `, ${menuEngineering.periodLabel}` : ''}. Items under {MENU_ENG_MIN_VOLUME} units sold, or with no recipe attached, are excluded rather than shown with a guessed cost.
+        </p>
+        <ChartCard title="Menu Engineering Matrix" subtitle={`Bubble size = total $ contribution, last ${period} weeks`}>
+          <MenuEngineeringScatter data={menuEngineering || { items: [], avgQty: 0, avgMarginPct: 0 }} loading={menuEngineeringLoading} />
+        </ChartCard>
+        <MenuEngineeringTable items={menuEngineering?.items || []} loading={menuEngineeringLoading} />
       </div>
 
       <div className="space-y-3">
@@ -1196,7 +1458,19 @@ function RevenueTab({ topline, period, itemMovers, itemMoversLoading, subcatInsi
   );
 }
 
-function CostsTab({ topline, period, periodTouched }) {
+// Fee $ / channel-gross-revenue $ -- proven stable for UberEats/Doordash
+// (a consistent ~30% take rate), the one platform relationship worth
+// trending as a %. Eatclub's fee doesn't scale off any one revenue line in
+// a stable ratio (tested: 0.39-0.70 and $0 before an integration change),
+// so it's shown separately as its own $ trend instead of forced into a
+// misleading ratio.
+function PlatformTakeRateChart({ rows, loading }) {
+  if (loading) return <div className="flex items-center justify-center" style={{ height: CHART_HEIGHT }}><Loader2 size={16} className="animate-spin text-gray-300" /></div>;
+  if (!rows.length || !hasChartData(rows, ['Take Rate'])) return <EmptyChart label="No data in this period" />;
+  return <TrendChart rows={rows} dataKeys={['Take Rate']} colors={CATEGORICAL} percent tightDomain />;
+}
+
+function CostsTab({ topline, period, periodTouched, labourEfficiency, labourEfficiencyLoading, hourlyStaffing, hourlyStaffingLoading }) {
   const { asOfDate } = topline;
   const costsGroup = topline.costs;
   const dates = weekAxis(asOfDate, period);
@@ -1258,6 +1532,20 @@ function CostsTab({ topline, period, periodTouched }) {
   ].filter(Boolean);
   const ratioRows = chartRowsForWindow(ratioSeries, dates);
 
+  // ── Platform take-rate ───────────────────────────────────────────────────
+  const ubereatsFeesM = findMetric(topline.budget, '', 'Sales Fees - UberEats / Doordash');
+  const ubereatsRevM = findMetric(topline.budget, 'B2C', 'UberEats Gross Revenue');
+  const eatclubFeesM = findMetric(topline.budget, '', 'Sales Fees - Eatclub');
+  const takeRateSeries = {};
+  if (ubereatsFeesM && ubereatsRevM) {
+    dates.forEach(d => {
+      const fee = ubereatsFeesM.series[d];
+      const rev = ubereatsRevM.series[d];
+      if (fee != null && rev) takeRateSeries[d] = fee / rev;
+    });
+  }
+  const takeRateRows = chartRowsForWindow([{ name: 'Take Rate', series: takeRateSeries }], dates);
+
   // Same open-to-current-week-then-aggregate pattern as the P&L tab: the
   // tiles show a single-week snapshot until the period selector is
   // actively touched, then switch to summing over the selected window
@@ -1308,6 +1596,25 @@ function CostsTab({ topline, period, periodTouched }) {
       <ChartCard title="Supplier Breakdown" subtitle={`Every supplier with spend this week (${fmtWeekRange(asOfDate)})`}>
         <SupplierSpendChart rows={weekSupplierRows} />
       </ChartCard>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ChartCard title="Labour Efficiency" subtitle="Daily labour % vs. daily revenue -- the relationship holds far more clearly day-to-day than week-to-week">
+          <LabourEfficiencyScatter rows={labourEfficiency || []} loading={labourEfficiencyLoading} />
+        </ChartCard>
+        <ChartCard title="Staffing Payoff by Hour" subtitle={`Revenue per rostered labour-hour, by hour of day -- last ${period} weeks`}>
+          <HourlyStaffingChart rows={hourlyStaffing || []} loading={hourlyStaffingLoading} />
+        </ChartCard>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ChartCard title="UberEats / Doordash Take Rate" subtitle={`Platform fees as a % of UberEats gross revenue, last ${period} weeks`}>
+          <PlatformTakeRateChart rows={takeRateRows} loading={false} />
+        </ChartCard>
+        {eatclubFeesM && (
+          <MetricMiniCard label="Eatclub Fees" series={eatclubFeesM.series} kind="money" dates={dates} asOfDate={asOfDate} direction="down" />
+        )}
+      </div>
+
       <KpiSection groups={costsGroup} defaultOpenCount={2} asOfDate={asOfDate} period={period} />
     </div>
   );
@@ -1503,6 +1810,12 @@ export default function ToplineApp({ org }) {
   const [itemMoversLoading, setItemMoversLoading] = useState(false);
   const [subcatInsights, setSubcatInsights] = useState(null);
   const [subcatLoading, setSubcatLoading] = useState(false);
+  const [hourlyStaffing, setHourlyStaffing] = useState(null);
+  const [hourlyStaffingLoading, setHourlyStaffingLoading] = useState(false);
+  const [labourEfficiency, setLabourEfficiency] = useState(null);
+  const [labourEfficiencyLoading, setLabourEfficiencyLoading] = useState(false);
+  const [menuEngineering, setMenuEngineering] = useState(null);
+  const [menuEngineeringLoading, setMenuEngineeringLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!orgId) return;
@@ -1544,6 +1857,41 @@ export default function ToplineApp({ org }) {
       .then(res => { if (!cancelled) setSubcatInsights(res); })
       .catch(err => { if (!cancelled) toast.error('Failed to load subcategory insights: ' + (err.message || 'unknown error')); })
       .finally(() => { if (!cancelled) setSubcatLoading(false); });
+    return () => { cancelled = true; };
+  }, [orgId, topline?.asOfDate, period]);
+
+  // Hourly staffing needs this week's "Revenue by Hour" metrics, already
+  // loaded on topline -- only the schedule itself is a fresh fetch.
+  useEffect(() => {
+    if (!orgId || !topline?.asOfDate) return;
+    let cancelled = false;
+    setHourlyStaffingLoading(true);
+    fetchHourlyStaffing(orgId, topline.asOfDate, period, topline.revenue)
+      .then(res => { if (!cancelled) setHourlyStaffing(res); })
+      .catch(err => { if (!cancelled) toast.error('Failed to load hourly staffing: ' + (err.message || 'unknown error')); })
+      .finally(() => { if (!cancelled) setHourlyStaffingLoading(false); });
+    return () => { cancelled = true; };
+  }, [orgId, topline?.asOfDate, period, topline?.revenue]);
+
+  useEffect(() => {
+    if (!orgId || !topline?.asOfDate) return;
+    let cancelled = false;
+    setLabourEfficiencyLoading(true);
+    fetchLabourEfficiency(orgId, topline.asOfDate, period)
+      .then(res => { if (!cancelled) setLabourEfficiency(res); })
+      .catch(err => { if (!cancelled) toast.error('Failed to load labour efficiency: ' + (err.message || 'unknown error')); })
+      .finally(() => { if (!cancelled) setLabourEfficiencyLoading(false); });
+    return () => { cancelled = true; };
+  }, [orgId, topline?.asOfDate, period]);
+
+  useEffect(() => {
+    if (!orgId || !topline?.asOfDate) return;
+    let cancelled = false;
+    setMenuEngineeringLoading(true);
+    fetchMenuEngineering(orgId, topline.asOfDate, period)
+      .then(res => { if (!cancelled) setMenuEngineering(res); })
+      .catch(err => { if (!cancelled) toast.error('Failed to load menu engineering: ' + (err.message || 'unknown error')); })
+      .finally(() => { if (!cancelled) setMenuEngineeringLoading(false); });
     return () => { cancelled = true; };
   }, [orgId, topline?.asOfDate, period]);
 
@@ -1591,8 +1939,8 @@ export default function ToplineApp({ org }) {
         </div>
 
         {activeTab === 'overview' && <OverviewTab topline={topline} period={period} />}
-        {activeTab === 'revenue' && <RevenueTab topline={topline} period={period} itemMovers={itemMovers} itemMoversLoading={itemMoversLoading} subcatInsights={subcatInsights} subcatLoading={subcatLoading} />}
-        {activeTab === 'costs' && <CostsTab topline={topline} period={period} periodTouched={periodTouched} />}
+        {activeTab === 'revenue' && <RevenueTab topline={topline} period={period} itemMovers={itemMovers} itemMoversLoading={itemMoversLoading} subcatInsights={subcatInsights} subcatLoading={subcatLoading} menuEngineering={menuEngineering} menuEngineeringLoading={menuEngineeringLoading} />}
+        {activeTab === 'costs' && <CostsTab topline={topline} period={period} periodTouched={periodTouched} labourEfficiency={labourEfficiency} labourEfficiencyLoading={labourEfficiencyLoading} hourlyStaffing={hourlyStaffing} hourlyStaffingLoading={hourlyStaffingLoading} />}
         {activeTab === 'customer' && <CustomerTab topline={topline} period={period} />}
         {activeTab === 'pnl' && <PnlTab topline={topline} period={period} periodTouched={periodTouched} />}
       </div>

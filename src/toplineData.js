@@ -427,6 +427,301 @@ export async function fetchSubcategoryInsights(orgId, asOfDate, period) {
   return { efficiency, priceMix, movers, channelMix, dayMix, pareto, periodLabel: `${periodStart} – ${periodEnd}` };
 }
 
+// Hour-of-day buckets, 5am-5pm -- matches the 12 "Revenue by Hour" /
+// "AOV by Hour" / "Customers by Hour" metric names already in
+// analytics_metrics exactly, so the new staffing views can look those metrics
+// up by label instead of re-deriving hour ranges.
+export const HOUR_BUCKET_LABELS = [
+  '5am-6am', '6am-7am', '7am-8am', '8am-9am', '9am-10am', '10am-11am',
+  '11am-12pm', '12pm-1pm', '1pm-2pm', '2pm-3pm', '3pm-4pm', '4pm-5pm',
+];
+
+function hourBucketOf(timeSlot) {
+  const hour = parseInt(timeSlot.slice(0, 2), 10);
+  const idx = hour - 5;
+  return idx >= 0 && idx < HOUR_BUCKET_LABELS.length ? HOUR_BUCKET_LABELS[idx] : null;
+}
+
+// schedules.time_slot rows are one 15-minute slot each -- confirmed by
+// querying the actual gap between consecutive slots for this org (uniformly
+// 15 min), rather than assumed from the roster UI's configurable interval.
+const SLOT_HOURS = 0.25;
+
+function sumSeriesOverDates(series, dates) {
+  let sum = 0, any = false;
+  dates.forEach(d => {
+    const v = series?.[d];
+    if (v != null) { sum += v; any = true; }
+  });
+  return any ? sum : null;
+}
+
+// Revenue generated per rostered labour-hour, by hour of day -- a single
+// ratio rather than two series on separate scales (revenue $ and headcount
+// don't share a unit), so it reads as one ranked view of which trading
+// hours staffing pays off best. revenueGroups is topline.revenue (already
+// loaded at page level) -- only the schedule needs a fresh fetch here.
+export async function fetchHourlyStaffing(orgId, asOfDate, period, revenueGroups) {
+  if (!orgId || !asOfDate) return [];
+  const dates = weekAxis(asOfDate, period);
+  const periodStart = dates[0];
+  const endDate = new Date(asOfDate + 'T12:00:00Z');
+  endDate.setUTCDate(endDate.getUTCDate() + 6);
+  const periodEnd = endDate.toISOString().slice(0, 10);
+
+  const schedule = await db.getSchedules(orgId, periodStart, periodEnd);
+  const hoursByBucket = new Map(HOUR_BUCKET_LABELS.map(l => [l, 0]));
+  Object.keys(schedule).forEach(key => {
+    const timeSlot = key.split('|')[2];
+    const bucket = hourBucketOf(timeSlot);
+    if (bucket) hoursByBucket.set(bucket, hoursByBucket.get(bucket) + SLOT_HOURS);
+  });
+
+  return HOUR_BUCKET_LABELS.map(hour => {
+    const metric = findMetric(revenueGroups, 'Revenue by Hour', hour);
+    const revenue = metric ? sumSeriesOverDates(metric.series, dates) || 0 : 0;
+    const labourHours = hoursByBucket.get(hour) || 0;
+    return {
+      hour,
+      revenue,
+      labourHours,
+      revenuePerLabourHour: labourHours > 0 ? revenue / labourHours : null,
+    };
+  });
+}
+
+const WEEKEND_DAYS = new Set([0, 6]); // Sun=0, Sat=6 (UTC)
+
+// Daily labour% (labour $ / revenue $) vs. daily revenue, one point per
+// trading day in the selected window -- the daily-level relationship is
+// materially stronger than the weekly-level one (see the earlier chat
+// analysis this chart formalizes), so it deserves a real scatter rather
+// than the weekly bar/line the rest of the tab uses.
+export async function fetchLabourEfficiency(orgId, asOfDate, period) {
+  if (!orgId || !asOfDate) return [];
+  const dates = weekAxis(asOfDate, period);
+  const periodStart = dates[0];
+  const endDate = new Date(asOfDate + 'T12:00:00Z');
+  endDate.setUTCDate(endDate.getUTCDate() + 6);
+  const periodEnd = endDate.toISOString().slice(0, 10);
+
+  const [schedule, staff, dailyRevenue] = await Promise.all([
+    db.getSchedules(orgId, periodStart, periodEnd),
+    db.getStaff(orgId),
+    db.getActualDailyRevenue(orgId, periodStart, periodEnd),
+  ]);
+  const staffById = new Map(staff.map(s => [s.id, s]));
+
+  const hoursByDateStaff = new Map();
+  Object.keys(schedule).forEach(key => {
+    const [date, staffId] = key.split('|');
+    const k = `${date}|${staffId}`;
+    hoursByDateStaff.set(k, (hoursByDateStaff.get(k) || 0) + SLOT_HOURS);
+  });
+
+  const costByDate = new Map();
+  hoursByDateStaff.forEach((hours, key) => {
+    const [date, staffId] = key.split('|');
+    const s = staffById.get(staffId);
+    if (!s) return;
+    const isWeekend = WEEKEND_DAYS.has(new Date(date + 'T12:00:00Z').getUTCDay());
+    // db.getStaff() maps snake_case DB columns to hourlyRate/weekendRate.
+    const rate = (isWeekend ? s.weekendRate : s.hourlyRate) ?? s.hourlyRate ?? 0;
+    costByDate.set(date, (costByDate.get(date) || 0) + hours * rate);
+  });
+
+  const allDates = [];
+  for (let d = new Date(periodStart + 'T12:00:00Z'); d <= endDate; d.setUTCDate(d.getUTCDate() + 1)) {
+    allDates.push(d.toISOString().slice(0, 10));
+  }
+
+  return allDates
+    .map(date => {
+      const revenue = dailyRevenue[date] || 0;
+      const labourCost = costByDate.get(date) || 0;
+      return { date, revenue, labourCost, labourPct: revenue > 0 ? labourCost / revenue : null };
+    })
+    // A closed day (no revenue) has no efficiency story to tell.
+    .filter(r => r.revenue > 0);
+}
+
+// Menu items too rare for a % move (or a margin ratio) to mean anything --
+// mirrors MIN_ITEM_MOVER_VOLUME's reasoning, same threshold.
+const MIN_MENU_ENG_VOLUME = 20;
+
+// Menu Engineering Matrix, costed from R-Recipe's own recipe data rather
+// than a category-level approximation -- popularity (units sold) vs.
+// profitability (margin % on the REALIZED average price, revenue/qty, not
+// the catalog sell_price, so a discounted/3rd-party mix is reflected) for
+// every item with both enough volume and an attached recipe. The cost
+// resolver below is ported line-for-line from RecipesApp.jsx's
+// useCostResolver so a dish's COGS here always matches what R-Recipe itself
+// shows -- it isn't a second, potentially-diverging implementation.
+export async function fetchMenuEngineering(orgId, asOfDate, period) {
+  if (!orgId || !asOfDate) return { items: [], avgQty: 0, avgMarginPct: 0, coverage: null, periodLabel: '' };
+  const dates = weekAxis(asOfDate, period);
+  const periodStart = dates[0];
+  const endDate = new Date(asOfDate + 'T12:00:00Z');
+  endDate.setUTCDate(endDate.getUTCDate() + 6);
+  const periodEnd = endDate.toISOString().slice(0, 10);
+
+  const [rows, items, skus, components, componentLines, menuItemLines] = await Promise.all([
+    db.getItemSalesByRange(orgId, periodStart, periodEnd),
+    db.getProductionItems(orgId),
+    db.getStockItems(orgId),
+    db.getRecipeComponents(orgId),
+    db.getRecipeComponentLines(orgId),
+    db.getRecipeMenuItemLines(orgId),
+  ]);
+  const itemById = new Map(items.map(i => [i.id, i]));
+
+  const skuById = new Map(skus.map(s => [s.id, s]));
+  const componentById = new Map(components.map(c => [c.id, c]));
+  const linesByComponent = new Map();
+  componentLines.forEach(l => {
+    if (!linesByComponent.has(l.component_id)) linesByComponent.set(l.component_id, []);
+    linesByComponent.get(l.component_id).push(l);
+  });
+  const costCache = new Map();
+  function componentUnitCost(componentId, visiting = new Set()) {
+    if (costCache.has(componentId)) return costCache.get(componentId);
+    if (visiting.has(componentId)) return null; // circular reference guard
+    const component = componentById.get(componentId);
+    if (!component) return null;
+    visiting.add(componentId);
+    const lines = linesByComponent.get(componentId) || [];
+    let batchCost = 0, unresolved = false;
+    lines.forEach(line => {
+      const qty = Number(line.qty) || 0;
+      let unitCost = null;
+      if (line.stock_item_id) unitCost = skuById.get(line.stock_item_id)?.cost_per_uom ?? null;
+      else if (line.sub_component_id) unitCost = componentUnitCost(line.sub_component_id, visiting);
+      if (unitCost == null) { unresolved = true; return; }
+      batchCost += qty * unitCost;
+    });
+    visiting.delete(componentId);
+    const yieldQty = Number(component.batch_yield) || 0;
+    const result = (unresolved || yieldQty <= 0) ? null : batchCost / yieldQty;
+    costCache.set(componentId, result);
+    return result;
+  }
+  function lineUnitCost(line) {
+    if (line.stock_item_id) return skuById.get(line.stock_item_id)?.cost_per_uom ?? null;
+    const subId = line.sub_component_id ?? line.component_id;
+    if (subId) return componentUnitCost(subId);
+    return null;
+  }
+
+  const linesByItem = new Map();
+  menuItemLines.forEach(l => {
+    if (l.is_packaging) return; // packaging is excluded from COGS the same way MenuRecipesTab excludes it
+    if (!linesByItem.has(l.item_id)) linesByItem.set(l.item_id, []);
+    linesByItem.get(l.item_id).push(l);
+  });
+  function itemCogs(itemId) {
+    const lines = linesByItem.get(itemId);
+    if (!lines || lines.length === 0) return null; // no recipe attached
+    let cogs = 0, unresolved = false;
+    lines.forEach(l => {
+      const c = lineUnitCost(l);
+      if (c == null) { unresolved = true; return; }
+      cogs += c * (Number(l.qty) || 0);
+    });
+    return unresolved ? null : cogs;
+  }
+
+  const salesByItem = new Map();
+  rows.forEach(r => {
+    const t = salesByItem.get(r.item_id) || { qty: 0, revenue: 0 };
+    t.qty += Number(r.qty) || 0;
+    t.revenue += Number(r.revenue) || 0;
+    salesByItem.set(r.item_id, t);
+  });
+
+  // Recipe coverage across every active menu item (not just the ones with
+  // enough sales volume to chart) -- the caveat the matrix ships with.
+  let totalActive = 0, coveredActive = 0;
+  itemById.forEach(item => {
+    if (!item.active) return;
+    totalActive++;
+    if (itemCogs(item.id) != null) coveredActive++;
+  });
+
+  const eligible = [];
+  salesByItem.forEach((t, itemId) => {
+    if (t.qty < MIN_MENU_ENG_VOLUME) return;
+    const item = itemById.get(itemId);
+    if (!item) return;
+    const cogsPerUnit = itemCogs(itemId);
+    if (cogsPerUnit == null) return; // excluded, not guessed at
+    const avgPrice = t.revenue / t.qty;
+    const marginPerUnit = avgPrice - cogsPerUnit;
+    eligible.push({
+      name: item.name,
+      category: item.category || '',
+      qty: t.qty,
+      revenue: t.revenue,
+      avgPrice,
+      cogsPerUnit,
+      marginPerUnit,
+      marginPct: avgPrice > 0 ? marginPerUnit / avgPrice : null,
+      contribution: marginPerUnit * t.qty,
+    });
+  });
+
+  const avgQty = eligible.length ? eligible.reduce((s, r) => s + r.qty, 0) / eligible.length : 0;
+  const withMargin = eligible.filter(r => r.marginPct != null);
+  const avgMarginPct = withMargin.length ? withMargin.reduce((s, r) => s + r.marginPct, 0) / withMargin.length : 0;
+
+  eligible.forEach(r => {
+    const highPop = r.qty >= avgQty;
+    const highMargin = r.marginPct != null && r.marginPct >= avgMarginPct;
+    r.quadrant = highPop && highMargin ? 'Star' : highPop ? 'Plow-horse' : highMargin ? 'Puzzle' : 'Dog';
+  });
+
+  return {
+    items: eligible.sort((a, b) => b.contribution - a.contribution),
+    avgQty,
+    avgMarginPct,
+    coverage: totalActive ? coveredActive / totalActive : null,
+    periodLabel: `${periodStart} – ${periodEnd}`,
+  };
+}
+
+// Scans every headline metric (excluding hour-of-day breakdowns, too
+// granular for a weekly digest) for the biggest WoW % swings -- a quick
+// "what moved this week" summary for the Overview tab, pure computation
+// over data already loaded at page level (revenue+costs+budget groups).
+const MOVER_DIGEST_EXCLUDE_SECTIONS = new Set([
+  'Revenue by Hour', 'AOV by Hour', 'Customers by Hour', 'Avg. Revenue by Hour',
+]);
+const MIN_MOVER_DIGEST_BASE = 50; // ignore metrics whose prior value is too small for a % move to mean anything
+
+export function weeklyMoversDigest(groups, asOfDate, n = 6) {
+  if (!asOfDate) return [];
+  const rows = [];
+  groups.forEach(g => {
+    if (MOVER_DIGEST_EXCLUDE_SECTIONS.has(g.section)) return;
+    g.metrics.forEach(m => {
+      const delta = wowDeltaAt(m.series, asOfDate);
+      if (delta == null) return;
+      const dates = sortedDates(m.series);
+      const idx = dates.indexOf(asOfDate);
+      const prev = m.series[dates[idx - 1]];
+      if (Math.abs(prev) < MIN_MOVER_DIGEST_BASE) return;
+      rows.push({
+        section: g.section,
+        metric: m.metric,
+        kind: m.kind,
+        value: m.series[asOfDate],
+        delta,
+        good: deltaGood(delta, m.good),
+      });
+    });
+  });
+  return rows.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, n);
+}
+
 // The sheet isn't a live feed -- it's a point-in-time export, and different
 // metrics stop at slightly different dates (a stray trailing week with only
 // partial data entered for a handful of metrics, a couple of short series
