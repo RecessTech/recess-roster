@@ -601,6 +601,34 @@ export const db = {
     if (error) throw error;
   },
 
+  // Real per-day revenue from POS/delivery sales (sales_history, the same
+  // source R-Topline reads), summed across every channel -- lets the
+  // Analytics Revenue tab auto-fill actual figures instead of requiring the
+  // manual daily_revenue entry it used before sales_history existed.
+  // Paginated for the same reason getItemSalesByRange is: a multi-week range
+  // can exceed PostgREST's 1000-row default cap.
+  async getActualDailyRevenue(orgId, startDate, endDate) {
+    const PAGE = 1000;
+    let from = 0;
+    const totals = {};
+    for (;;) {
+      const { data, error } = await supabase
+        .from('sales_history')
+        .select('sale_date, revenue')
+        .eq('org_id', orgId)
+        .gte('sale_date', startDate)
+        .lte('sale_date', endDate)
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      (data || []).forEach(row => {
+        totals[row.sale_date] = (totals[row.sale_date] || 0) + (row.revenue || 0);
+      });
+      if (!data || data.length < PAGE) break;
+      from += PAGE;
+    }
+    return totals;
+  },
+
   // ── User profile ──────────────────────────────────────────────────────────────
 
   async getUserProfile(userId) {

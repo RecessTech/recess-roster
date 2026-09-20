@@ -263,6 +263,11 @@ const RosterApp = () => {
   const [tutorialStep, setTutorialStep] = useState(0);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [dailyRevenue, setDailyRevenue] = useState({});
+  // Actual per-day revenue from sales_history (POS + delivery channels),
+  // keyed by date -- takes over from the manual dailyRevenue entry above
+  // wherever it has data (see RevenueTab), which is now every day going
+  // forward since R-Topline's imports started.
+  const [actualDailyRevenue, setActualDailyRevenue] = useState({});
   // availability[`${staffId}|${dateKey}`] = { status: 'available'|'unavailable'|'preferred', startTime, endTime }
   const [availability, setAvailability] = useState({});
   const [showRevenueModal, setShowRevenueModal] = useState(false);
@@ -400,12 +405,12 @@ const RosterApp = () => {
 
         setStaff(staffData);
         
-        const revenueData = await db.getRevenue(
-          org.id,
-          formatLocalDate(startDate),
-          formatLocalDate(endDate)
-        );
+        const [revenueData, actualRevenueData] = await Promise.all([
+          db.getRevenue(org.id, formatLocalDate(startDate), formatLocalDate(endDate)),
+          db.getActualDailyRevenue(org.id, formatLocalDate(startDate), formatLocalDate(endDate)).catch(() => ({})),
+        ]);
         setDailyRevenue(revenueData);
+        setActualDailyRevenue(actualRevenueData);
         
         // CHECK FOR EMERGENCY RECOVERY: If database is empty but localStorage has backup
         if (Object.keys(scheduleData).length === 0) {
@@ -5150,26 +5155,33 @@ const RosterApp = () => {
       const [editValue, setEditValue] = useState('');
       const [isSaving, setIsSaving] = useState(false);
 
-      // Calculate daily labor costs and revenue
+      // Calculate daily labor costs and revenue. Where sales_history has
+      // actual revenue for the day (POS + delivery channels, the same
+      // source R-Topline reads), that supersedes the manual "Projected"
+      // figure -- only dates it doesn't cover (before imports started, or a
+      // gap) still fall back to whatever was typed in manually.
       const dailyData = dates.map(date => {
         const dateKey = formatDateKey(date);
         const dayStats = calculateDayStats(dateKey);
         const revenueEntry = dailyRevenue[dateKey];
-        const totalRevenue = revenueEntry 
-          ? (revenueEntry.projectedRevenue || 0) + (revenueEntry.otherRevenue || 0)
-          : 0;
+        const actual = actualDailyRevenue[dateKey];
+        const isActual = actual != null;
+        const projectedRevenue = isActual ? actual : (revenueEntry?.projectedRevenue || 0);
+        const otherRevenue = revenueEntry?.otherRevenue || 0;
+        const totalRevenue = projectedRevenue + otherRevenue;
         const laborPercentage = totalRevenue > 0 ? (dayStats.totalCost / totalRevenue) * 100 : 0;
-        
+
         return {
           date,
           dateKey,
           laborCost: dayStats.totalCost,
-          projectedRevenue: revenueEntry?.projectedRevenue || 0,
-          otherRevenue: revenueEntry?.otherRevenue || 0,
+          projectedRevenue,
+          otherRevenue,
           totalRevenue,
           laborPercentage,
           notes: revenueEntry?.notes || '',
-          hasRevenue: totalRevenue > 0
+          hasRevenue: totalRevenue > 0,
+          isActual
         };
       });
 
@@ -5256,6 +5268,16 @@ const RosterApp = () => {
         }
       };
 
+      // Auto-synced from sales_history -- not editable here (fix the source
+      // POS/delivery data if a figure looks wrong), with a small link icon
+      // marking it as real rather than typed-in.
+      const renderActualRevenueCell = (value) => (
+        <div className="flex items-center justify-end gap-1.5 px-2 py-1" title="Synced from POS & delivery sales">
+          <Link2 size={11} className="text-green-500 shrink-0" />
+          <span className="font-medium text-gray-800">${value.toFixed(0)}</span>
+        </div>
+      );
+
       const renderEditableCell = (day, field, value) => {
         const isEditing = editingCell?.dateKey === day.dateKey && editingCell?.field === field;
         
@@ -5338,7 +5360,7 @@ const RosterApp = () => {
           <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 flex items-center gap-2.5">
             <Lightbulb size={15} className="text-blue-500 shrink-0" />
             <p className="text-xs text-blue-700">
-              Industry standard: <strong>25–35%</strong> of revenue. <strong>Click any cell below</strong> to enter revenue data — changes save automatically.
+              Industry standard: <strong>25–35%</strong> of revenue. Revenue marked <Link2 size={10} className="inline text-green-500 -mt-0.5" /> is synced automatically from POS & delivery sales; <strong>click any other cell</strong> to enter it manually — changes save automatically.
             </p>
           </div>
 
@@ -5353,7 +5375,7 @@ const RosterApp = () => {
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
-                    <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Projected</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Revenue (POS)</th>
                     <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Other</th>
                     <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Revenue</th>
                     <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Labor</th>
@@ -5372,7 +5394,7 @@ const RosterApp = () => {
                           {day.date.toLocaleDateString('en-AU', { weekday: 'short', month: 'short', day: 'numeric' })}
                         </td>
                         <td className="px-2 py-2 text-right">
-                          {renderEditableCell(day, 'projected', day.projectedRevenue)}
+                          {day.isActual ? renderActualRevenueCell(day.projectedRevenue) : renderEditableCell(day, 'projected', day.projectedRevenue)}
                         </td>
                         <td className="px-2 py-2 text-right">
                           {renderEditableCell(day, 'other', day.otherRevenue)}
