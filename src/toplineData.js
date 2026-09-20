@@ -121,6 +121,39 @@ export function classifyMetric(tab, section, metric) {
   return 'money';
 }
 
+// Which direction of movement is *good* for a metric -- revenue/count/profit
+// metrics default to "up is good", but a cost line reads backwards under
+// that default: rising COGS or Labour spend is bad, not good. The 'costs'
+// tab is entirely expense metrics by definition; a handful of budget-tab
+// sections are too (COGS, Labour, rent, shipping, marketing, G&A, misc,
+// tax). The budget tab's '' (summary) section flattens cost line items
+// (Sales Fees, Payment Processing, Direct Discounts, ...) in together with
+// revenue/profit ones, so those need matching by name instead of section.
+const COST_SECTIONS = new Set([
+  'PC1', 'Labour', 'Property Costs', 'Shipping', 'Marketing',
+  'General & Administration', 'Misc.', 'Tax',
+]);
+const COST_METRIC_NAMES = new Set([
+  'Avg. COGS $', 'Direct Discounts', 'Finance Repayments', 'Payment Processing Costs',
+  'Sales Fees', 'Sales Fees - Eatclub', 'Sales Fees - UberEats / Doordash',
+  'Labour (+Salaries) as % of sales', 'Marketing as a % of sales', 'Rent as % of Sales',
+]);
+
+export function isCostMetric(tab, section, metric) {
+  if (tab === 'costs') return true;
+  if (COST_SECTIONS.has(section)) return true;
+  return COST_METRIC_NAMES.has(metric);
+}
+
+// Reads a WoW/period delta against a metric's own good direction -- null
+// (no data) stays null rather than reading as either color. `direction`
+// is 'down' for a cost metric, anything else (including undefined, for
+// call sites with no direction to give) defaults to the usual "up is good".
+export function deltaGood(delta, direction) {
+  if (delta == null) return null;
+  return direction === 'down' ? delta <= 0 : delta >= 0;
+}
+
 export async function fetchTopline(orgId) {
   const [revenue, costs, customer, budget] = await Promise.all([
     db.getAnalyticsMetrics(orgId, 'revenue'),
@@ -430,6 +463,7 @@ function groupBySection(tab, rows, asOfDate) {
       metric: r.metric,
       series: clipSeries(r.series || {}, asOfDate),
       kind: classifyMetric(tab, section, r.metric),
+      good: isCostMetric(tab, section, r.metric) ? 'down' : 'up',
     });
   });
   return [...groups.entries()]
