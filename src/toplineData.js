@@ -600,6 +600,7 @@ export function fmtWeekRange(iso) {
 // cents -- if rounded the same way, so anything under $1,000 keeps 2dp.
 export function fmtMoney(n, { compact = false } = {}) {
   if (n == null || Number.isNaN(n)) return '—';
+  if (compact && Math.abs(n) >= 1000000) return `$${(n / 1000000).toFixed(1)}m`;
   if (compact && Math.abs(n) >= 1000) return `$${(n / 1000).toFixed(1)}k`;
   const small = Math.abs(n) < 1000;
   return n.toLocaleString('en-AU', {
