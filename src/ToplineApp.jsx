@@ -6,7 +6,7 @@ import {
 import toast from 'react-hot-toast';
 import {
   fetchTopline, fetchItemMovers, fetchSubcategoryInsights, valueAt, wowDeltaAt, chartRowsForWindow, findMetric, weekAxis, shiftWeeks,
-  fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts,
+  fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts, deltaGood,
 } from './toplineData';
 
 // User-supplied palette: Blue Bell, Lobster Pink, Jungle Green, Saffron,
@@ -108,7 +108,7 @@ function MetricRow({ m, idx, asOfDate, dates }) {
       <div className="text-right w-24 shrink-0">
         <p className="text-sm font-semibold text-gray-700 tabular-nums">{formatMetricValue(value, m.kind)}</p>
         {delta != null && (
-          <p className="text-[11px] font-semibold tabular-nums" style={{ color: delta >= 0 ? GOOD : BAD }}>{delta >= 0 ? '+' : ''}{fmtPct(delta)}</p>
+          <p className="text-[11px] font-semibold tabular-nums" style={{ color: deltaGood(delta, m.good) ? GOOD : BAD }}>{delta >= 0 ? '+' : ''}{fmtPct(delta)}</p>
         )}
       </div>
     </div>
@@ -170,7 +170,7 @@ function MetricGroupList({ groups, defaultOpenCount = 2, asOfDate, period }) {
               asGrid ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 border-t border-gray-100">
                   {metrics.map(m => (
-                    <MetricMiniCard key={m.metric} label={m.metric} series={m.series} kind={m.kind} dates={dates} asOfDate={asOfDate} />
+                    <MetricMiniCard key={m.metric} label={m.metric} series={m.series} kind={m.kind} dates={dates} asOfDate={asOfDate} direction={m.good} />
                   ))}
                 </div>
               ) : (
@@ -221,7 +221,7 @@ function MetricTableRow({ m, dates, idx }) {
         let textClass = isSubtotal ? 'font-semibold text-gray-800' : 'text-gray-700';
         if (v != null && m.kind === 'percent') {
           if (v !== 0) textClass += ' font-semibold';
-          color = v > 0 ? GOOD : v < 0 ? BAD : undefined;
+          color = v === 0 ? undefined : deltaGood(v, m.good) ? GOOD : BAD;
         }
         return (
           <td key={d} className={`text-right text-xs tabular-nums px-3 py-1.5 border-b border-gray-50 whitespace-nowrap ${textClass}`} style={{ background: base, color }}>
@@ -559,7 +559,7 @@ function MiniTrendChart({ rows, dataKey, kind }) {
 // One card in a small-multiples grid: name, latest value + WoW delta, and
 // its own mini trend line -- used both for the day-of-week share cards and
 // (below) any "legacy" KPI section small enough to read well this way.
-function MetricMiniCard({ label, series, kind, dates, asOfDate }) {
+function MetricMiniCard({ label, series, kind, dates, asOfDate, direction }) {
   const rows = chartRowsForWindow([{ name: label, series }], dates);
   const current = valueAt(series, asOfDate);
   const delta = wowDeltaAt(series, asOfDate);
@@ -569,7 +569,7 @@ function MetricMiniCard({ label, series, kind, dates, asOfDate }) {
         <p className="text-xs font-bold text-gray-900 truncate">{label}</p>
         <p className="text-sm font-bold text-gray-900 tabular-nums shrink-0">{current != null ? formatMetricValue(current, kind) : '—'}</p>
       </div>
-      <DeltaPill delta={delta} />
+      <DeltaPill delta={delta} good={deltaGood(delta, direction)} />
       <MiniTrendChart rows={rows} dataKey={label} kind={kind} />
     </div>
   );
@@ -895,8 +895,8 @@ function OverviewTab({ topline, period }) {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatTile label="Gross Revenue" value={grossRevM ? formatMetricValue(valueAt(grossRevM.series, asOfDate), 'money') : '—'} delta={grossRevM && wowDeltaAt(grossRevM.series, asOfDate)} />
           <StatTile label="PC1 Margin" value={pc1MarginM ? formatMetricValue(valueAt(pc1MarginM.series, asOfDate), 'money') : '—'} delta={pc1MarginM && wowDeltaAt(pc1MarginM.series, asOfDate)} />
-          <StatTile label="COGS % of Revenue" value={cogsPctM ? fmtPct(valueAt(cogsPctM.series, asOfDate)) : '—'} delta={cogsPctM && wowDeltaAt(cogsPctM.series, asOfDate)} />
-          <StatTile label="Labour % of Revenue" value={labourPctM ? fmtPct(valueAt(labourPctM.series, asOfDate)) : '—'} delta={labourPctM && wowDeltaAt(labourPctM.series, asOfDate)} />
+          <StatTile label="COGS % of Revenue" value={cogsPctM ? fmtPct(valueAt(cogsPctM.series, asOfDate)) : '—'} delta={cogsPctM && wowDeltaAt(cogsPctM.series, asOfDate)} good={cogsPctM && deltaGood(wowDeltaAt(cogsPctM.series, asOfDate), 'down')} />
+          <StatTile label="Labour % of Revenue" value={labourPctM ? fmtPct(valueAt(labourPctM.series, asOfDate)) : '—'} delta={labourPctM && wowDeltaAt(labourPctM.series, asOfDate)} good={labourPctM && deltaGood(wowDeltaAt(labourPctM.series, asOfDate), 'down')} />
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <ChartCard title="COGS % & Labour % of Revenue" subtitle={`Last ${period} weeks`}>
@@ -1200,10 +1200,10 @@ function CostsTab({ topline, period }) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatTile label="COGS" value={cogsTotal ? formatMetricValue(valueAt(cogsTotal.series, asOfDate), 'money') : '—'} delta={cogsTotal && wowDeltaAt(cogsTotal.series, asOfDate)} />
-        <StatTile label="COGS % of Revenue" value={cogsPct ? fmtPct(valueAt(cogsPct.series, asOfDate)) : '—'} delta={cogsPct && wowDeltaAt(cogsPct.series, asOfDate)} />
-        <StatTile label="Total Labour Cost" value={totalLabour ? formatMetricValue(valueAt(totalLabour.series, asOfDate), 'money') : '—'} delta={totalLabour && wowDeltaAt(totalLabour.series, asOfDate)} />
-        <StatTile label="Labour % of Revenue" value={labourPct ? fmtPct(valueAt(labourPct.series, asOfDate)) : '—'} delta={labourPct && wowDeltaAt(labourPct.series, asOfDate)} />
+        <StatTile label="COGS" value={cogsTotal ? formatMetricValue(valueAt(cogsTotal.series, asOfDate), 'money') : '—'} delta={cogsTotal && wowDeltaAt(cogsTotal.series, asOfDate)} good={cogsTotal && deltaGood(wowDeltaAt(cogsTotal.series, asOfDate), 'down')} />
+        <StatTile label="COGS % of Revenue" value={cogsPct ? fmtPct(valueAt(cogsPct.series, asOfDate)) : '—'} delta={cogsPct && wowDeltaAt(cogsPct.series, asOfDate)} good={cogsPct && deltaGood(wowDeltaAt(cogsPct.series, asOfDate), 'down')} />
+        <StatTile label="Total Labour Cost" value={totalLabour ? formatMetricValue(valueAt(totalLabour.series, asOfDate), 'money') : '—'} delta={totalLabour && wowDeltaAt(totalLabour.series, asOfDate)} good={totalLabour && deltaGood(wowDeltaAt(totalLabour.series, asOfDate), 'down')} />
+        <StatTile label="Labour % of Revenue" value={labourPct ? fmtPct(valueAt(labourPct.series, asOfDate)) : '—'} delta={labourPct && wowDeltaAt(labourPct.series, asOfDate)} good={labourPct && deltaGood(wowDeltaAt(labourPct.series, asOfDate), 'down')} />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="COGS by Supplier" subtitle={`Weekly spend, last ${period} weeks`}>
@@ -1344,11 +1344,12 @@ function PnlTab({ topline, period, periodTouched }) {
 
 // ── Top level ─────────────────────────────────────────────────────────────────
 
+// Customer hidden for now -- CustomerTab and its data wiring stay in place
+// below so it's a one-line change to bring back.
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'revenue', label: 'Revenue' },
   { id: 'costs', label: 'Costs' },
-  { id: 'customer', label: 'Customer' },
   { id: 'pnl', label: 'P&L' },
 ];
 
