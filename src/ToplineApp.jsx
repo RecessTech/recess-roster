@@ -35,25 +35,39 @@ const PERIODS = [4, 8, 12, 26, 52];
 
 // ── Small shared pieces ──────────────────────────────────────────────────────
 
-function DeltaPill({ delta }) {
+// `good` overrides the default "up is green, down is red" read, for a
+// metric where that's backwards -- a profit/loss figure should read by its
+// own sign (still in profit = green, even if it shrank; still a loss = red,
+// even if it narrowed), not by which direction it moved. The arrow always
+// shows the literal direction of the move either way; only the colour
+// changes meaning.
+function DeltaPill({ delta, good }) {
   if (delta == null) return null;
-  const good = delta >= 0;
+  const up = delta >= 0;
+  const isGood = good != null ? good : up;
   return (
     <span
       className="inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-full mt-1"
-      style={{ color: good ? GOOD : BAD, background: good ? 'rgba(15,157,78,0.1)' : 'rgba(208,57,59,0.1)' }}
+      style={{ color: isGood ? GOOD : BAD, background: isGood ? 'rgba(15,157,78,0.1)' : 'rgba(208,57,59,0.1)' }}
     >
-      {good ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />} {fmtPct(Math.abs(delta))}
+      {up ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />} {fmtPct(Math.abs(delta))}
     </span>
   );
 }
 
-function StatTile({ label, value, delta, caption }) {
+// Null-safe sign check for a profit/loss-style metric -- null (no data)
+// stays null rather than silently reading as "good" the way `null >= 0`
+// would.
+function profitGood(v) {
+  return v == null ? null : v >= 0;
+}
+
+function StatTile({ label, value, delta, caption, good }) {
   return (
     <div className="metric-card min-w-0">
       <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide truncate">{label}</p>
       <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums truncate">{value}</p>
-      <DeltaPill delta={delta} />
+      <DeltaPill delta={delta} good={good} />
       {caption && <p className="text-[10px] text-gray-400 mt-0.5 truncate">{caption}</p>}
     </div>
   );
@@ -759,8 +773,8 @@ function OverviewTab({ topline, period }) {
         <StatTile label="Revenue" value={totalRevenueM ? formatMetricValue(valueAt(totalRevenueM.series, asOfDate), 'money') : '—'} delta={totalRevenueM && wowDeltaAt(totalRevenueM.series, asOfDate)} />
         <StatTile label="AOV" value={aovM ? fmtMoney(valueAt(aovM.series, asOfDate)) : '—'} delta={aovM && wowDeltaAt(aovM.series, asOfDate)} />
         <StatTile label="Customers" value={customersM ? fmtNumber(valueAt(customersM.series, asOfDate)) : '—'} delta={customersM && wowDeltaAt(customersM.series, asOfDate)} />
-        <StatTile label="Operating Profit" value={opProfitM ? formatMetricValue(valueAt(opProfitM.series, asOfDate), 'money') : '—'} delta={opProfitM && wowDeltaAt(opProfitM.series, asOfDate)} />
-        <StatTile label="Operating Margin" value={opProfitPctM ? fmtPct(valueAt(opProfitPctM.series, asOfDate)) : '—'} delta={opProfitPctM && wowDeltaAt(opProfitPctM.series, asOfDate)} />
+        <StatTile label="Operating Profit" value={opProfitM ? formatMetricValue(valueAt(opProfitM.series, asOfDate), 'money') : '—'} delta={opProfitM && wowDeltaAt(opProfitM.series, asOfDate)} good={opProfitM && profitGood(valueAt(opProfitM.series, asOfDate))} />
+        <StatTile label="Operating Margin" value={opProfitPctM ? fmtPct(valueAt(opProfitPctM.series, asOfDate)) : '—'} delta={opProfitPctM && wowDeltaAt(opProfitPctM.series, asOfDate)} good={opProfitPctM && profitGood(valueAt(opProfitPctM.series, asOfDate))} />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Revenue" subtitle={`Weekly total, last ${period} weeks`}>
@@ -1175,19 +1189,20 @@ function PnlTab({ topline, period }) {
       const curPct = curGross ? curProfit / curGross : null;
       const priorPct = priorGross ? priorProfit / priorGross : null;
       const delta = priorPct ? (curPct - priorPct) / Math.abs(priorPct) : null;
-      return { metric: m.metric, value: formatMetricValue(curPct, 'percent'), delta };
+      return { metric: m.metric, value: formatMetricValue(curPct, 'percent'), delta, good: profitGood(curPct) };
     }
     const cur = sumOverWindow(m.series, dates);
     const prior = sumOverWindow(m.series, priorDates);
     const delta = prior ? (cur - prior) / Math.abs(prior) : null;
-    return { metric: m.metric, value: formatMetricValue(cur, m.kind), delta };
+    const good = m.metric === PNL_TREND_PROFIT_METRIC ? profitGood(cur) : null;
+    return { metric: m.metric, value: formatMetricValue(cur, m.kind), delta, good };
   });
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {statTiles.map(t => (
-          <StatTile key={t.metric} label={t.metric} value={t.value} delta={t.delta} caption={caption} />
+          <StatTile key={t.metric} label={t.metric} value={t.value} delta={t.delta} good={t.good} caption={caption} />
         ))}
       </div>
       <ChartCard title="Gross Revenue, PC1 Margin, COGS & Labour" subtitle={`Weekly, last ${period} weeks — bars show profitable (green) vs loss-making (red) weeks`}>
