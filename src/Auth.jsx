@@ -1,13 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { CalendarDays, Clock, BarChart3 } from 'lucide-react';
+import { Quote } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
 const LOGO_URL = 'https://i.postimg.cc/76YSLjdw/rshift-on-cream.jpg';
 
-const FEATURES = [
-  { icon: CalendarDays, text: 'Build the week\'s roster in minutes, not hours' },
-  { icon: Clock, text: 'Timesheets and labour cost, calculated automatically' },
-  { icon: BarChart3, text: 'Live sales, costs and P&L built right in' },
+// Real, verifiably-attributed sandwich quotes only -- no invented lines
+// pinned to real names. One picked at random per mount, so it varies
+// across sign-ins without needing any server-side state.
+const SANDWICH_QUOTES = [
+  { quote: "Too few people understand a really good sandwich.", author: 'James Beard' },
+  { quote: "A sandwich and a cup of coffee, and then off to violin-land, where all is sweetness and delicacy and harmony.", author: 'Arthur Conan Doyle' },
+  { quote: "Sandwiches are wonderful. You don't need a spoon or a plate!", author: 'Paul Lynde' },
+  { quote: 'My favorite sandwich is peanut butter, baloney, cheddar cheese, lettuce, and mayonnaise on toasted bread with catsup on the side.', author: 'Hubert H. Humphrey' },
+  { quote: 'A bacon sandwich should always be slightly too big, never elegant.', author: 'Nigel Slater' },
+  { quote: 'When I was a boy there were only three kinds of sandwiches in common use -- the ham, the chicken and the Swiss cheese.', author: 'H. L. Mencken' },
+  { quote: 'Do not make a stingy sandwich, pile the cold cuts high. Customers should see salami coming through the rye.', author: 'Allan Sherman' },
+  { quote: 'I feel faint -- give me a ham sandwich!', author: 'Lewis Carroll' },
+  { quote: "A man's social rank is determined by the amount of bread he eats in a sandwich.", author: 'F. Scott Fitzgerald' },
+  { quote: 'A hungry man is more interested in four sandwiches than four freedoms.', author: 'Henry Cabot Lodge Jr.' },
+  { quote: "Have you got frog's legs? Yes. Well hop into the kitchen and get me a cheese sandwich.", author: 'Tommy Cooper' },
+  { quote: 'You look at it, but nothing happens, so then you look for someplace to get a sandwich.', author: 'Danny DeVito' },
+  { quote: 'A peanut butter and jelly sandwich is better than bad sex.', author: 'Billy Joel' },
+  { quote: 'Maybe hell is just having to listen to our grandparents breathe through their noses when they\'re eating sandwiches.', author: 'Jim Carrey' },
+  { quote: "If what I have to do is share a sandwich to lift someone's spirits and put a smile on their face, the worst thing that happens is I go broke.", author: 'José Andrés' },
+  { quote: 'Enjoy every sandwich.', author: 'Warren Zevon' },
+  { quote: 'If they had a social gospel in the days of the prodigal son, somebody would have given him a bed and a sandwich and he never would have gone home.', author: 'Vance Havner' },
 ];
 
 export const useAuth = () => {
@@ -57,6 +74,10 @@ export const Auth = ({ onAuthenticated }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
+  // Picked once per mount (lazy initializer), not on every render -- a
+  // fresh mount happens each time someone lands on this screen (sign out,
+  // session expiry, a new tab), which is exactly when "cycling" should show.
+  const [quote] = useState(() => SANDWICH_QUOTES[Math.floor(Math.random() * SANDWICH_QUOTES.length)]);
 
   // The signed-in app picks its own data-theme per active module (see
   // roster-app.jsx) -- R-Shift's is 'blue'. Nothing has set that attribute
@@ -111,20 +132,12 @@ export const Auth = ({ onAuthenticated }) => {
         </div>
 
         <div className="max-w-sm">
-          <h1 className="text-4xl font-extrabold tracking-tight mb-3">R-Shift</h1>
-          <p className="text-base text-white/80 mb-10 leading-relaxed">
-            Staff scheduling, timesheets and rostering -- built for cafes and hospitality teams.
+          <h1 className="text-4xl font-extrabold tracking-tight mb-8">R-Shift</h1>
+          <Quote size={28} className="text-white/30 mb-3" />
+          <p className="text-xl font-medium text-white/90 leading-relaxed mb-4">
+            &ldquo;{quote.quote}&rdquo;
           </p>
-          <div className="space-y-5">
-            {FEATURES.map(({ icon: Icon, text }) => (
-              <div key={text} className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-white/15">
-                  <Icon size={16} />
-                </div>
-                <p className="text-sm text-white/90 leading-relaxed pt-1.5">{text}</p>
-              </div>
-            ))}
-          </div>
+          <p className="text-sm text-white/60">— {quote.author}</p>
         </div>
 
         <p className="text-xs text-white/50">© {new Date().getFullYear()} R-Shift</p>
