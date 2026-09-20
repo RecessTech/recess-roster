@@ -1148,7 +1148,7 @@ const PNL_TREND_LINES = [
 const PNL_TREND_LINE_COLORS = [CATEGORICAL[0], CATEGORICAL[1], CATEGORICAL[3], CATEGORICAL[4]];
 const PNL_TREND_PROFIT_METRIC = 'Operating Profit $';
 
-function PnlTab({ topline, period }) {
+function PnlTab({ topline, period, periodTouched }) {
   const { asOfDate } = topline;
   const budgetGroup = topline.budget;
   const stats = PNL_SUMMARY_METRICS.map(name => findMetric(budgetGroup, '', name)).filter(Boolean);
@@ -1166,34 +1166,37 @@ function PnlTab({ topline, period }) {
   const categoryGroups = budgetGroup.filter(g => g.section !== '');
   const summaryGroup = budgetGroup.find(g => g.section === '');
 
-  // Summary tiles sum over the page's period selector rather than showing a
-  // fixed single-week snapshot -- so switching to 4w/8w/etc actually changes
-  // what the tiles report, not just the trend chart below them. The
-  // comparison "prior" window is the same-length block of weeks immediately
-  // before this one (mirrors the current-vs-prior pattern Item Movers and
-  // the subcategory insights already use), not last week vs this week.
+  // Summary tiles open on the current single week, same as every other tab --
+  // only once the user actively touches the period selector do they switch to
+  // summing over the selected window (4w/8w/etc). The comparison "prior"
+  // window mirrors that: last week vs this week by default, or the
+  // same-length block of weeks immediately before once aggregated (mirrors
+  // the current-vs-prior pattern Item Movers and the subcategory insights
+  // already use).
   const dates = weekAxis(asOfDate, period);
   const priorAsOfDate = shiftWeeks(asOfDate, -period);
   const priorDates = weekAxis(priorAsOfDate, period);
-  const caption = `Sum, last ${period}w`;
+  const caption = periodTouched ? `Sum, last ${period}w` : undefined;
 
   const statTiles = stats.map(m => {
     if (m.metric === 'Operating Profit %') {
       // Blended (sum of $ profit / sum of $ revenue), not an average of
       // weekly percentages -- same reasoning as blended AOV elsewhere: a
       // straight average would over-weight a quiet week against a busy one.
-      const curProfit = sumOverWindow(profitM?.series, dates);
-      const curGross = sumOverWindow(grossM?.series, dates);
-      const priorProfit = sumOverWindow(profitM?.series, priorDates);
-      const priorGross = sumOverWindow(grossM?.series, priorDates);
+      const curProfit = periodTouched ? sumOverWindow(profitM?.series, dates) : valueAt(profitM?.series, asOfDate);
+      const curGross = periodTouched ? sumOverWindow(grossM?.series, dates) : valueAt(grossM?.series, asOfDate);
+      const priorProfit = periodTouched ? sumOverWindow(profitM?.series, priorDates) : valueAt(profitM?.series, priorAsOfDate);
+      const priorGross = periodTouched ? sumOverWindow(grossM?.series, priorDates) : valueAt(grossM?.series, priorAsOfDate);
       const curPct = curGross ? curProfit / curGross : null;
       const priorPct = priorGross ? priorProfit / priorGross : null;
       const delta = priorPct ? (curPct - priorPct) / Math.abs(priorPct) : null;
       return { metric: m.metric, value: formatMetricValue(curPct, 'percent'), delta, good: profitGood(curPct) };
     }
-    const cur = sumOverWindow(m.series, dates);
-    const prior = sumOverWindow(m.series, priorDates);
-    const delta = prior ? (cur - prior) / Math.abs(prior) : null;
+    const cur = periodTouched ? sumOverWindow(m.series, dates) : valueAt(m.series, asOfDate);
+    const prior = periodTouched ? sumOverWindow(m.series, priorDates) : valueAt(m.series, priorAsOfDate);
+    const delta = periodTouched
+      ? (prior ? (cur - prior) / Math.abs(prior) : null)
+      : wowDeltaAt(m.series, asOfDate);
     const good = m.metric === PNL_TREND_PROFIT_METRIC ? profitGood(cur) : null;
     return { metric: m.metric, value: formatMetricValue(cur, m.kind), delta, good };
   });
@@ -1275,6 +1278,8 @@ export default function ToplineApp({ org }) {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [period, setPeriod] = useState(26);
+  const [periodTouched, setPeriodTouched] = useState(false);
+  const handlePeriodChange = useCallback(p => { setPeriod(p); setPeriodTouched(true); }, []);
   const [itemMovers, setItemMovers] = useState(null);
   const [itemMoversLoading, setItemMoversLoading] = useState(false);
   const [subcatInsights, setSubcatInsights] = useState(null);
@@ -1347,7 +1352,7 @@ export default function ToplineApp({ org }) {
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <TrendingUp size={20} style={{ color: 'var(--primary)' }} /> R-Topline
             </h2>
-            <PeriodSelector period={period} onChange={setPeriod} />
+            <PeriodSelector period={period} onChange={handlePeriodChange} />
           </div>
           <p className="text-sm text-gray-400">Revenue, costs & P&L — every KPI from the analytics sheet, natively in R-Shift, reported weekly</p>
           <AsOfBanner asOfDate={topline.asOfDate} />
@@ -1370,7 +1375,7 @@ export default function ToplineApp({ org }) {
         {activeTab === 'revenue' && <RevenueTab topline={topline} period={period} itemMovers={itemMovers} itemMoversLoading={itemMoversLoading} subcatInsights={subcatInsights} subcatLoading={subcatLoading} />}
         {activeTab === 'costs' && <CostsTab topline={topline} period={period} />}
         {activeTab === 'customer' && <CustomerTab topline={topline} period={period} />}
-        {activeTab === 'pnl' && <PnlTab topline={topline} period={period} />}
+        {activeTab === 'pnl' && <PnlTab topline={topline} period={period} periodTouched={periodTouched} />}
       </div>
     </div>
   );
