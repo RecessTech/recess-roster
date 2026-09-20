@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import toast from 'react-hot-toast';
 import {
-  fetchTopline, fetchItemMovers, fetchSubcategoryInsights, valueAt, wowDeltaAt, chartRowsForWindow, findMetric, weekAxis,
+  fetchTopline, fetchItemMovers, fetchSubcategoryInsights, valueAt, wowDeltaAt, chartRowsForWindow, findMetric, weekAxis, shiftWeeks,
   fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts,
 } from './toplineData';
 
@@ -48,12 +48,13 @@ function DeltaPill({ delta }) {
   );
 }
 
-function StatTile({ label, value, delta }) {
+function StatTile({ label, value, delta, caption }) {
   return (
     <div className="metric-card min-w-0">
       <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide truncate">{label}</p>
       <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums truncate">{value}</p>
       <DeltaPill delta={delta} />
+      {caption && <p className="text-[10px] text-gray-400 mt-0.5 truncate">{caption}</p>}
     </div>
   );
 }
@@ -389,6 +390,18 @@ function sumGroupsRows(dates, groups) {
     });
     return row;
   });
+}
+
+// Sums a series over a fixed set of weeks -- null (not 0) when the series
+// has no entry for any of them, so a metric with no data that far back
+// renders as "—" instead of a misleading $0 total.
+function sumOverWindow(series, dates) {
+  let sum = 0, any = false;
+  dates.forEach(d => {
+    const v = series?.[d];
+    if (v != null) { sum += v; any = true; }
+  });
+  return any ? sum : null;
 }
 
 // Same stacked-bar shape as StackedBarChart, but indexed by subcategory
@@ -1126,6 +1139,7 @@ function PnlTab({ topline, period }) {
   const budgetGroup = topline.budget;
   const stats = PNL_SUMMARY_METRICS.map(name => findMetric(budgetGroup, '', name)).filter(Boolean);
   const profitM = findMetric(budgetGroup, '', PNL_TREND_PROFIT_METRIC);
+  const grossM = findMetric(budgetGroup, '', 'Gross Revenue');
   const trendSeries = [
     ...PNL_TREND_LINES.map(({ section, metric, label }) => {
       const m = findMetric(budgetGroup, section, metric);
@@ -1138,11 +1152,42 @@ function PnlTab({ topline, period }) {
   const categoryGroups = budgetGroup.filter(g => g.section !== '');
   const summaryGroup = budgetGroup.find(g => g.section === '');
 
+  // Summary tiles sum over the page's period selector rather than showing a
+  // fixed single-week snapshot -- so switching to 4w/8w/etc actually changes
+  // what the tiles report, not just the trend chart below them. The
+  // comparison "prior" window is the same-length block of weeks immediately
+  // before this one (mirrors the current-vs-prior pattern Item Movers and
+  // the subcategory insights already use), not last week vs this week.
+  const dates = weekAxis(asOfDate, period);
+  const priorAsOfDate = shiftWeeks(asOfDate, -period);
+  const priorDates = weekAxis(priorAsOfDate, period);
+  const caption = `Sum, last ${period}w`;
+
+  const statTiles = stats.map(m => {
+    if (m.metric === 'Operating Profit %') {
+      // Blended (sum of $ profit / sum of $ revenue), not an average of
+      // weekly percentages -- same reasoning as blended AOV elsewhere: a
+      // straight average would over-weight a quiet week against a busy one.
+      const curProfit = sumOverWindow(profitM?.series, dates);
+      const curGross = sumOverWindow(grossM?.series, dates);
+      const priorProfit = sumOverWindow(profitM?.series, priorDates);
+      const priorGross = sumOverWindow(grossM?.series, priorDates);
+      const curPct = curGross ? curProfit / curGross : null;
+      const priorPct = priorGross ? priorProfit / priorGross : null;
+      const delta = priorPct ? (curPct - priorPct) / Math.abs(priorPct) : null;
+      return { metric: m.metric, value: formatMetricValue(curPct, 'percent'), delta };
+    }
+    const cur = sumOverWindow(m.series, dates);
+    const prior = sumOverWindow(m.series, priorDates);
+    const delta = prior ? (cur - prior) / Math.abs(prior) : null;
+    return { metric: m.metric, value: formatMetricValue(cur, m.kind), delta };
+  });
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {stats.map(m => (
-          <StatTile key={m.metric} label={m.metric} value={formatMetricValue(valueAt(m.series, asOfDate), m.kind)} delta={wowDeltaAt(m.series, asOfDate)} />
+        {statTiles.map(t => (
+          <StatTile key={t.metric} label={t.metric} value={t.value} delta={t.delta} caption={caption} />
         ))}
       </div>
       <ChartCard title="Gross Revenue, PC1 Margin, COGS & Labour" subtitle={`Weekly, last ${period} weeks — bars show profitable (green) vs loss-making (red) weeks`}>
