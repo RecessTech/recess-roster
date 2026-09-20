@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { TrendingUp, Loader2, ChevronDown, ChevronUp, ArrowUpRight, ArrowDownRight, Table2, LayoutGrid, CalendarDays } from 'lucide-react';
 import {
-  ResponsiveContainer, LineChart, Line, BarChart, Bar, ComposedChart, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, LineChart, Line, BarChart, Bar, ComposedChart, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList,
 } from 'recharts';
 import toast from 'react-hot-toast';
 import {
@@ -311,6 +311,21 @@ function hasChartData(rows, dataKeys) {
   return rows.some(r => dataKeys.some(k => r[k] != null));
 }
 
+// Index of the last row where this series actually has a value -- lines use
+// connectNulls, so a metric that stopped reporting a week or two before the
+// others shouldn't get an end label floating on a gap.
+function lastValueIndex(rows, key) {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i][key] != null) return i;
+  }
+  return -1;
+}
+
+// Bar/stack totals only stay readable up to a point -- past this many bars
+// the labels start overlapping each other, so charts drop them rather than
+// render noise (the axis and tooltip still carry the numbers).
+const MAX_LABELED_BARS = 14;
+
 function ChartCard({ title, subtitle, children }) {
   return (
     <div className="card p-5">
@@ -342,33 +357,72 @@ function TrendChart({ rows, dataKeys, colors, money, percent, tightDomain }) {
   const domain = tightDomain ? tightYDomain(rows, dataKeys) : undefined;
   return (
     <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
-      <LineChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+      <LineChart data={rows} margin={{ top: 4, right: 46, left: 0, bottom: 0 }}>
         <CartesianGrid stroke={GRID_COLOR} vertical={false} />
         <XAxis dataKey="date" tickFormatter={fmtWeekLabel} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={{ stroke: GRID_COLOR }} tickLine={false} minTickGap={28} />
         <YAxis tickFormatter={yFmt} domain={domain} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={money ? 64 : 46} />
         <Tooltip labelFormatter={fmtWeekLabel} formatter={v => yFmt(v)} contentStyle={{ fontSize: 13, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
         {dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
-        {dataKeys.map((k, i) => (
-          <Line key={k} type="monotone" dataKey={k} stroke={dataKeys.length > 1 ? colors[i % colors.length] : 'var(--primary)'} strokeWidth={2.5} dot={false} connectNulls isAnimationActive={false} />
-        ))}
+        {dataKeys.map((k, i) => {
+          const color = dataKeys.length > 1 ? colors[i % colors.length] : 'var(--primary)';
+          const endIdx = lastValueIndex(rows, k);
+          return (
+            <Line key={k} type="monotone" dataKey={k} stroke={color} strokeWidth={2.5} dot={false} connectNulls isAnimationActive={false}>
+              {endIdx >= 0 && (
+                <LabelList
+                  dataKey={k}
+                  content={({ x, y, value, index }) => {
+                    if (index !== endIdx || value == null) return null;
+                    return (
+                      <text x={x + 8} y={y} dy={4} fontSize={11} fontWeight={700} fill={color} textAnchor="start">
+                        {yFmt(value)}
+                      </text>
+                    );
+                  }}
+                />
+              )}
+            </Line>
+          );
+        })}
       </LineChart>
     </ResponsiveContainer>
   );
 }
 
+// A total-of-the-stack label above each bar -- only for $ stacks (a %
+// stack's total is always 100%, so labeling it says nothing) and only while
+// there are few enough bars for the labels not to collide (see
+// MAX_LABELED_BARS). Reads off the actual row rather than the topmost
+// segment's own value, since that's what "how big was this week" means here.
 function StackedBarChart({ rows, dataKeys, colors, money, percent }) {
   if (!rows.length || !hasChartData(rows, dataKeys)) return <EmptyChart label="No data in this period" />;
   const yFmt = v => (percent ? fmtPct(v) : money ? fmtMoney(v, { compact: true }) : fmtNumber(v));
+  const showTotals = !percent && rows.length <= MAX_LABELED_BARS;
   return (
     <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
-      <BarChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+      <BarChart data={rows} margin={{ top: showTotals ? 20 : 4, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke={GRID_COLOR} vertical={false} />
         <XAxis dataKey="date" tickFormatter={fmtWeekLabel} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={{ stroke: GRID_COLOR }} tickLine={false} minTickGap={28} />
         <YAxis tickFormatter={yFmt} domain={percent ? [0, 1] : undefined} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={money ? 64 : 46} />
         <Tooltip labelFormatter={fmtWeekLabel} formatter={v => yFmt(v)} contentStyle={{ fontSize: 13, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         {dataKeys.map((k, i) => (
-          <Bar key={k} dataKey={k} stackId="a" fill={colors[i % colors.length]} radius={i === dataKeys.length - 1 ? [3, 3, 0, 0] : undefined} />
+          <Bar key={k} dataKey={k} stackId="a" fill={colors[i % colors.length]} radius={i === dataKeys.length - 1 ? [3, 3, 0, 0] : undefined}>
+            {showTotals && i === dataKeys.length - 1 && (
+              <LabelList
+                dataKey={k}
+                content={({ x, y, width, index }) => {
+                  const total = dataKeys.reduce((sum, dk) => sum + (rows[index]?.[dk] || 0), 0);
+                  if (!total) return null;
+                  return (
+                    <text x={x + width / 2} y={y - 6} textAnchor="middle" fontSize={11} fontWeight={700} fill="#4b5563">
+                      {fmtMoney(total, { compact: true })}
+                    </text>
+                  );
+                }}
+              />
+            )}
+          </Bar>
         ))}
       </BarChart>
     </ResponsiveContainer>
@@ -453,7 +507,7 @@ function EfficiencyChart({ rows, loading }) {
   const height = Math.max(CHART_HEIGHT, rows.length * 34);
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>
+      <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 44, left: 0, bottom: 0 }}>
         <CartesianGrid stroke={GRID_COLOR} horizontal={false} />
         <XAxis type="number" tickFormatter={v => fmtMoney(v, { compact: true })} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} />
         <YAxis type="category" dataKey="category" width={100} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} />
@@ -464,7 +518,14 @@ function EfficiencyChart({ rows, loading }) {
           ]}
           contentStyle={{ fontSize: 13, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }}
         />
-        <Bar dataKey="revenuePerItem" fill="var(--primary)" radius={[0, 3, 3, 0]} />
+        <Bar dataKey="revenuePerItem" fill="var(--primary)" radius={[0, 3, 3, 0]}>
+          <LabelList
+            dataKey="revenuePerItem"
+            position="right"
+            formatter={v => fmtMoney(v, { compact: true })}
+            style={{ fontSize: 11, fontWeight: 700, fill: AXIS_COLOR }}
+          />
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
@@ -710,6 +771,20 @@ function PnlTrendChart({ rows, lineKeys, barKey, colors }) {
           {rows.map((r, i) => (
             <Cell key={i} fill={r[barKey] == null ? 'transparent' : r[barKey] >= 0 ? GOOD : BAD} />
           ))}
+          {rows.length <= MAX_LABELED_BARS && (
+            <LabelList
+              dataKey={barKey}
+              content={({ x, y, width, height, value }) => {
+                if (value == null) return null;
+                const good = value >= 0;
+                return (
+                  <text x={x + width / 2} y={good ? y - 6 : y + height + 14} textAnchor="middle" fontSize={10} fontWeight={700} fill={good ? GOOD : BAD}>
+                    {fmtMoney(value, { compact: true })}
+                  </text>
+                );
+              }}
+            />
+          )}
         </Bar>
         {lineKeys.map((k, i) => (
           <Line key={k} type="monotone" dataKey={k} stroke={colors[i % colors.length]} strokeWidth={2.5} dot={false} connectNulls isAnimationActive={false} />
@@ -763,9 +838,36 @@ function OverviewTab({ topline, period }) {
   const opProfitM = findMetric(topline.budget, '', 'Operating Profit $');
   const opProfitPctM = findMetric(topline.budget, '', 'Operating Profit %');
 
+  const cogsPctM = findMetric(topline.costs, 'Average COGS', 'COGS % of Revenue');
+  const labourPctM = findMetric(topline.costs, 'Labour', 'Labour % Of Revenue');
+  const grossRevM = findMetric(topline.budget, '', 'Gross Revenue');
+  const pc1MarginM = findMetric(topline.budget, '', 'PC1 Margin');
+
   const dates = weekAxis(asOfDate, period);
   const revenueChart = totalRevenueM ? chartRowsForWindow([{ name: 'Revenue', series: totalRevenueM.series }], dates) : [];
   const customerChart = customersM ? chartRowsForWindow([{ name: 'Customers', series: customersM.series }], dates) : [];
+  const aovChart = aovM ? chartRowsForWindow([{ name: 'AOV', series: aovM.series }], dates) : [];
+
+  // Condensed cost/profitability picture: the same COGS%/Labour% pairing
+  // CostsTab trends, and the same 4-line-+-bar shape PnlTab's headline chart
+  // uses -- a smaller-scope repeat of each rather than a new visual
+  // language, so "at a glance" here still reads as the same story the Costs
+  // and P&L tabs tell in full.
+  const ratioSeries = [
+    cogsPctM && { name: 'COGS % of Revenue', series: cogsPctM.series },
+    labourPctM && { name: 'Labour % of Revenue', series: labourPctM.series },
+  ].filter(Boolean);
+  const ratioRows = chartRowsForWindow(ratioSeries, dates);
+
+  const profitM = opProfitM;
+  const pnlTrendSeries = [
+    ...PNL_TREND_LINES.map(({ section, metric, label }) => {
+      const m = findMetric(topline.budget, section, metric);
+      return m ? { name: label, series: m.series } : null;
+    }),
+    profitM && { name: PNL_TREND_PROFIT_METRIC, series: profitM.series },
+  ].filter(Boolean);
+  const pnlTrendRows = chartRowsForWindow(pnlTrendSeries, dates);
 
   return (
     <div className="space-y-5">
@@ -776,13 +878,34 @@ function OverviewTab({ topline, period }) {
         <StatTile label="Operating Profit" value={opProfitM ? formatMetricValue(valueAt(opProfitM.series, asOfDate), 'money') : '—'} delta={opProfitM && wowDeltaAt(opProfitM.series, asOfDate)} good={opProfitM && profitGood(valueAt(opProfitM.series, asOfDate))} />
         <StatTile label="Operating Margin" value={opProfitPctM ? fmtPct(valueAt(opProfitPctM.series, asOfDate)) : '—'} delta={opProfitPctM && wowDeltaAt(opProfitPctM.series, asOfDate)} good={opProfitPctM && profitGood(valueAt(opProfitPctM.series, asOfDate))} />
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <ChartCard title="Revenue" subtitle={`Weekly total, last ${period} weeks`}>
-          <TrendChart rows={revenueChart} dataKeys={['Revenue']} colors={CATEGORICAL} money />
+          <TrendChart rows={revenueChart} dataKeys={['Revenue']} colors={CATEGORICAL} money tightDomain />
         </ChartCard>
         <ChartCard title="Customers" subtitle={`Weekly total, last ${period} weeks`}>
-          <TrendChart rows={customerChart} dataKeys={['Customers']} colors={CATEGORICAL} />
+          <TrendChart rows={customerChart} dataKeys={['Customers']} colors={CATEGORICAL} tightDomain />
         </ChartCard>
+        <ChartCard title="AOV" subtitle={`Weekly, last ${period} weeks`}>
+          <TrendChart rows={aovChart} dataKeys={['AOV']} colors={CATEGORICAL} money tightDomain />
+        </ChartCard>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-gray-900">Costs & Profitability</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatTile label="Gross Revenue" value={grossRevM ? formatMetricValue(valueAt(grossRevM.series, asOfDate), 'money') : '—'} delta={grossRevM && wowDeltaAt(grossRevM.series, asOfDate)} />
+          <StatTile label="PC1 Margin" value={pc1MarginM ? formatMetricValue(valueAt(pc1MarginM.series, asOfDate), 'money') : '—'} delta={pc1MarginM && wowDeltaAt(pc1MarginM.series, asOfDate)} />
+          <StatTile label="COGS % of Revenue" value={cogsPctM ? fmtPct(valueAt(cogsPctM.series, asOfDate)) : '—'} delta={cogsPctM && wowDeltaAt(cogsPctM.series, asOfDate)} />
+          <StatTile label="Labour % of Revenue" value={labourPctM ? fmtPct(valueAt(labourPctM.series, asOfDate)) : '—'} delta={labourPctM && wowDeltaAt(labourPctM.series, asOfDate)} />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <ChartCard title="COGS % & Labour % of Revenue" subtitle={`Last ${period} weeks`}>
+            <TrendChart rows={ratioRows} dataKeys={ratioSeries.map(s => s.name)} colors={[CATEGORICAL[1], CATEGORICAL[4]]} percent tightDomain />
+          </ChartCard>
+          <ChartCard title="P&L at a Glance" subtitle={`Gross Revenue, PC1 Margin, COGS & Labour, last ${period} weeks — bars show profitable (green) vs loss-making (red) weeks`}>
+            <PnlTrendChart rows={pnlTrendRows} lineKeys={PNL_TREND_LINES.map(l => l.label)} barKey={PNL_TREND_PROFIT_METRIC} colors={PNL_TREND_LINE_COLORS} />
+          </ChartCard>
+        </div>
       </div>
     </div>
   );
@@ -1087,7 +1210,7 @@ function CostsTab({ topline, period }) {
           <StackedBarChart rows={supplierRows} dataKeys={COGS_SUPPLIERS} colors={CATEGORICAL} money />
         </ChartCard>
         <ChartCard title="COGS % & Labour % of Revenue" subtitle={`Last ${period} weeks`}>
-          <TrendChart rows={ratioRows} dataKeys={ratioSeries.map(s => s.name)} colors={[CATEGORICAL[1], CATEGORICAL[4]]} percent />
+          <TrendChart rows={ratioRows} dataKeys={ratioSeries.map(s => s.name)} colors={[CATEGORICAL[1], CATEGORICAL[4]]} percent tightDomain />
         </ChartCard>
       </div>
       <KpiSection groups={costsGroup} defaultOpenCount={2} asOfDate={asOfDate} period={period} />
@@ -1123,7 +1246,7 @@ function CustomerTab({ topline, period }) {
         <StatTile label="Google Reviews" value={reviews ? fmtNumber(valueAt(reviews.series, asOfDate)) : '—'} delta={reviews && wowDeltaAt(reviews.series, asOfDate)} />
       </div>
       <ChartCard title="Social Followers" subtitle={`Last ${period} weeks`}>
-        <TrendChart rows={followerRows} dataKeys={followerSeries.map(s => s.name)} colors={CATEGORICAL} />
+        <TrendChart rows={followerRows} dataKeys={followerSeries.map(s => s.name)} colors={CATEGORICAL} tightDomain />
       </ChartCard>
       <KpiSection groups={custGroup} defaultOpenCount={2} asOfDate={asOfDate} period={period} />
     </div>
