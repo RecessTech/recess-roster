@@ -1172,8 +1172,6 @@ function RevenueTab({ topline, period, itemMovers, itemMoversLoading, subcatInsi
   );
 }
 
-const COGS_SUPPLIERS = ['Foodbyus', 'Ordermentum', 'Supermarket', 'Direct Supply'];
-
 function CostsTab({ topline, period, periodTouched }) {
   const { asOfDate } = topline;
   const costsGroup = topline.costs;
@@ -1184,12 +1182,23 @@ function CostsTab({ topline, period, periodTouched }) {
   const totalLabour = findMetric(costsGroup, 'Labour', 'Total Labour Cost');
   const revTotalM = findMetric(topline.revenue, 'Revenue', 'Revenue - Total');
 
-  const supplierSeries = COGS_SUPPLIERS
-    .map(s => {
-      const m = findMetric(costsGroup, 'COGS Spend', s);
-      return m ? { name: s, series: m.series } : null;
-    })
-    .filter(Boolean);
+  // Whichever suppliers actually have spend in "COGS Spend" this window --
+  // not a fixed bucket list. A supplier-name change (a new caterer, an old
+  // one dropping off) just shows up or drops out on its own rather than
+  // needing a code change, and a week that was previously lumped into an
+  // opaque catch-all reads as its real named suppliers instead. Ranked by
+  // spend within the current window (highest first) so the biggest
+  // supplier gets top billing in both the stack order and the legend.
+  const supplierMetrics = (costsGroup.find(g => g.section === 'COGS Spend')?.metrics || [])
+    .filter(m => m.metric !== 'Total');
+  const supplierNames = supplierMetrics
+    .map(m => ({ name: m.metric, total: sumOverWindow(m.series, dates) || 0 }))
+    .sort((a, b) => b.total - a.total)
+    .map(s => s.name);
+  const supplierSeries = supplierNames.map(name => ({
+    name,
+    series: supplierMetrics.find(m => m.metric === name).series,
+  }));
   const supplierRows = chartRowsForWindow(supplierSeries, dates);
 
   const ratioSeries = [
@@ -1239,7 +1248,7 @@ function CostsTab({ topline, period, periodTouched }) {
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="COGS by Supplier" subtitle={`Weekly spend, last ${period} weeks`}>
-          <StackedBarChart rows={supplierRows} dataKeys={COGS_SUPPLIERS} colors={CATEGORICAL} money />
+          <StackedBarChart rows={supplierRows} dataKeys={supplierNames} colors={CATEGORICAL} money />
         </ChartCard>
         <ChartCard title="COGS % & Labour % of Revenue" subtitle={`Last ${period} weeks`}>
           <TrendChart rows={ratioRows} dataKeys={ratioSeries.map(s => s.name)} colors={[CATEGORICAL[1], CATEGORICAL[4]]} percent tightDomain />
