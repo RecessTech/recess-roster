@@ -531,6 +531,30 @@ function EfficiencyChart({ rows, loading }) {
   );
 }
 
+// Ranked horizontal bar for a single week's full supplier list -- no
+// weekly time axis, so it isn't bound by the trend chart's "stay under the
+// palette" constraint above. This is where genuine granularity lives (every
+// named supplier, however many there are); the trend chart stays capped and
+// stable so it's still readable week to week.
+function SupplierSpendChart({ rows, loading }) {
+  if (loading) return <div className="flex items-center justify-center" style={{ height: CHART_HEIGHT }}><Loader2 size={16} className="animate-spin text-gray-300" /></div>;
+  if (!rows.length) return <EmptyChart label="No data this week" />;
+  const height = Math.max(CHART_HEIGHT, rows.length * 34);
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 44, left: 0, bottom: 0 }}>
+        <CartesianGrid stroke={GRID_COLOR} horizontal={false} />
+        <XAxis type="number" tickFormatter={v => fmtMoney(v, { compact: true })} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} />
+        <YAxis type="category" dataKey="supplier" width={140} tick={{ fontSize: 12, fill: AXIS_COLOR }} axisLine={false} tickLine={false} />
+        <Tooltip formatter={v => fmtMoney(v, { compact: true })} contentStyle={{ fontSize: 13, borderRadius: 8, border: `1px solid ${GRID_COLOR}` }} />
+        <Bar dataKey="spend" fill="var(--primary)" radius={[0, 3, 3, 0]}>
+          <LabelList dataKey="spend" position="right" formatter={v => fmtMoney(v, { compact: true })} style={{ fontSize: 11, fontWeight: 700, fill: AXIS_COLOR }} />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
 const MINI_CHART_HEIGHT = 120;
 
 // A single-series, axis-light line chart for a small-multiples grid (one
@@ -1182,24 +1206,51 @@ function CostsTab({ topline, period, periodTouched }) {
   const totalLabour = findMetric(costsGroup, 'Labour', 'Total Labour Cost');
   const revTotalM = findMetric(topline.revenue, 'Revenue', 'Revenue - Total');
 
-  // Whichever suppliers actually have spend in "COGS Spend" this window --
-  // not a fixed bucket list. A supplier-name change (a new caterer, an old
-  // one dropping off) just shows up or drops out on its own rather than
-  // needing a code change, and a week that was previously lumped into an
-  // opaque catch-all reads as its real named suppliers instead. Ranked by
-  // spend within the current window (highest first) so the biggest
-  // supplier gets top billing in both the stack order and the legend.
+  // Whichever suppliers actually have spend in "COGS Spend" -- not a fixed
+  // bucket list. But real supplier names churn (a new caterer, an old one
+  // dropping off, an export finally itemizing what used to be one catch-all
+  // line) in a way a fixed 4-name list never captured, and left unbounded
+  // that churn stacks up: any window spanning both the old bucketed weeks
+  // and a newly-itemized week ends up with a dozen+ series fighting over a
+  // 5-color palette. So the multi-week trend stays capped to the top
+  // MAX_SUPPLIER_SERIES by spend within the window, with everyone else
+  // folded into a neutral-grey "Other" -- never a generated hue for an
+  // overflow series, per the dataviz palette rule. Full, uncapped
+  // granularity lives in the current-week ranked list below instead, which
+  // has no time axis to stay stable across.
+  const MAX_SUPPLIER_SERIES = 5;
+  const OTHER_COLOR = '#9CA3AF';
   const supplierMetrics = (costsGroup.find(g => g.section === 'COGS Spend')?.metrics || [])
     .filter(m => m.metric !== 'Total');
-  const supplierNames = supplierMetrics
-    .map(m => ({ name: m.metric, total: sumOverWindow(m.series, dates) || 0 }))
-    .sort((a, b) => b.total - a.total)
-    .map(s => s.name);
-  const supplierSeries = supplierNames.map(name => ({
-    name,
-    series: supplierMetrics.find(m => m.metric === name).series,
-  }));
+  const rankedSuppliers = supplierMetrics
+    .map(m => ({ name: m.metric, series: m.series, total: sumOverWindow(m.series, dates) || 0 }))
+    .sort((a, b) => b.total - a.total);
+  const topSuppliers = rankedSuppliers.slice(0, MAX_SUPPLIER_SERIES);
+  const otherSuppliers = rankedSuppliers.slice(MAX_SUPPLIER_SERIES);
+  const otherSeries = {};
+  if (otherSuppliers.length) {
+    dates.forEach(d => {
+      let sum = 0, any = false;
+      otherSuppliers.forEach(s => { const v = s.series[d]; if (v != null) { sum += v; any = true; } });
+      if (any) otherSeries[d] = sum;
+    });
+  }
+  const supplierSeries = [
+    ...topSuppliers.map(s => ({ name: s.name, series: s.series })),
+    otherSuppliers.length && { name: 'Other', series: otherSeries },
+  ].filter(Boolean);
+  const supplierNames = supplierSeries.map(s => s.name);
+  const supplierColors = otherSuppliers.length
+    ? [...CATEGORICAL.slice(0, topSuppliers.length), OTHER_COLOR]
+    : CATEGORICAL;
   const supplierRows = chartRowsForWindow(supplierSeries, dates);
+
+  // This week's full breakdown, uncapped -- every supplier with spend this
+  // week, ranked, regardless of how many that is.
+  const weekSupplierRows = supplierMetrics
+    .map(m => ({ supplier: m.metric, spend: valueAt(m.series, asOfDate) }))
+    .filter(r => r.spend != null)
+    .sort((a, b) => b.spend - a.spend);
 
   const ratioSeries = [
     cogsPct && { name: 'COGS % of Revenue', series: cogsPct.series },
@@ -1247,13 +1298,16 @@ function CostsTab({ topline, period, periodTouched }) {
         <StatTile label="Labour % of Revenue" value={totalLabour && revTotalM ? fmtPct(curLabourPct) : '—'} delta={totalLabour && revTotalM && labourPctDelta} good={totalLabour && revTotalM && deltaGood(labourPctDelta, 'down')} caption={caption} />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="COGS by Supplier" subtitle={`Weekly spend, last ${period} weeks`}>
-          <StackedBarChart rows={supplierRows} dataKeys={supplierNames} colors={CATEGORICAL} money />
+        <ChartCard title="COGS by Supplier" subtitle={`Top ${topSuppliers.length}${otherSuppliers.length ? ' + Other' : ''} by spend, last ${period} weeks`}>
+          <StackedBarChart rows={supplierRows} dataKeys={supplierNames} colors={supplierColors} money />
         </ChartCard>
         <ChartCard title="COGS % & Labour % of Revenue" subtitle={`Last ${period} weeks`}>
           <TrendChart rows={ratioRows} dataKeys={ratioSeries.map(s => s.name)} colors={[CATEGORICAL[1], CATEGORICAL[4]]} percent tightDomain />
         </ChartCard>
       </div>
+      <ChartCard title="Supplier Breakdown" subtitle={`Every supplier with spend this week (${fmtWeekRange(asOfDate)})`}>
+        <SupplierSpendChart rows={weekSupplierRows} />
+      </ChartCard>
       <KpiSection groups={costsGroup} defaultOpenCount={2} asOfDate={asOfDate} period={period} />
     </div>
   );
