@@ -214,6 +214,17 @@ const RosterApp = () => {
     }).catch(err => console.error('Error loading org:', err));
   }, [user]);
 
+  // The full roster grid isn't usable on a phone -- once we know which org
+  // this login belongs to, send a mobile visitor straight to the read-only
+  // Staff Hub instead of loading the desktop admin app underneath them.
+  // replace() (not href) so the back button doesn't bounce them into a
+  // redirect loop; landing on /hub/<token> re-resolves in App.jsx to the
+  // public StaffHub view directly, without ever mounting this component.
+  useEffect(() => {
+    if (!isMobileView || !org?.staff_hub_public_token) return;
+    window.location.replace(`${window.location.origin}/hub/${org.staff_hub_public_token}`);
+  }, [isMobileView, org]);
+
   const handleCreateOrg = async () => {
     if (!orgNameInput.trim() || !user) return;
     setOrgCreating(true);
@@ -6560,6 +6571,17 @@ Key things to verify after rebuild:
       </div>
     );
   };
+
+  // Redirecting to the Staff Hub (see the effect above) -- show a plain
+  // loading state instead of the desktop shell while that happens, so a
+  // mobile visitor never sees the full grid flash before being sent on.
+  if (isMobileView && org?.staff_hub_public_token) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--app-bg)' }}>
+        <div className="animate-spin rounded-full h-10 w-10 border-b-4 border-blue-600" />
+      </div>
+    );
+  }
 
   return (
 
