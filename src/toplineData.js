@@ -556,6 +556,17 @@ export function weekAxis(asOfDate, n) {
   return out;
 }
 
+// A week-start date shifted by a whole number of weeks (negative to go
+// back) -- used to find "the equivalent as-of date for the block of weeks
+// immediately before this one", so a period-summary tile can compare this
+// window's total against the same-length prior window's total.
+export function shiftWeeks(asOfDate, weeks) {
+  if (!asOfDate) return null;
+  const d = new Date(asOfDate + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + weeks * 7);
+  return d.toISOString().slice(0, 10);
+}
+
 // ISO-8601 week number -- the sheet's week-start dates are always Mondays,
 // which is exactly what ISO weeks are anchored to, so this lines up cleanly
 // with no off-by-one drift at year boundaries.
