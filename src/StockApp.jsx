@@ -1684,7 +1684,7 @@ function ReorderView({ items, onRefresh }) {
 
 // ── Items Tab ──────────────────────────────────────────────────────────────────
 
-const BLANK_ITEM = { name: '', category: '', uom: 'units', description: '', units_per_carton: '', pack_size: '', pack_cost: '', order_pack_label: '' };
+const BLANK_ITEM = { name: '', category: '', uom: 'units', description: '', units_per_carton: '', pack_size: '', pack_cost: '', order_pack_label: '', direct_unit_cost: '' };
 
 function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
   const [showForm, setShowForm] = useState(false);
@@ -1748,6 +1748,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
       pack_size: item.pack_size ?? '',
       pack_cost: item.pack_cost ?? '',
       order_pack_label: item.order_pack_label ?? '',
+      direct_unit_cost: item.direct_unit_cost ?? '',
     });
     const initial = blankAssignments();
     (sitesByItem.get(item.id) || []).forEach(s => {
@@ -1768,6 +1769,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
         pack_size: form.pack_size === '' ? null : parseFloat(form.pack_size),
         pack_cost: form.pack_cost === '' ? null : parseFloat(form.pack_cost),
         order_pack_label: form.order_pack_label.trim() || null,
+        direct_unit_cost: form.direct_unit_cost === '' ? null : parseFloat(form.direct_unit_cost),
       };
       let item = editingItem;
       if (editingItem) {
@@ -1986,6 +1988,22 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                 What one pack/carton costs and how much it holds, in the UoM above — used to calculate cost per {form.uom || 'unit'} for R-Recipe.
                 {form.pack_size && form.pack_cost && parseFloat(form.pack_size) > 0 && (
                   <span className="font-medium text-gray-600"> ${(parseFloat(form.pack_cost) / parseFloat(form.pack_size)).toFixed(4)} / {form.uom || 'unit'}</span>
+                )}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Direct Unit Cost ($) <span className="text-gray-400 font-normal">optional</span></label>
+              <input
+                type="number" min="0" step="any" value={form.direct_unit_cost}
+                onChange={e => setForm(f => ({ ...f, direct_unit_cost: e.target.value }))}
+                placeholder="e.g. 1.50"
+                className="input-base max-w-[calc(50%-0.375rem)]"
+              />
+              <p className="text-xs text-gray-400 mt-1.5">
+                For 3rd-party resale items sold as a single unit (e.g. a bottled drink bought by the case) — skip the pack-size math above and just say what one unit costs you. Overrides Pack Size/Pack Cost for R-Recipe when set.
+                {form.direct_unit_cost !== '' && (
+                  <span className="font-medium text-gray-600"> ${parseFloat(form.direct_unit_cost || 0).toFixed(4)} / {form.uom || 'unit'}</span>
                 )}
               </p>
             </div>
