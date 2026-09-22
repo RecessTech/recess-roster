@@ -2023,6 +2023,95 @@ export const db = {
     if (error) throw error;
   },
 
+  // Catering platter items ("SamCat" library) -- each is a whole catering
+  // unit (a wrap, a roll, a whole focaccia) with its own catering-specific
+  // ingredient recipe (catering_item_lines), independent of that item's
+  // regular in-store recipe (recipe_menu_item_lines) since a catering batch
+  // often uses a different per-unit quantity. Optionally linked back to a
+  // production_item so the library can seed a new item's recipe by copying
+  // the in-store one as a starting point.
+  async getCateringItems(orgId) {
+    const { data, error } = await supabase
+      .from('catering_items')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createCateringItem(orgId, item) {
+    const { data, error } = await supabase
+      .from('catering_items')
+      .insert([{ ...item, org_id: orgId }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateCateringItem(itemId, updates) {
+    const { data, error } = await supabase
+      .from('catering_items')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', itemId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteCateringItem(itemId) {
+    const { error } = await supabase
+      .from('catering_items')
+      .delete()
+      .eq('id', itemId);
+    if (error) throw error;
+  },
+
+  // All catering item recipe lines for an org in one query, same pattern as
+  // getRecipeComponentLines -- cheap at this scale, avoids N+1 per item.
+  async getCateringItemLines(orgId) {
+    const { data, error } = await supabase
+      .from('catering_item_lines')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createCateringItemLine(orgId, line) {
+    const { data, error } = await supabase
+      .from('catering_item_lines')
+      .insert([{ ...line, org_id: orgId }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateCateringItemLine(lineId, updates) {
+    const { data, error } = await supabase
+      .from('catering_item_lines')
+      .update(updates)
+      .eq('id', lineId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteCateringItemLine(lineId) {
+    const { error } = await supabase
+      .from('catering_item_lines')
+      .delete()
+      .eq('id', lineId);
+    if (error) throw error;
+  },
+
   // ── Daily Checklists ─────────────────────────────────────────────────────────
   // checklist_items is the editable per-site, per-type (opening/closing) master
   // list; checklist_runs/checklist_run_items are the actual daily record, always
