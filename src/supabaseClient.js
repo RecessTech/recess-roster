@@ -1287,6 +1287,25 @@ export const db = {
     if (error) throw error;
   },
 
+  async getSupplierMetadata(orgId) {
+    const { data, error } = await supabase
+      .from('supplier_metadata')
+      .select('*')
+      .eq('org_id', orgId);
+    if (error) throw error;
+    return data || [];
+  },
+
+  async setSupplierMetadata(orgId, supplier, updates) {
+    const { data, error } = await supabase
+      .from('supplier_metadata')
+      .upsert([{ org_id: orgId, supplier, ...updates, updated_at: new Date().toISOString() }], { onConflict: 'org_id,supplier' })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
   // ── Production Planning (R-Prod) ────────────────────────────────────────────
 
   async getProductionSites(orgId) {
