@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
@@ -992,7 +992,7 @@ function useOrderingUrlState() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  const writeParams = (next) => {
+  const writeParams = useCallback((next) => {
     const p = readParams();
     for (const [key, value] of Object.entries(next)) {
       if (value) p.set(key, value); else p.delete(key);
@@ -1000,11 +1000,22 @@ function useOrderingUrlState() {
     const qs = p.toString();
     const url = `${window.location.pathname}${qs ? `?${qs}` : ''}`;
     window.history.replaceState(null, '', url);
-  };
+  }, []);
 
-  const setView = (v) => { setViewState(v); writeParams({ view: v === 'agent' ? 'agent' : null, location: locationSlug, supplier: supplierSlug }); };
-  const setLocationSlug = (slug) => { setLocationSlugState(slug); writeParams({ view: view === 'agent' ? 'agent' : null, location: slug, supplier: supplierSlug }); };
-  const setSupplierSlug = (slug) => { setSupplierSlugState(slug); writeParams({ view: view === 'agent' ? 'agent' : null, location: locationSlug, supplier: slug }); };
+  // Stable identities (useCallback) so effects elsewhere that call these
+  // don't need to re-run just because this hook re-rendered.
+  const setView = useCallback((v) => {
+    setViewState(v);
+    writeParams({ view: v === 'agent' ? 'agent' : null, location: locationSlug, supplier: supplierSlug });
+  }, [writeParams, locationSlug, supplierSlug]);
+  const setLocationSlug = useCallback((slug) => {
+    setLocationSlugState(prev => (prev === slug ? prev : slug));
+    writeParams({ view: view === 'agent' ? 'agent' : null, location: slug, supplier: supplierSlug });
+  }, [writeParams, view, supplierSlug]);
+  const setSupplierSlug = useCallback((slug) => {
+    setSupplierSlugState(prev => (prev === slug ? prev : slug));
+    writeParams({ view: view === 'agent' ? 'agent' : null, location: locationSlug, supplier: slug });
+  }, [writeParams, view, locationSlug]);
 
   return { view, setView, locationSlug, setLocationSlug, supplierSlug, setSupplierSlug };
 }
@@ -1035,18 +1046,25 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
 
   const urlState = useOrderingUrlState();
 
-  // Keep the URL's location slug and the shared selectedLocationId in sync
-  // in both directions, without fighting each other on first render.
+  // One-directional sync: the URL's location slug is applied to
+  // selectedLocationId exactly once, as soon as locations have loaded (a
+  // bookmarked/shared link like ?location=crown-st should select that
+  // site on open). After that, selectedLocationId is the single source of
+  // truth and is one-way mirrored back to the URL below -- deliberately
+  // not a two-way binding, so there's no possibility of the two effects
+  // fighting each other regardless of how often `locations` re-renders.
+  const appliedUrlLocationRef = useRef(false);
   useEffect(() => {
-    if (!urlState.locationSlug && selectedLocationId) return;
+    if (appliedUrlLocationRef.current || !urlState.locationSlug || locations.length === 0) return;
+    appliedUrlLocationRef.current = true;
     const match = locations.find(l => slugify(l.name) === urlState.locationSlug);
     if (match && match.id !== selectedLocationId) onSelectLocation(match.id);
-  }, [urlState.locationSlug, locations]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [urlState.locationSlug, locations, selectedLocationId, onSelectLocation]);
 
   useEffect(() => {
     const current = locations.find(l => l.id === selectedLocationId);
-    if (current && slugify(current.name) !== urlState.locationSlug) urlState.setLocationSlug(slugify(current.name));
-  }, [selectedLocationId, locations]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (current) urlState.setLocationSlug(slugify(current.name));
+  }, [selectedLocationId, locations, urlState.setLocationSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const availableCategories = useMemo(
     () => [...new Set(items.map(i => i.category).filter(Boolean))].sort(),
