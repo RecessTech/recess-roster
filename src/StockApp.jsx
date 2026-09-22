@@ -116,6 +116,19 @@ function formatOrderQty(value, item, referenceQty = value) {
   return formatQtyHuman(value, item?.uom, referenceQty);
 }
 
+// Agent View's purchasable-unit resolution -- same usesOrderPack/
+// orderPackCount math as the human-facing formatOrderQty above, but
+// returns a plain rounded-up integer + explicit unit rather than a
+// formatted string, since a browser agent needs "3 carton" not "2.4
+// cartons of Milk". Rounds up so the agent never under-orders.
+function resolveOrderQty(value, item) {
+  const raw = value ?? 0;
+  if (usesOrderPack(item)) {
+    return { qty: Math.max(1, Math.ceil(orderPackCount(raw, item))), unit: item.order_pack_label };
+  }
+  return { qty: Math.max(1, Math.ceil(raw)), unit: item.uom || 'unit' };
+}
+
 // Prefers a still-live "ordered today, not yet archived" flag over the
 // archived history, since the archive won't have today's entry until the
 // midnight job runs. Returns { label, days, never } so callers can both
@@ -394,6 +407,113 @@ function SupplierAssignmentsModal({ suppliers, assignments, orgMembers, orgId, o
                 </select>
               </div>
             ))}
+          </div>
+        )}
+        <div className="flex gap-2 pt-2">
+          <button onClick={save} disabled={saving || suppliers.length === 0} className="btn-primary flex-1">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button onClick={onClose} className="btn-secondary">Cancel</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+const ORDER_CHANNEL_OPTIONS = [
+  { value: 'portal', label: 'Portal' },
+  { value: 'email', label: 'Email' },
+  { value: 'phone', label: 'Phone' },
+];
+
+// Classifies each supplier as portal/email/phone (+ optional portal name
+// and a search URL template) for the Ordering page's Agent View -- a
+// browser agent only gets pointed at "portal" suppliers by default.
+// Defaults to 'email' everywhere (see supplier_metadata migration), so an
+// unclassified supplier stays out of the agent-orderable list rather than
+// silently showing up in it.
+function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved }) {
+  const [draft, setDraft] = useState(() => {
+    const initial = {};
+    for (const supplier of suppliers) {
+      const existing = metadata.find(m => m.supplier === supplier);
+      initial[supplier] = {
+        orderChannel: existing?.order_channel || 'email',
+        portalName: existing?.portal_name || '',
+        searchUrlTemplate: existing?.search_url_template || '',
+      };
+    }
+    return initial;
+  });
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await Promise.all(suppliers.map(supplier => {
+        const d = draft[supplier];
+        return db.setSupplierMetadata(orgId, supplier, {
+          order_channel: d.orderChannel,
+          portal_name: d.portalName.trim() || null,
+          search_url_template: d.searchUrlTemplate.trim() || null,
+        });
+      }));
+      toast.success('Supplier settings saved');
+      onSaved();
+      onClose();
+    } catch (err) {
+      toast.error('Failed to save supplier settings: ' + (err.message || 'unknown error'));
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="Supplier Ordering Settings" onClose={onClose} maxWidth="max-w-2xl">
+      <div className="space-y-4">
+        <p className="text-xs text-gray-500">
+          Classify how each supplier is ordered. Only "Portal" suppliers show up in the Ordering page's Agent View by default.
+        </p>
+        {suppliers.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">No suppliers in the catalog yet.</p>
+        ) : (
+          <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+            {suppliers.map(supplier => {
+              const d = draft[supplier];
+              return (
+                <div key={supplier} className="border border-gray-100 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-gray-800 truncate">{supplier}</span>
+                    <select
+                      value={d.orderChannel}
+                      onChange={e => setDraft(prev => ({ ...prev, [supplier]: { ...prev[supplier], orderChannel: e.target.value } }))}
+                      className="input-base bg-white w-auto py-1.5 text-sm flex-shrink-0"
+                    >
+                      {ORDER_CHANNEL_OPTIONS.map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {d.orderChannel === 'portal' && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text" value={d.portalName}
+                        onChange={e => setDraft(prev => ({ ...prev, [supplier]: { ...prev[supplier], portalName: e.target.value } }))}
+                        placeholder="Portal name (optional)"
+                        className="input-base text-xs py-1.5"
+                      />
+                      <input
+                        type="text" value={d.searchUrlTemplate}
+                        onChange={e => setDraft(prev => ({ ...prev, [supplier]: { ...prev[supplier], searchUrlTemplate: e.target.value } }))}
+                        placeholder="Search URL template, e.g. https://portal.example/search?q={supplier_sku}"
+                        className="input-base text-xs py-1.5"
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
         <div className="flex gap-2 pt-2">
@@ -844,11 +964,89 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
 
 const NEEDS_ORDER_STATUSES = ['no_stock', 'low_stock', 'order_moq'];
 
-function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateOrderQty, onUpdateOrdered, mySuppliers, onManageSuppliers }) {
+function slugify(str) {
+  return (str || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+// This app has no client-side router anywhere -- everything else is plain
+// React state. This hook is scoped tightly to the Ordering page's Agent
+// View, which specifically needs a bookmarkable/shareable URL for a
+// browser agent to be pointed at directly. Reads on mount, writes via
+// history.replaceState (no extra history entries per filter change), and
+// listens for back/forward navigation.
+function useOrderingUrlState() {
+  const readParams = () => new URLSearchParams(window.location.search);
+
+  const [view, setViewState] = useState(() => (readParams().get('view') === 'agent' ? 'agent' : 'standard'));
+  const [locationSlug, setLocationSlugState] = useState(() => readParams().get('location') || '');
+  const [supplierSlug, setSupplierSlugState] = useState(() => readParams().get('supplier') || '');
+
+  useEffect(() => {
+    const onPopState = () => {
+      const p = readParams();
+      setViewState(p.get('view') === 'agent' ? 'agent' : 'standard');
+      setLocationSlugState(p.get('location') || '');
+      setSupplierSlugState(p.get('supplier') || '');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  const writeParams = (next) => {
+    const p = readParams();
+    for (const [key, value] of Object.entries(next)) {
+      if (value) p.set(key, value); else p.delete(key);
+    }
+    const qs = p.toString();
+    const url = `${window.location.pathname}${qs ? `?${qs}` : ''}`;
+    window.history.replaceState(null, '', url);
+  };
+
+  const setView = (v) => { setViewState(v); writeParams({ view: v === 'agent' ? 'agent' : null, location: locationSlug, supplier: supplierSlug }); };
+  const setLocationSlug = (slug) => { setLocationSlugState(slug); writeParams({ view: view === 'agent' ? 'agent' : null, location: slug, supplier: supplierSlug }); };
+  const setSupplierSlug = (slug) => { setSupplierSlugState(slug); writeParams({ view: view === 'agent' ? 'agent' : null, location: locationSlug, supplier: slug }); };
+
+  return { view, setView, locationSlug, setLocationSlug, supplierSlug, setSupplierSlug };
+}
+
+// Standard vs Agent view -- shares the Ordering page's location switcher
+// but is otherwise a completely separate rendering path (see AgentOrderingView).
+function OrderingViewSwitcher({ value, onChange }) {
+  return (
+    <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+      {[['standard', 'Standard'], ['agent', 'Agent view']].map(([key, label]) => (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${value === key ? 'tab-active' : 'tab-inactive'}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateOrderQty, onUpdateOrdered, mySuppliers, onManageSuppliers, supplierMetadata, onManageSupplierMetadata }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
   const [groupBy, setGroupBy] = useState('supplier');
   const [categoryFilters, setCategoryFilters] = useState([]);
   const [myOnly, setMyOnly] = useState(false);
+
+  const urlState = useOrderingUrlState();
+
+  // Keep the URL's location slug and the shared selectedLocationId in sync
+  // in both directions, without fighting each other on first render.
+  useEffect(() => {
+    if (!urlState.locationSlug && selectedLocationId) return;
+    const match = locations.find(l => slugify(l.name) === urlState.locationSlug);
+    if (match && match.id !== selectedLocationId) onSelectLocation(match.id);
+  }, [urlState.locationSlug, locations]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const current = locations.find(l => l.id === selectedLocationId);
+    if (current && slugify(current.name) !== urlState.locationSlug) urlState.setLocationSlug(slugify(current.name));
+  }, [selectedLocationId, locations]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const availableCategories = useMemo(
     () => [...new Set(items.map(i => i.category).filter(Boolean))].sort(),
@@ -888,11 +1086,27 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
     return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
   }
 
+  if (urlState.view === 'agent') {
+    return (
+      <AgentOrderingView
+        items={items}
+        sites={sites}
+        locations={locations}
+        selectedLocationId={selectedLocationId}
+        onSelectLocation={onSelectLocation}
+        supplierMetadata={supplierMetadata}
+        urlState={urlState}
+        onManageSupplierMetadata={onManageSupplierMetadata}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
         <div className="flex items-center gap-2 flex-wrap">
+          <OrderingViewSwitcher value={urlState.view} onChange={urlState.setView} />
           <CategoryFilterMultiSelect value={categoryFilters} onChange={setCategoryFilters} categories={availableCategories} />
           <GroupBySwitcher value={groupBy} onChange={setGroupBy} />
           <MySuppliersToggle active={myOnly} onToggle={() => setMyOnly(o => !o)} hasAssignments={mySuppliers.length > 0} onManage={onManageSuppliers} />
@@ -994,6 +1208,230 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
           </div>
         ))
       )}
+    </div>
+  );
+}
+
+// ── Agent View (Ordering) ────────────────────────────────────────────────────
+// Read-only, machine-readable rendering of the same "needs ordering" data
+// as the Standard Ordering view above -- for an AI browser agent (Claude
+// in Chrome) to read directly, plus copy-to-clipboard export. Deliberately
+// excludes rows already marked ordered (an agent shouldn't re-order
+// something a human just confirmed) -- the Standard view keeps those
+// visible/grayed out instead, since reconciliation stays there.
+
+function resolveSearchUrl(template, supplierSku) {
+  if (!template || !supplierSku) return '';
+  return template.replace('{supplier_sku}', encodeURIComponent(supplierSku));
+}
+
+function groupBySupplierName(list) {
+  const groups = {};
+  for (const r of list) (groups[r.supplier] = groups[r.supplier] || []).push(r);
+  return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+}
+
+function csvEscape(value) {
+  const s = String(value ?? '');
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function orderLinesToCsv(lines) {
+  const header = ['supplier', 'supplier_sku', 'product_name', 'order_qty', 'order_unit', 'pack_size', 'search_url'];
+  const rows = lines.map(l => [l.supplier, l.supplierSku || '', l.productName, l.qty, l.unit, l.packSize, l.searchUrl]);
+  return [header, ...rows].map(row => row.map(csvEscape).join(',')).join('\n');
+}
+
+function orderLinesToJson(lines) {
+  return JSON.stringify(lines.map(l => ({
+    order_line_id: l.orderLineId,
+    supplier: l.supplier,
+    supplier_sku: l.supplierSku,
+    needs_sku: l.needsSku,
+    product_name: l.productName,
+    order_qty: l.qty,
+    order_unit: l.unit,
+    pack_size: l.packSize,
+    search_url: l.searchUrl,
+  })), null, 2);
+}
+
+function orderLinesToPromptText(lines) {
+  return groupBySupplierName(lines).map(([supplier, rows]) => {
+    const body = rows.map(l => `${l.qty} ${l.unit} — ${l.supplierSku || 'MISSING SKU'} (${l.productName})`).join('\n');
+    return `${supplier}:\n${body}`;
+  }).join('\n\n');
+}
+
+async function copyToClipboard(text, label) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(`${label} copied`);
+  } catch (err) {
+    toast.error('Copy failed — clipboard access blocked');
+    console.error(err);
+  }
+}
+
+function AgentOrderTable({ supplier, lines }) {
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-gray-800 mb-1.5">{supplier}</h3>
+      <table className="w-full text-sm border border-gray-200">
+        <thead>
+          <tr className="border-b border-gray-200 bg-gray-50">
+            <th className="px-3 py-2 text-left font-semibold text-gray-600">Supplier</th>
+            <th className="px-3 py-2 text-left font-semibold text-gray-600">Supplier SKU</th>
+            <th className="px-3 py-2 text-left font-semibold text-gray-600">Product</th>
+            <th className="px-3 py-2 text-left font-semibold text-gray-600">Qty</th>
+            <th className="px-3 py-2 text-left font-semibold text-gray-600">Unit</th>
+            <th className="px-3 py-2 text-left font-semibold text-gray-600">Pack Size</th>
+            <th className="px-3 py-2 text-left font-semibold text-gray-600">Search URL</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map(l => (
+            <tr
+              key={l.orderLineId}
+              className="border-b border-gray-100 last:border-b-0"
+              data-order-line-id={l.orderLineId}
+              data-supplier-sku={l.supplierSku || ''}
+              data-qty={l.qty}
+              data-unit={l.unit}
+            >
+              <td className="px-3 py-2">{l.supplier}</td>
+              <td className="px-3 py-2">{l.supplierSku || '⚠ MISSING SKU'}</td>
+              <td className="px-3 py-2">{l.productName}</td>
+              <td className="px-3 py-2">{l.qty}</td>
+              <td className="px-3 py-2">{l.unit}</td>
+              <td className="px-3 py-2">{l.packSize}</td>
+              <td className="px-3 py-2">{l.searchUrl}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AgentOrderingView({ items, sites, locations, selectedLocationId, onSelectLocation, supplierMetadata, urlState, onManageSupplierMetadata }) {
+  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+  const [showAll, setShowAll] = useState(false);
+
+  const metadataBySupplier = useMemo(() => {
+    const map = new Map();
+    for (const m of supplierMetadata) map.set(m.supplier, m);
+    return map;
+  }, [supplierMetadata]);
+
+  const rows = useMemo(() => {
+    return sites
+      .filter(s => s.location_id === selectedLocationId && NEEDS_ORDER_STATUSES.includes(s.current_status) && !s.ordered)
+      .map(s => ({ ...s, item: itemById.get(s.item_id) }))
+      .filter(r => r.item)
+      .map(r => {
+        const supplier = r.supplier || 'No Supplier';
+        const meta = metadataBySupplier.get(supplier);
+        const { qty, unit } = resolveOrderQty(r.order_qty ?? r.reference_order_qty ?? 0, r.item);
+        const hasSku = !!(r.supplier_code && r.supplier_code.trim());
+        const supplierSku = hasSku ? r.supplier_code.trim() : null;
+        return {
+          orderLineId: r.id,
+          supplier,
+          supplierSku,
+          needsSku: !hasSku,
+          productName: r.item.name,
+          qty,
+          unit,
+          packSize: r.item.pack_size ? `${trimNum(r.item.pack_size)} ${r.item.uom || ''}`.trim() : '',
+          searchUrl: resolveSearchUrl(meta?.search_url_template, supplierSku),
+          orderChannel: meta?.order_channel || 'email',
+          category: r.item.category || '',
+        };
+      })
+      .filter(r => !urlState.supplierSlug || slugify(r.supplier) === urlState.supplierSlug)
+      .sort((a, b) =>
+        a.supplier.localeCompare(b.supplier) ||
+        a.category.localeCompare(b.category) ||
+        a.productName.localeCompare(b.productName)
+      );
+  }, [sites, selectedLocationId, itemById, metadataBySupplier, urlState.supplierSlug]);
+
+  const portalRows = useMemo(() => rows.filter(r => r.orderChannel === 'portal'), [rows]);
+  const nonPortalRows = useMemo(() => rows.filter(r => r.orderChannel !== 'portal'), [rows]);
+  const availableSuppliers = useMemo(() => [...new Set(rows.map(r => r.supplier))].sort(), [rows]);
+
+  const exportLines = portalRows; // agent-orderable export never includes non-portal suppliers
+
+  if (locations.length === 0) {
+    return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
+  }
+
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <OrderingViewSwitcher value={urlState.view} onChange={urlState.setView} />
+          <select
+            value={urlState.supplierSlug}
+            onChange={e => urlState.setSupplierSlug(e.target.value)}
+            className="input-base bg-white w-auto py-1.5 text-xs"
+          >
+            <option value="">All suppliers</option>
+            {availableSuppliers.map(s => (
+              <option key={s} value={slugify(s)}>{s}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => setShowAll(a => !a)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${showAll ? 'tab-active' : 'tab-inactive'}`}
+          >
+            {showAll ? 'Showing all suppliers' : 'Portal suppliers only'}
+          </button>
+          <button onClick={onManageSupplierMetadata} className="btn-ghost text-xs py-1.5 px-2.5">
+            Classify suppliers
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => copyToClipboard(orderLinesToCsv(exportLines), 'CSV')} className="btn-ghost text-xs py-1.5 px-2.5" disabled={exportLines.length === 0}>
+          Copy CSV
+        </button>
+        <button onClick={() => copyToClipboard(orderLinesToJson(exportLines), 'JSON')} className="btn-ghost text-xs py-1.5 px-2.5" disabled={exportLines.length === 0}>
+          Copy JSON
+        </button>
+        <button onClick={() => copyToClipboard(orderLinesToPromptText(exportLines), 'Prompt-ready text')} className="btn-ghost text-xs py-1.5 px-2.5" disabled={exportLines.length === 0}>
+          Copy prompt-ready text
+        </button>
+      </div>
+
+      {portalRows.length === 0 ? (
+        <EmptyState Icon={ShoppingCart} title="Nothing needs ordering for this location/supplier." />
+      ) : (
+        <div className="space-y-4">
+          {groupBySupplierName(portalRows).map(([supplier, lines]) => (
+            <AgentOrderTable key={supplier} supplier={supplier} lines={lines} />
+          ))}
+        </div>
+      )}
+
+      {showAll && nonPortalRows.length > 0 && (
+        <div className="space-y-4 pt-2 border-t-2 border-amber-200">
+          <div className="flex items-center gap-2 pt-2">
+            <AlertTriangle size={14} className="text-amber-500" />
+            <h2 className="text-sm font-semibold text-amber-700">Non-portal suppliers — not agent-orderable (email/phone)</h2>
+          </div>
+          {groupBySupplierName(nonPortalRows).map(([supplier, lines]) => (
+            <AgentOrderTable key={supplier} supplier={supplier} lines={lines} />
+          ))}
+        </div>
+      )}
+
+      <script type="application/json" id="agent-order-export">
+        {orderLinesToJson(exportLines)}
+      </script>
     </div>
   );
 }
@@ -2235,8 +2673,10 @@ export default function StockApp({ user, org }) {
   const [sites, setSites] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
   const [supplierAssignments, setSupplierAssignments] = useState([]);
+  const [supplierMetadata, setSupplierMetadata] = useState([]);
   const [orgMembers, setOrgMembers] = useState([]);
   const [showAssignmentsModal, setShowAssignmentsModal] = useState(false);
+  const [showSupplierMetadataModal, setShowSupplierMetadataModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedLocationId, setSelectedLocationId] = useState(null);
 
@@ -2246,12 +2686,13 @@ export default function StockApp({ user, org }) {
     if (!org?.id) return;
     setLoading(true);
     try {
-      const [locs, stockItems, itemSites, history, assignments, members] = await Promise.all([
+      const [locs, stockItems, itemSites, history, assignments, metadata, members] = await Promise.all([
         db.getLocations(org.id),
         db.getStockItems(org.id),
         db.getStockItemSites(org.id),
         db.getStockOrderHistory(org.id),
         db.getSupplierAssignments(org.id),
+        db.getSupplierMetadata(org.id),
         db.getOrgMembersWithEmail(org.id),
       ]);
       setLocations(locs);
@@ -2259,6 +2700,7 @@ export default function StockApp({ user, org }) {
       setSites(itemSites);
       setOrderHistory(history);
       setSupplierAssignments(assignments);
+      setSupplierMetadata(metadata);
       setOrgMembers(members);
       setSelectedLocationId(prev => prev && locs.some(l => l.id === prev) ? prev : (locs.find(l => l.active)?.id || locs[0]?.id || null));
     } catch (err) {
@@ -2447,6 +2889,8 @@ export default function StockApp({ user, org }) {
           onUpdateOrdered={handleOrderedUpdate}
           mySuppliers={mySuppliers}
           onManageSuppliers={() => setShowAssignmentsModal(true)}
+          supplierMetadata={supplierMetadata}
+          onManageSupplierMetadata={() => setShowSupplierMetadataModal(true)}
         />
       )}
       {activeTab === 'history' && (
@@ -2484,6 +2928,15 @@ export default function StockApp({ user, org }) {
         orgMembers={orgMembers}
         orgId={org.id}
         onClose={() => setShowAssignmentsModal(false)}
+        onSaved={loadData}
+      />
+    )}
+    {showSupplierMetadataModal && (
+      <SupplierMetadataModal
+        suppliers={allSuppliers}
+        metadata={supplierMetadata}
+        orgId={org.id}
+        onClose={() => setShowSupplierMetadataModal(false)}
         onSaved={loadData}
       />
     )}
