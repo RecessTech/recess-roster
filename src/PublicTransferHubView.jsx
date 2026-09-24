@@ -196,6 +196,14 @@ export default function PublicTransferHubView({ token }) {
     return load({ action: 'fulfill', requestId, sourceLocationId, name });
   }
 
+  async function handleUpdatePriority(requestId, priority) {
+    return load({ action: 'update_priority', requestId, priority, name });
+  }
+
+  async function handleDelete(requestId) {
+    return load({ action: 'cancel', requestId, name });
+  }
+
   async function handleFlagSubmit(e) {
     e.preventDefault();
     setFlagError(null);
@@ -470,7 +478,15 @@ export default function PublicTransferHubView({ token }) {
               </div>
               <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, overflow: 'hidden' }}>
                 {rows.map((r, ri) => (
-                  <FulfilRow key={r.id} row={r} locations={data.locations} onFulfill={handleFulfill} isLast={ri === rows.length - 1} />
+                  <FulfilRow
+                    key={r.id}
+                    row={r}
+                    locations={data.locations}
+                    onFulfill={handleFulfill}
+                    onUpdatePriority={handleUpdatePriority}
+                    onDelete={handleDelete}
+                    isLast={ri === rows.length - 1}
+                  />
                 ))}
               </div>
             </div>
@@ -560,12 +576,17 @@ function SubjectPicker({ items, components, value, onChange, placeholder = 'Sear
   );
 }
 
-function FulfilRow({ row, locations, onFulfill, isLast }) {
-  const [expanded, setExpanded] = useState(false);
+function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLast }) {
+  const [mode, setMode] = useState(null); // null | 'fulfil' | 'edit'
   const fallbackSource = locations.find(l => l.id !== row.requesting_location_id)?.id || locations[0]?.id || '';
   const [sourceLocationId, setSourceLocationId] = useState(fallbackSource);
   const [submitting, setSubmitting] = useState(false);
   const [rowError, setRowError] = useState(null);
+
+  const [priorityUpdating, setPriorityUpdating] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [editError, setEditError] = useState(null);
 
   async function confirmFulfil() {
     setSubmitting(true);
@@ -575,6 +596,30 @@ function FulfilRow({ row, locations, onFulfill, isLast }) {
     } catch (e) {
       setRowError(e.message || 'Could not update that request.');
       setSubmitting(false);
+    }
+  }
+
+  async function changePriority(priority) {
+    if (priority === row.priority || priorityUpdating) return;
+    setPriorityUpdating(true);
+    setEditError(null);
+    try {
+      await onUpdatePriority(row.id, priority);
+    } catch (e) {
+      setEditError(e.message || 'Could not update priority.');
+    } finally {
+      setPriorityUpdating(false);
+    }
+  }
+
+  async function confirmDelete() {
+    setDeleting(true);
+    setEditError(null);
+    try {
+      await onDelete(row.id);
+    } catch (e) {
+      setEditError(e.message || 'Could not delete that request.');
+      setDeleting(false);
     }
   }
 
@@ -606,18 +651,32 @@ function FulfilRow({ row, locations, onFulfill, isLast }) {
         </div>
       </div>
 
-      {!expanded ? (
-        <button
-          onClick={() => setExpanded(true)}
-          style={{
-            marginTop: 10, padding: '7px 14px', borderRadius: 8, border: 'none', background: TEAL,
-            color: 'white', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-          }}
-        >
-          <span>✓</span> Mark Fulfilled
-        </button>
-      ) : (
+      {mode === null && (
+        <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => setMode('fulfil')}
+            style={{
+              padding: '7px 14px', borderRadius: 8, border: 'none', background: TEAL,
+              color: 'white', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+            }}
+          >
+            <span>✓</span> Mark Fulfilled
+          </button>
+          <button
+            onClick={() => setMode('edit')}
+            style={{
+              padding: '7px 14px', borderRadius: 8, border: '1px solid #E5E9EF', background: 'white',
+              color: '#64748B', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+            }}
+          >
+            <span>✎</span> Edit
+          </button>
+        </div>
+      )}
+
+      {mode === 'fulfil' && (
         <div style={{ marginTop: 10, padding: 12, background: '#F8FAFC', borderRadius: 12 }}>
           <label style={labelStyle}>Which site is sending it</label>
           <select
@@ -639,13 +698,86 @@ function FulfilRow({ row, locations, onFulfill, isLast }) {
               {submitting ? 'Saving…' : '✓ Confirm Fulfilled'}
             </button>
             <button
-              onClick={() => setExpanded(false)}
+              onClick={() => setMode(null)}
               style={{ padding: '11px 14px', borderRadius: 9, border: '1px solid #E5E9EF', background: 'white', color: '#64748B', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
             >
               Cancel
             </button>
           </div>
           {rowError && <div style={{ marginTop: 8, fontSize: 11.5, color: '#DC2626', fontWeight: 500 }}>{rowError}</div>}
+        </div>
+      )}
+
+      {mode === 'edit' && (
+        <div style={{ marginTop: 10, padding: 12, background: '#F8FAFC', borderRadius: 12 }}>
+          <label style={labelStyle}>Priority</label>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+            <button
+              type="button"
+              disabled={priorityUpdating}
+              onClick={() => changePriority('low')}
+              style={pillButtonStyle(row.priority !== 'high', TEAL)}
+            >
+              Low
+            </button>
+            <button
+              type="button"
+              disabled={priorityUpdating}
+              onClick={() => changePriority('high')}
+              style={pillButtonStyle(row.priority === 'high', '#DC2626')}
+            >
+              High
+            </button>
+          </div>
+
+          {!confirmingDelete ? (
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(true)}
+              style={{
+                width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid #FCA5A5', background: 'white',
+                color: '#DC2626', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              🗑 Delete Request
+            </button>
+          ) : (
+            <div>
+              <div style={{ fontSize: 12, color: '#64748B', marginBottom: 8 }}>Delete this request? This can't be undone.</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={confirmDelete}
+                  disabled={deleting}
+                  style={{
+                    flex: 1, padding: '10px 12px', borderRadius: 9, border: 'none', cursor: deleting ? 'default' : 'pointer',
+                    background: '#DC2626', color: 'white', fontSize: 13, fontWeight: 800, fontFamily: 'inherit', opacity: deleting ? 0.6 : 1,
+                  }}
+                >
+                  {deleting ? 'Deleting…' : 'Yes, Delete'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(false)}
+                  style={{ padding: '10px 14px', borderRadius: 9, border: '1px solid #E5E9EF', background: 'white', color: '#64748B', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {editError && <div style={{ marginTop: 8, fontSize: 11.5, color: '#DC2626', fontWeight: 500 }}>{editError}</div>}
+
+          {!confirmingDelete && (
+            <button
+              type="button"
+              onClick={() => setMode(null)}
+              style={{ marginTop: 10, width: '100%', background: 'none', border: 'none', color: '#94A3B8', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 0' }}
+            >
+              Done
+            </button>
+          )}
         </div>
       )}
     </div>
