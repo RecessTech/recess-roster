@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
   ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History, Box, ArrowLeftRight, Search,
-  TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Tag, User, Settings, GripVertical, ArrowUpDown, Check, Flag,
+  TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Tag, User, Settings, GripVertical, ArrowUpDown, Check, Flag, Bot,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -1291,10 +1291,40 @@ async function copyToClipboard(text, label) {
   }
 }
 
-function AgentOrderTable({ supplier, lines }) {
+// Builds the same task a person would type by hand into a fresh claude.ai
+// chat, then hands it off via claude.ai/new?q= so the tab opens pre-filled
+// and ready to send. Scoped to one supplier at a time, since each supplier
+// is a separate portal/login for Claude to work in.
+function buildAgentTaskPrompt(supplier, portalName, lines) {
+  const header = `Place an order with ${supplier}${portalName ? ` via their ${portalName} portal` : ''}. `
+    + `For each item below, use the search URL to find the matching product, verify it's the right match, `
+    + `and add the specified quantity to the cart. Stop before checkout so I can review and confirm before you pay.`;
+  const body = lines.map(l => {
+    const parts = [`- ${l.qty} ${l.unit} — ${l.supplierSku || 'MISSING SKU (search by name)'} (${l.productName})`];
+    if (l.searchUrl) parts.push(`  Search: ${l.searchUrl}`);
+    return parts.join('\n');
+  }).join('\n');
+  return `${header}\n\n${body}`;
+}
+
+function openInClaude(promptText) {
+  window.open(`https://claude.ai/new?q=${encodeURIComponent(promptText)}`, '_blank', 'noopener,noreferrer');
+}
+
+function AgentOrderTable({ supplier, portalName, agentOrderable, lines }) {
   return (
     <div>
-      <h3 className="text-sm font-semibold text-gray-800 mb-1.5">{supplier}</h3>
+      <div className="flex items-center justify-between mb-1.5">
+        <h3 className="text-sm font-semibold text-gray-800">{supplier}</h3>
+        {agentOrderable && (
+          <button
+            onClick={() => openInClaude(buildAgentTaskPrompt(supplier, portalName, lines))}
+            className="btn-ghost text-xs py-1 px-2 flex items-center gap-1.5"
+          >
+            <Bot size={13} /> Order via Claude
+          </button>
+        )}
+      </div>
       <table className="w-full text-sm border border-gray-200">
         <thead>
           <tr className="border-b border-gray-200 bg-gray-50">
@@ -1430,7 +1460,7 @@ function AgentOrderingView({ items, sites, locations, selectedLocationId, onSele
       ) : (
         <div className="space-y-4">
           {groupBySupplierName(portalRows).map(([supplier, lines]) => (
-            <AgentOrderTable key={supplier} supplier={supplier} lines={lines} />
+            <AgentOrderTable key={supplier} supplier={supplier} portalName={metadataBySupplier.get(supplier)?.portal_name} agentOrderable lines={lines} />
           ))}
         </div>
       )}
