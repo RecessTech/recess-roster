@@ -583,6 +583,10 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
   const [submitting, setSubmitting] = useState(false);
   const [rowError, setRowError] = useState(null);
 
+  // Held locally and only committed on "Done" -- committing on tap would
+  // reorder the list (priority drives sort order) while the panel is still
+  // open underneath the user's thumb, which reads as a jump/glitch.
+  const [pendingPriority, setPendingPriority] = useState(row.priority);
   const [priorityUpdating, setPriorityUpdating] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -599,12 +603,19 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
     }
   }
 
-  async function changePriority(priority) {
-    if (priority === row.priority || priorityUpdating) return;
+  function openEdit() {
+    setPendingPriority(row.priority);
+    setEditError(null);
+    setConfirmingDelete(false);
+    setMode('edit');
+  }
+
+  async function commitPriority() {
     setPriorityUpdating(true);
     setEditError(null);
     try {
-      await onUpdatePriority(row.id, priority);
+      await onUpdatePriority(row.id, pendingPriority);
+      setMode(null);
     } catch (e) {
       setEditError(e.message || 'Could not update priority.');
     } finally {
@@ -664,7 +675,7 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
             <span>✓</span> Mark Fulfilled
           </button>
           <button
-            onClick={() => setMode('edit')}
+            onClick={openEdit}
             style={{
               padding: '7px 14px', borderRadius: 8, border: '1px solid #E5E9EF', background: 'white',
               color: '#64748B', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
@@ -715,16 +726,16 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
             <button
               type="button"
               disabled={priorityUpdating}
-              onClick={() => changePriority('low')}
-              style={pillButtonStyle(row.priority !== 'high', TEAL)}
+              onClick={() => setPendingPriority('low')}
+              style={pillButtonStyle(pendingPriority !== 'high', TEAL)}
             >
               Low
             </button>
             <button
               type="button"
               disabled={priorityUpdating}
-              onClick={() => changePriority('high')}
-              style={pillButtonStyle(row.priority === 'high', '#DC2626')}
+              onClick={() => setPendingPriority('high')}
+              style={pillButtonStyle(pendingPriority === 'high', '#DC2626')}
             >
               High
             </button>
@@ -770,13 +781,37 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
           {editError && <div style={{ marginTop: 8, fontSize: 11.5, color: '#DC2626', fontWeight: 500 }}>{editError}</div>}
 
           {!confirmingDelete && (
-            <button
-              type="button"
-              onClick={() => setMode(null)}
-              style={{ marginTop: 10, width: '100%', background: 'none', border: 'none', color: '#94A3B8', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 0' }}
-            >
-              Done
-            </button>
+            pendingPriority !== row.priority ? (
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={commitPriority}
+                  disabled={priorityUpdating}
+                  style={{
+                    flex: 1, padding: '10px 12px', borderRadius: 9, border: 'none', cursor: priorityUpdating ? 'default' : 'pointer',
+                    background: TEAL, color: 'white', fontSize: 13, fontWeight: 800, fontFamily: 'inherit', opacity: priorityUpdating ? 0.6 : 1,
+                  }}
+                >
+                  {priorityUpdating ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setPendingPriority(row.priority); setMode(null); }}
+                  disabled={priorityUpdating}
+                  style={{ padding: '10px 14px', borderRadius: 9, border: '1px solid #E5E9EF', background: 'white', color: '#64748B', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setMode(null)}
+                style={{ marginTop: 10, width: '100%', background: 'none', border: 'none', color: '#94A3B8', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 0' }}
+              >
+                Done
+              </button>
+            )
           )}
         </div>
       )}
