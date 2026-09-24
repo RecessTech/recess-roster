@@ -110,6 +110,37 @@ serve(async (req) => {
         updated_at: new Date().toISOString(),
       }).eq('id', siteRow.id);
       if (flagError) return jsonResponse({ error: flagError.message }, 400);
+
+    } else if (action === 'update_priority') {
+      const { requestId, priority } = body;
+      if (priority !== 'high' && priority !== 'low') {
+        return jsonResponse({ error: 'Invalid priority.' }, 400);
+      }
+
+      const { data: request } = await supabase.from('transfer_requests').select('id').eq('id', requestId).eq('org_id', org.id).eq('status', 'open').single();
+      if (!request) return jsonResponse({ error: 'That request is no longer open.' }, 400);
+
+      const { error: updateError } = await supabase.from('transfer_requests').update({
+        priority,
+        updated_at: new Date().toISOString(),
+      }).eq('id', requestId);
+      if (updateError) return jsonResponse({ error: updateError.message }, 400);
+
+    } else if (action === 'cancel') {
+      const { requestId, name } = body;
+
+      const { data: request } = await supabase.from('transfer_requests').select('id').eq('id', requestId).eq('org_id', org.id).eq('status', 'open').single();
+      if (!request) return jsonResponse({ error: 'That request is no longer open.' }, 400);
+
+      // Soft-delete via status, same as the authenticated app's cancel --
+      // keeps the row visible in History for admin rather than losing it.
+      const { error: cancelError } = await supabase.from('transfer_requests').update({
+        status: 'cancelled',
+        actioned_by_name: (name || '').trim() || null,
+        actioned_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq('id', requestId);
+      if (cancelError) return jsonResponse({ error: cancelError.message }, 400);
     }
 
     const { data: settings } = await supabase
