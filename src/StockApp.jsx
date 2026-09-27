@@ -4,6 +4,7 @@ import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
   ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History, Box, ArrowLeftRight, Search,
   TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Tag, User, Settings, GripVertical, ArrowUpDown, Check, Flag, Bot,
+  AlertCircle, Clock, CheckCircle2,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -1517,24 +1518,19 @@ function AgentOrderingView({ items, sites, locations, selectedLocationId, onSele
 }
 
 // ── Order Status Tab ─────────────────────────────────────────────────────────
-// Supplier-level traffic light: does this supplier need an order this cycle,
-// and -- if so -- has it been placed, and (for suppliers with a confirmation
-// email match configured) verified against an actual confirmation email
-// landing in hello@itsrecess.com.au. Rolls up the existing current_status/
-// ordered fields Stocktake and Ordering already write, plus
-// supplier_order_confirmations -- written on a schedule by the
-// check-order-confirmations Edge Function, which polls that inbox via the
-// Gmail API. A supplier with no confirmation_email_match set just can't ever
-// reach "Confirmed" here -- it caps out at "Order Placed" (the manual
-// checkbox), same as before this existed.
-
-const ORDER_STATUS_CONFIG = {
-  ok:        { label: 'No Order Needed',   bg: 'bg-green-100',   text: 'text-green-700',   border: 'border-green-200',   dot: 'bg-green-500'   },
-  needed:    { label: 'Order Needed',      bg: 'bg-red-100',     text: 'text-red-700',     border: 'border-red-200',     dot: 'bg-red-500'     },
-  partial:   { label: 'Partially Ordered', bg: 'bg-amber-100',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-400'   },
-  placed:    { label: 'Order Placed',      bg: 'bg-blue-100',    text: 'text-blue-700',    border: 'border-blue-200',    dot: 'bg-blue-500'    },
-  confirmed: { label: 'Order Confirmed',   bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
-};
+// A single prioritized list, not a grid of colored tiles -- suppliers that
+// need action carry real visual weight (an accent border, an icon, a plain-
+// English count) and sit at the top; suppliers that don't need anything
+// recede to quiet grey text at the bottom. The eye should land on what's
+// wrong first, not have to scan a wall of equally-loud cards to find it.
+//
+// Placed and Confirmed are deliberately drawn differently (an outline
+// clock vs a solid check) since Placed is still just a self-report -- the
+// manual Ordered checkbox in the Ordering tab -- while Confirmed means the
+// check-order-confirmations Edge Function actually matched a confirmation
+// email at hello@itsrecess.com.au to that order. A supplier with no
+// confirmation_email_match configured simply can't reach Confirmed here --
+// it caps out at Placed, same as before that existed.
 
 function supplierOrderStatus(needsOrderRows, isConfirmed) {
   if (needsOrderRows.length === 0) return 'ok';
@@ -1542,6 +1538,62 @@ function supplierOrderStatus(needsOrderRows, isConfirmed) {
   if (orderedCount === 0) return 'needed';
   if (orderedCount < needsOrderRows.length) return 'partial';
   return isConfirmed ? 'confirmed' : 'placed';
+}
+
+const ORDER_STATUS_PRIORITY = { needed: 0, partial: 1, placed: 2, confirmed: 3, ok: 4 };
+
+function timeAgo(ms) {
+  const diffMin = Math.round((Date.now() - ms) / 60000);
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  return `${Math.round(diffHr / 24)}d ago`;
+}
+
+function OrderStatusRow({ g }) {
+  if (g.status === 'ok') {
+    return (
+      <div className="flex items-center justify-between px-4 py-2.5">
+        <span className="text-sm text-gray-400">{g.supplier}</span>
+        <span className="text-xs text-gray-300">Nothing to order</span>
+      </div>
+    );
+  }
+  if (g.status === 'needed' || g.status === 'partial') {
+    const isPartial = g.status === 'partial';
+    return (
+      <div className={`flex items-center justify-between px-4 py-3 border-l-2 ${isPartial ? 'border-amber-400 bg-amber-50/50' : 'border-red-400 bg-red-50/50'}`}>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <AlertCircle size={15} className={`shrink-0 ${isPartial ? 'text-amber-500' : 'text-red-500'}`} />
+          <span className="text-sm font-semibold text-gray-900 truncate">{g.supplier}</span>
+        </div>
+        <span className={`text-xs font-medium shrink-0 ml-3 ${isPartial ? 'text-amber-600' : 'text-red-600'}`}>
+          {isPartial ? `${g.orderedCount} of ${g.needsOrderCount} ordered` : `Needs ordering · ${g.needsOrderCount} item${g.needsOrderCount !== 1 ? 's' : ''}`}
+        </span>
+      </div>
+    );
+  }
+  if (g.status === 'placed') {
+    return (
+      <div className="flex items-center justify-between px-4 py-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Clock size={14} className="text-gray-400 shrink-0" />
+          <span className="text-sm text-gray-700 truncate">{g.supplier}</span>
+        </div>
+        <span className="text-xs text-gray-400 shrink-0 ml-3">Placed{g.latestOrderedAt ? ` · ${timeAgo(g.latestOrderedAt)}` : ''}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center justify-between px-4 py-2.5">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
+        <span className="text-sm text-gray-500 truncate">{g.supplier}</span>
+      </div>
+      <span className="text-xs text-emerald-600 shrink-0 ml-3">Confirmed{g.latestConfirmationAt ? ` · ${timeAgo(g.latestConfirmationAt)}` : ''}</span>
+    </div>
+  );
 }
 
 function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectLocation, orderConfirmations }) {
@@ -1575,7 +1627,7 @@ function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectL
         const needsOrderRows = supplierRows.filter(r => NEEDS_ORDER_STATUSES.includes(r.current_status));
         const orderedAts = needsOrderRows.filter(r => r.ordered && r.ordered_at).map(r => new Date(r.ordered_at).getTime());
         const latestOrderedAt = orderedAts.length > 0 ? Math.max(...orderedAts) : null;
-        const latestConfirmationAt = latestConfirmationBySupplier[supplier];
+        const latestConfirmationAt = latestConfirmationBySupplier[supplier] ?? null;
         // A confirmation only counts if it arrived after this cycle's order
         // was placed -- otherwise a leftover email from a previous cycle
         // would wrongly confirm today's order.
@@ -1585,16 +1637,17 @@ function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectL
           status: supplierOrderStatus(needsOrderRows, isConfirmed),
           needsOrderCount: needsOrderRows.length,
           orderedCount: needsOrderRows.filter(r => r.ordered).length,
+          latestOrderedAt,
+          latestConfirmationAt: isConfirmed ? latestConfirmationAt : null,
         };
       })
-      .sort((a, b) => a.supplier.localeCompare(b.supplier));
+      .sort((a, b) => ORDER_STATUS_PRIORITY[a.status] - ORDER_STATUS_PRIORITY[b.status] || a.supplier.localeCompare(b.supplier));
   }, [sites, selectedLocationId, itemById, latestConfirmationBySupplier]);
 
-  const summary = useMemo(() => {
-    const counts = { ok: 0, needed: 0, partial: 0, placed: 0, confirmed: 0 };
-    for (const g of supplierGroups) counts[g.status]++;
-    return counts;
-  }, [supplierGroups]);
+  const needsActionCount = useMemo(
+    () => supplierGroups.filter(g => g.status === 'needed' || g.status === 'partial').length,
+    [supplierGroups]
+  );
 
   if (locations.length === 0) {
     return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
@@ -1602,39 +1655,22 @@ function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectL
 
   return (
     <div className="space-y-4 animate-fade-in">
-      <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
-
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        {Object.entries(ORDER_STATUS_CONFIG).map(([key, cfg]) => (
-          <div key={key} className={`rounded-xl border ${cfg.border} ${cfg.bg} px-4 py-3`}>
-            <div className="flex items-center gap-2">
-              <span className={`w-2.5 h-2.5 rounded-full ${cfg.dot}`} />
-              <span className={`text-xs font-semibold ${cfg.text}`}>{cfg.label}</span>
-            </div>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{summary[key]}</p>
-          </div>
-        ))}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
+        {supplierGroups.length > 0 && (
+          needsActionCount > 0 ? (
+            <span className="text-sm font-semibold text-red-600">{needsActionCount} supplier{needsActionCount !== 1 ? 's' : ''} need{needsActionCount === 1 ? 's' : ''} ordering</span>
+          ) : (
+            <span className="text-sm text-gray-400">Everything's ordered</span>
+          )
+        )}
       </div>
 
       {supplierGroups.length === 0 ? (
         <EmptyState Icon={Truck} title="No suppliers yet for this location." />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {supplierGroups.map(g => {
-            const cfg = ORDER_STATUS_CONFIG[g.status];
-            return (
-              <div key={g.supplier} className={`rounded-xl border ${cfg.border} ${cfg.bg} px-4 py-3`}>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-gray-800">{g.supplier}</span>
-                  <span className={`w-2.5 h-2.5 rounded-full ${cfg.dot} shrink-0`} />
-                </div>
-                <p className={`text-xs font-medium mt-1 ${cfg.text}`}>{cfg.label}</p>
-                {g.needsOrderCount > 0 && (
-                  <p className="text-xs text-gray-500 mt-1">{g.orderedCount}/{g.needsOrderCount} item{g.needsOrderCount !== 1 ? 's' : ''} ordered</p>
-                )}
-              </div>
-            );
-          })}
+        <div className="card overflow-hidden divide-y divide-gray-50">
+          {supplierGroups.map(g => <OrderStatusRow key={g.supplier} g={g} />)}
         </div>
       )}
     </div>
