@@ -1484,6 +1484,110 @@ function AgentOrderingView({ items, sites, locations, selectedLocationId, onSele
   );
 }
 
+// ── Order Status Tab ─────────────────────────────────────────────────────────
+// Supplier-level traffic light: does this supplier need an order this cycle,
+// and -- if so -- has it been placed. Rolls up the same current_status/ordered
+// fields Stocktake and Ordering already write at the (item, location) grain --
+// no new schema needed for this first cut. Placed still just means "someone
+// ticked Ordered in the Ordering tab" -- confirming that against the actual
+// supplier confirmation email (hello@itsrecess.com.au) is a separate step once
+// this app has read access to that inbox, so a "placed" card here is a claim,
+// not yet independently verified.
+
+const ORDER_STATUS_CONFIG = {
+  ok:      { label: 'No Order Needed',    bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200', dot: 'bg-green-500' },
+  needed:  { label: 'Order Needed',       bg: 'bg-red-100',   text: 'text-red-700',   border: 'border-red-200',   dot: 'bg-red-500'   },
+  partial: { label: 'Partially Ordered',  bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-400' },
+  placed:  { label: 'Order Placed',       bg: 'bg-blue-100',  text: 'text-blue-700',  border: 'border-blue-200',  dot: 'bg-blue-500'  },
+};
+
+function supplierOrderStatus(needsOrderRows) {
+  if (needsOrderRows.length === 0) return 'ok';
+  const orderedCount = needsOrderRows.filter(r => r.ordered).length;
+  if (orderedCount === 0) return 'needed';
+  if (orderedCount === needsOrderRows.length) return 'placed';
+  return 'partial';
+}
+
+function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectLocation }) {
+  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+
+  const supplierGroups = useMemo(() => {
+    const rows = sites
+      .filter(s => s.location_id === selectedLocationId)
+      .map(s => ({ ...s, item: itemById.get(s.item_id) }))
+      .filter(r => r.item);
+
+    const groups = {};
+    for (const r of rows) {
+      const supplier = r.supplier || 'No Supplier';
+      (groups[supplier] = groups[supplier] || []).push(r);
+    }
+
+    return Object.entries(groups)
+      .map(([supplier, supplierRows]) => {
+        const needsOrderRows = supplierRows.filter(r => NEEDS_ORDER_STATUSES.includes(r.current_status));
+        return {
+          supplier,
+          status: supplierOrderStatus(needsOrderRows),
+          needsOrderCount: needsOrderRows.length,
+          orderedCount: needsOrderRows.filter(r => r.ordered).length,
+        };
+      })
+      .sort((a, b) => a.supplier.localeCompare(b.supplier));
+  }, [sites, selectedLocationId, itemById]);
+
+  const summary = useMemo(() => {
+    const counts = { ok: 0, needed: 0, partial: 0, placed: 0 };
+    for (const g of supplierGroups) counts[g.status]++;
+    return counts;
+  }, [supplierGroups]);
+
+  if (locations.length === 0) {
+    return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
+  }
+
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {Object.entries(ORDER_STATUS_CONFIG).map(([key, cfg]) => (
+          <div key={key} className={`rounded-xl border ${cfg.border} ${cfg.bg} px-4 py-3`}>
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${cfg.dot}`} />
+              <span className={`text-xs font-semibold ${cfg.text}`}>{cfg.label}</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{summary[key]}</p>
+          </div>
+        ))}
+      </div>
+
+      {supplierGroups.length === 0 ? (
+        <EmptyState Icon={Truck} title="No suppliers yet for this location." />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {supplierGroups.map(g => {
+            const cfg = ORDER_STATUS_CONFIG[g.status];
+            return (
+              <div key={g.supplier} className={`rounded-xl border ${cfg.border} ${cfg.bg} px-4 py-3`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-gray-800">{g.supplier}</span>
+                  <span className={`w-2.5 h-2.5 rounded-full ${cfg.dot} shrink-0`} />
+                </div>
+                <p className={`text-xs font-medium mt-1 ${cfg.text}`}>{cfg.label}</p>
+                {g.needsOrderCount > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">{g.orderedCount}/{g.needsOrderCount} item{g.needsOrderCount !== 1 ? 's' : ''} ordered</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── History Tab ───────────────────────────────────────────────────────────────
 // Read-only record of what got archived by the midnight job — grouped by
 // the day it was ordered, then by supplier within that day.
@@ -2832,6 +2936,7 @@ export default function StockApp({ user, org }) {
     { id: 'stocktake', label: 'Stocktake', Icon: ClipboardList },
     { id: 'packaging', label: 'Packaging', Icon: Box },
     { id: 'ordering',  label: 'Ordering',  Icon: ShoppingCart },
+    { id: 'order-status', label: 'Order Status', Icon: Truck },
     { id: 'history',   label: 'History',   Icon: History },
     { id: 'insights',  label: 'Insights',  Icon: TrendingUp },
     { id: 'locations', label: 'Locations', Icon: MapPin },
@@ -2939,6 +3044,15 @@ export default function StockApp({ user, org }) {
           onManageSuppliers={() => setShowAssignmentsModal(true)}
           supplierMetadata={supplierMetadata}
           onManageSupplierMetadata={() => setShowSupplierMetadataModal(true)}
+        />
+      )}
+      {activeTab === 'order-status' && (
+        <OrderStatusTab
+          items={items}
+          sites={sites}
+          locations={activeLocations}
+          selectedLocationId={selectedLocationId}
+          onSelectLocation={setSelectedLocationId}
         />
       )}
       {activeTab === 'history' && (
