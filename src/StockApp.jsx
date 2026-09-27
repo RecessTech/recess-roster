@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
   ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History, Box, ArrowLeftRight, Search,
-  TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Tag, User, Settings, GripVertical, ArrowUpDown, Check, Flag,
+  TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Tag, User, Settings, GripVertical, ArrowUpDown, Check, Flag, Bot,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -432,6 +432,19 @@ const ORDER_CHANNEL_OPTIONS = [
 // Defaults to 'email' everywhere (see supplier_metadata migration), so an
 // unclassified supplier stays out of the agent-orderable list rather than
 // silently showing up in it.
+//
+// confirmationEmailMatch is independent of order_channel -- it's a
+// substring checked against the From header of mail landing in
+// hello@itsrecess.com.au (by the check-order-confirmations Edge
+// Function), so the Order Status tab can show a verified "Confirmed"
+// rather than just "someone ticked Ordered". Leave blank to opt a
+// supplier out of auto-confirmation entirely.
+//
+// confirmationBodyMatch is only needed for suppliers ordered through a
+// marketplace that emails from the SAME address for every supplier it
+// routes (e.g. FoodByUs, Fresho) -- it additionally requires this
+// substring to appear in the email body, so a shared From address can
+// still be attributed to the right supplier(s).
 function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved }) {
   const [draft, setDraft] = useState(() => {
     const initial = {};
@@ -441,6 +454,8 @@ function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved })
         orderChannel: existing?.order_channel || 'email',
         portalName: existing?.portal_name || '',
         searchUrlTemplate: existing?.search_url_template || '',
+        confirmationEmailMatch: existing?.confirmation_email_match || '',
+        confirmationBodyMatch: existing?.confirmation_body_match || '',
       };
     }
     return initial;
@@ -456,6 +471,8 @@ function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved })
           order_channel: d.orderChannel,
           portal_name: d.portalName.trim() || null,
           search_url_template: d.searchUrlTemplate.trim() || null,
+          confirmation_email_match: d.confirmationEmailMatch.trim() || null,
+          confirmation_body_match: d.confirmationBodyMatch.trim() || null,
         });
       }));
       toast.success('Supplier settings saved');
@@ -474,6 +491,7 @@ function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved })
       <div className="space-y-4">
         <p className="text-xs text-gray-500">
           Classify how each supplier is ordered. Only "Portal" suppliers show up in the Ordering page's Agent View by default.
+          Set a confirmation email match to have the Order Status tab verify "Ordered" against hello@itsrecess.com.au automatically.
         </p>
         {suppliers.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-6">No suppliers in the catalog yet.</p>
@@ -511,6 +529,20 @@ function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved })
                       />
                     </div>
                   )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text" value={d.confirmationEmailMatch}
+                      onChange={e => setDraft(prev => ({ ...prev, [supplier]: { ...prev[supplier], confirmationEmailMatch: e.target.value } }))}
+                      placeholder="Confirmation email match, e.g. sales@bidfood.com.au (optional)"
+                      className="input-base text-xs py-1.5"
+                    />
+                    <input
+                      type="text" value={d.confirmationBodyMatch}
+                      onChange={e => setDraft(prev => ({ ...prev, [supplier]: { ...prev[supplier], confirmationBodyMatch: e.target.value } }))}
+                      placeholder="Also require in body, e.g. Fruitique (for shared senders)"
+                      className="input-base text-xs py-1.5"
+                    />
+                  </div>
                 </div>
               );
             })}
@@ -1291,10 +1323,40 @@ async function copyToClipboard(text, label) {
   }
 }
 
-function AgentOrderTable({ supplier, lines }) {
+// Builds the same task a person would type by hand into a fresh claude.ai
+// chat, then hands it off via claude.ai/new?q= so the tab opens pre-filled
+// and ready to send. Scoped to one supplier at a time, since each supplier
+// is a separate portal/login for Claude to work in.
+function buildAgentTaskPrompt(supplier, portalName, lines) {
+  const header = `Place an order with ${supplier}${portalName ? ` via their ${portalName} portal` : ''}. `
+    + `For each item below, use the search URL to find the matching product, verify it's the right match, `
+    + `and add the specified quantity to the cart. Stop before checkout so I can review and confirm before you pay.`;
+  const body = lines.map(l => {
+    const parts = [`- ${l.qty} ${l.unit} — ${l.supplierSku || 'MISSING SKU (search by name)'} (${l.productName})`];
+    if (l.searchUrl) parts.push(`  Search: ${l.searchUrl}`);
+    return parts.join('\n');
+  }).join('\n');
+  return `${header}\n\n${body}`;
+}
+
+function openInClaude(promptText) {
+  window.open(`https://claude.ai/new?q=${encodeURIComponent(promptText)}`, '_blank', 'noopener,noreferrer');
+}
+
+function AgentOrderTable({ supplier, portalName, agentOrderable, lines }) {
   return (
     <div>
-      <h3 className="text-sm font-semibold text-gray-800 mb-1.5">{supplier}</h3>
+      <div className="flex items-center justify-between mb-1.5">
+        <h3 className="text-sm font-semibold text-gray-800">{supplier}</h3>
+        {agentOrderable && (
+          <button
+            onClick={() => openInClaude(buildAgentTaskPrompt(supplier, portalName, lines))}
+            className="btn-ghost text-xs py-1 px-2 flex items-center gap-1.5"
+          >
+            <Bot size={13} /> Order via Claude
+          </button>
+        )}
+      </div>
       <table className="w-full text-sm border border-gray-200">
         <thead>
           <tr className="border-b border-gray-200 bg-gray-50">
@@ -1430,7 +1492,7 @@ function AgentOrderingView({ items, sites, locations, selectedLocationId, onSele
       ) : (
         <div className="space-y-4">
           {groupBySupplierName(portalRows).map(([supplier, lines]) => (
-            <AgentOrderTable key={supplier} supplier={supplier} lines={lines} />
+            <AgentOrderTable key={supplier} supplier={supplier} portalName={metadataBySupplier.get(supplier)?.portal_name} agentOrderable lines={lines} />
           ))}
         </div>
       )}
@@ -1450,6 +1512,131 @@ function AgentOrderingView({ items, sites, locations, selectedLocationId, onSele
       <script type="application/json" id="agent-order-export">
         {orderLinesToJson(exportLines)}
       </script>
+    </div>
+  );
+}
+
+// ── Order Status Tab ─────────────────────────────────────────────────────────
+// Supplier-level traffic light: does this supplier need an order this cycle,
+// and -- if so -- has it been placed, and (for suppliers with a confirmation
+// email match configured) verified against an actual confirmation email
+// landing in hello@itsrecess.com.au. Rolls up the existing current_status/
+// ordered fields Stocktake and Ordering already write, plus
+// supplier_order_confirmations -- written on a schedule by the
+// check-order-confirmations Edge Function, which polls that inbox via the
+// Gmail API. A supplier with no confirmation_email_match set just can't ever
+// reach "Confirmed" here -- it caps out at "Order Placed" (the manual
+// checkbox), same as before this existed.
+
+const ORDER_STATUS_CONFIG = {
+  ok:        { label: 'No Order Needed',   bg: 'bg-green-100',   text: 'text-green-700',   border: 'border-green-200',   dot: 'bg-green-500'   },
+  needed:    { label: 'Order Needed',      bg: 'bg-red-100',     text: 'text-red-700',     border: 'border-red-200',     dot: 'bg-red-500'     },
+  partial:   { label: 'Partially Ordered', bg: 'bg-amber-100',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-400'   },
+  placed:    { label: 'Order Placed',      bg: 'bg-blue-100',    text: 'text-blue-700',    border: 'border-blue-200',    dot: 'bg-blue-500'    },
+  confirmed: { label: 'Order Confirmed',   bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
+};
+
+function supplierOrderStatus(needsOrderRows, isConfirmed) {
+  if (needsOrderRows.length === 0) return 'ok';
+  const orderedCount = needsOrderRows.filter(r => r.ordered).length;
+  if (orderedCount === 0) return 'needed';
+  if (orderedCount < needsOrderRows.length) return 'partial';
+  return isConfirmed ? 'confirmed' : 'placed';
+}
+
+function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectLocation, orderConfirmations }) {
+  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+
+  // Latest confirmation-email timestamp seen per supplier, across every
+  // location -- a Bidfood confirmation isn't location-specific.
+  const latestConfirmationBySupplier = useMemo(() => {
+    const map = {};
+    for (const c of orderConfirmations) {
+      const t = new Date(c.received_at).getTime();
+      if (!(c.supplier in map) || t > map[c.supplier]) map[c.supplier] = t;
+    }
+    return map;
+  }, [orderConfirmations]);
+
+  const supplierGroups = useMemo(() => {
+    const rows = sites
+      .filter(s => s.location_id === selectedLocationId)
+      .map(s => ({ ...s, item: itemById.get(s.item_id) }))
+      .filter(r => r.item);
+
+    const groups = {};
+    for (const r of rows) {
+      const supplier = r.supplier || 'No Supplier';
+      (groups[supplier] = groups[supplier] || []).push(r);
+    }
+
+    return Object.entries(groups)
+      .map(([supplier, supplierRows]) => {
+        const needsOrderRows = supplierRows.filter(r => NEEDS_ORDER_STATUSES.includes(r.current_status));
+        const orderedAts = needsOrderRows.filter(r => r.ordered && r.ordered_at).map(r => new Date(r.ordered_at).getTime());
+        const latestOrderedAt = orderedAts.length > 0 ? Math.max(...orderedAts) : null;
+        const latestConfirmationAt = latestConfirmationBySupplier[supplier];
+        // A confirmation only counts if it arrived after this cycle's order
+        // was placed -- otherwise a leftover email from a previous cycle
+        // would wrongly confirm today's order.
+        const isConfirmed = latestOrderedAt != null && latestConfirmationAt != null && latestConfirmationAt >= latestOrderedAt;
+        return {
+          supplier,
+          status: supplierOrderStatus(needsOrderRows, isConfirmed),
+          needsOrderCount: needsOrderRows.length,
+          orderedCount: needsOrderRows.filter(r => r.ordered).length,
+        };
+      })
+      .sort((a, b) => a.supplier.localeCompare(b.supplier));
+  }, [sites, selectedLocationId, itemById, latestConfirmationBySupplier]);
+
+  const summary = useMemo(() => {
+    const counts = { ok: 0, needed: 0, partial: 0, placed: 0, confirmed: 0 };
+    for (const g of supplierGroups) counts[g.status]++;
+    return counts;
+  }, [supplierGroups]);
+
+  if (locations.length === 0) {
+    return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
+  }
+
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
+
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        {Object.entries(ORDER_STATUS_CONFIG).map(([key, cfg]) => (
+          <div key={key} className={`rounded-xl border ${cfg.border} ${cfg.bg} px-4 py-3`}>
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${cfg.dot}`} />
+              <span className={`text-xs font-semibold ${cfg.text}`}>{cfg.label}</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{summary[key]}</p>
+          </div>
+        ))}
+      </div>
+
+      {supplierGroups.length === 0 ? (
+        <EmptyState Icon={Truck} title="No suppliers yet for this location." />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {supplierGroups.map(g => {
+            const cfg = ORDER_STATUS_CONFIG[g.status];
+            return (
+              <div key={g.supplier} className={`rounded-xl border ${cfg.border} ${cfg.bg} px-4 py-3`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-gray-800">{g.supplier}</span>
+                  <span className={`w-2.5 h-2.5 rounded-full ${cfg.dot} shrink-0`} />
+                </div>
+                <p className={`text-xs font-medium mt-1 ${cfg.text}`}>{cfg.label}</p>
+                {g.needsOrderCount > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">{g.orderedCount}/{g.needsOrderCount} item{g.needsOrderCount !== 1 ? 's' : ''} ordered</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -2690,6 +2877,7 @@ export default function StockApp({ user, org }) {
   const [items, setItems] = useState([]);
   const [sites, setSites] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
+  const [orderConfirmations, setOrderConfirmations] = useState([]);
   const [supplierAssignments, setSupplierAssignments] = useState([]);
   const [supplierMetadata, setSupplierMetadata] = useState([]);
   const [orgMembers, setOrgMembers] = useState([]);
@@ -2704,11 +2892,12 @@ export default function StockApp({ user, org }) {
     if (!org?.id) return;
     setLoading(true);
     try {
-      const [locs, stockItems, itemSites, history, assignments, metadata, members] = await Promise.all([
+      const [locs, stockItems, itemSites, history, confirmations, assignments, metadata, members] = await Promise.all([
         db.getLocations(org.id),
         db.getStockItems(org.id),
         db.getStockItemSites(org.id),
         db.getStockOrderHistory(org.id),
+        db.getSupplierOrderConfirmations(org.id),
         db.getSupplierAssignments(org.id),
         db.getSupplierMetadata(org.id),
         db.getOrgMembersWithEmail(org.id),
@@ -2717,6 +2906,7 @@ export default function StockApp({ user, org }) {
       setItems(stockItems);
       setSites(itemSites);
       setOrderHistory(history);
+      setOrderConfirmations(confirmations);
       setSupplierAssignments(assignments);
       setSupplierMetadata(metadata);
       setOrgMembers(members);
@@ -2802,6 +2992,7 @@ export default function StockApp({ user, org }) {
     { id: 'stocktake', label: 'Stocktake', Icon: ClipboardList },
     { id: 'packaging', label: 'Packaging', Icon: Box },
     { id: 'ordering',  label: 'Ordering',  Icon: ShoppingCart },
+    { id: 'order-status', label: 'Order Status', Icon: Truck },
     { id: 'history',   label: 'History',   Icon: History },
     { id: 'insights',  label: 'Insights',  Icon: TrendingUp },
     { id: 'locations', label: 'Locations', Icon: MapPin },
@@ -2909,6 +3100,16 @@ export default function StockApp({ user, org }) {
           onManageSuppliers={() => setShowAssignmentsModal(true)}
           supplierMetadata={supplierMetadata}
           onManageSupplierMetadata={() => setShowSupplierMetadataModal(true)}
+        />
+      )}
+      {activeTab === 'order-status' && (
+        <OrderStatusTab
+          items={items}
+          sites={sites}
+          locations={activeLocations}
+          selectedLocationId={selectedLocationId}
+          onSelectLocation={setSelectedLocationId}
+          orderConfirmations={orderConfirmations}
         />
       )}
       {activeTab === 'history' && (
