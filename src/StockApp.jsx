@@ -439,6 +439,12 @@ const ORDER_CHANNEL_OPTIONS = [
 // Function), so the Order Status tab can show a verified "Confirmed"
 // rather than just "someone ticked Ordered". Leave blank to opt a
 // supplier out of auto-confirmation entirely.
+//
+// confirmationBodyMatch is only needed for suppliers ordered through a
+// marketplace that emails from the SAME address for every supplier it
+// routes (e.g. FoodByUs, Fresho) -- it additionally requires this
+// substring to appear in the email body, so a shared From address can
+// still be attributed to the right supplier(s).
 function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved }) {
   const [draft, setDraft] = useState(() => {
     const initial = {};
@@ -449,6 +455,7 @@ function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved })
         portalName: existing?.portal_name || '',
         searchUrlTemplate: existing?.search_url_template || '',
         confirmationEmailMatch: existing?.confirmation_email_match || '',
+        confirmationBodyMatch: existing?.confirmation_body_match || '',
       };
     }
     return initial;
@@ -465,6 +472,7 @@ function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved })
           portal_name: d.portalName.trim() || null,
           search_url_template: d.searchUrlTemplate.trim() || null,
           confirmation_email_match: d.confirmationEmailMatch.trim() || null,
+          confirmation_body_match: d.confirmationBodyMatch.trim() || null,
         });
       }));
       toast.success('Supplier settings saved');
@@ -521,12 +529,20 @@ function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved })
                       />
                     </div>
                   )}
-                  <input
-                    type="text" value={d.confirmationEmailMatch}
-                    onChange={e => setDraft(prev => ({ ...prev, [supplier]: { ...prev[supplier], confirmationEmailMatch: e.target.value } }))}
-                    placeholder="Confirmation email match, e.g. mybidfood.com.au (optional)"
-                    className="input-base text-xs py-1.5"
-                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text" value={d.confirmationEmailMatch}
+                      onChange={e => setDraft(prev => ({ ...prev, [supplier]: { ...prev[supplier], confirmationEmailMatch: e.target.value } }))}
+                      placeholder="Confirmation email match, e.g. sales@bidfood.com.au (optional)"
+                      className="input-base text-xs py-1.5"
+                    />
+                    <input
+                      type="text" value={d.confirmationBodyMatch}
+                      onChange={e => setDraft(prev => ({ ...prev, [supplier]: { ...prev[supplier], confirmationBodyMatch: e.target.value } }))}
+                      placeholder="Also require in body, e.g. Fruitique (for shared senders)"
+                      className="input-base text-xs py-1.5"
+                    />
+                  </div>
                 </div>
               );
             })}
