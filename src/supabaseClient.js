@@ -1306,6 +1306,17 @@ export const db = {
     return data;
   },
 
+  // Written only by the check-order-confirmations Edge Function (service
+  // role) -- read-only from here. See supabase_stock_order_confirmations_migration.sql.
+  async getSupplierOrderConfirmations(orgId) {
+    const { data, error } = await supabase
+      .from('supplier_order_confirmations')
+      .select('*')
+      .eq('org_id', orgId);
+    if (error) throw error;
+    return data || [];
+  },
+
   // ── Production Planning (R-Prod) ────────────────────────────────────────────
 
   async getProductionSites(orgId) {

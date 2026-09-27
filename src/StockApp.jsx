@@ -432,6 +432,13 @@ const ORDER_CHANNEL_OPTIONS = [
 // Defaults to 'email' everywhere (see supplier_metadata migration), so an
 // unclassified supplier stays out of the agent-orderable list rather than
 // silently showing up in it.
+//
+// confirmationEmailMatch is independent of order_channel -- it's a
+// substring checked against the From header of mail landing in
+// hello@itsrecess.com.au (by the check-order-confirmations Edge
+// Function), so the Order Status tab can show a verified "Confirmed"
+// rather than just "someone ticked Ordered". Leave blank to opt a
+// supplier out of auto-confirmation entirely.
 function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved }) {
   const [draft, setDraft] = useState(() => {
     const initial = {};
@@ -441,6 +448,7 @@ function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved })
         orderChannel: existing?.order_channel || 'email',
         portalName: existing?.portal_name || '',
         searchUrlTemplate: existing?.search_url_template || '',
+        confirmationEmailMatch: existing?.confirmation_email_match || '',
       };
     }
     return initial;
@@ -456,6 +464,7 @@ function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved })
           order_channel: d.orderChannel,
           portal_name: d.portalName.trim() || null,
           search_url_template: d.searchUrlTemplate.trim() || null,
+          confirmation_email_match: d.confirmationEmailMatch.trim() || null,
         });
       }));
       toast.success('Supplier settings saved');
@@ -474,6 +483,7 @@ function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved })
       <div className="space-y-4">
         <p className="text-xs text-gray-500">
           Classify how each supplier is ordered. Only "Portal" suppliers show up in the Ordering page's Agent View by default.
+          Set a confirmation email match to have the Order Status tab verify "Ordered" against hello@itsrecess.com.au automatically.
         </p>
         {suppliers.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-6">No suppliers in the catalog yet.</p>
@@ -511,6 +521,12 @@ function SupplierMetadataModal({ suppliers, metadata, orgId, onClose, onSaved })
                       />
                     </div>
                   )}
+                  <input
+                    type="text" value={d.confirmationEmailMatch}
+                    onChange={e => setDraft(prev => ({ ...prev, [supplier]: { ...prev[supplier], confirmationEmailMatch: e.target.value } }))}
+                    placeholder="Confirmation email match, e.g. mybidfood.com.au (optional)"
+                    className="input-base text-xs py-1.5"
+                  />
                 </div>
               );
             })}
@@ -1486,31 +1502,45 @@ function AgentOrderingView({ items, sites, locations, selectedLocationId, onSele
 
 // ── Order Status Tab ─────────────────────────────────────────────────────────
 // Supplier-level traffic light: does this supplier need an order this cycle,
-// and -- if so -- has it been placed. Rolls up the same current_status/ordered
-// fields Stocktake and Ordering already write at the (item, location) grain --
-// no new schema needed for this first cut. Placed still just means "someone
-// ticked Ordered in the Ordering tab" -- confirming that against the actual
-// supplier confirmation email (hello@itsrecess.com.au) is a separate step once
-// this app has read access to that inbox, so a "placed" card here is a claim,
-// not yet independently verified.
+// and -- if so -- has it been placed, and (for suppliers with a confirmation
+// email match configured) verified against an actual confirmation email
+// landing in hello@itsrecess.com.au. Rolls up the existing current_status/
+// ordered fields Stocktake and Ordering already write, plus
+// supplier_order_confirmations -- written on a schedule by the
+// check-order-confirmations Edge Function, which polls that inbox via the
+// Gmail API. A supplier with no confirmation_email_match set just can't ever
+// reach "Confirmed" here -- it caps out at "Order Placed" (the manual
+// checkbox), same as before this existed.
 
 const ORDER_STATUS_CONFIG = {
-  ok:      { label: 'No Order Needed',    bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200', dot: 'bg-green-500' },
-  needed:  { label: 'Order Needed',       bg: 'bg-red-100',   text: 'text-red-700',   border: 'border-red-200',   dot: 'bg-red-500'   },
-  partial: { label: 'Partially Ordered',  bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-400' },
-  placed:  { label: 'Order Placed',       bg: 'bg-blue-100',  text: 'text-blue-700',  border: 'border-blue-200',  dot: 'bg-blue-500'  },
+  ok:        { label: 'No Order Needed',   bg: 'bg-green-100',   text: 'text-green-700',   border: 'border-green-200',   dot: 'bg-green-500'   },
+  needed:    { label: 'Order Needed',      bg: 'bg-red-100',     text: 'text-red-700',     border: 'border-red-200',     dot: 'bg-red-500'     },
+  partial:   { label: 'Partially Ordered', bg: 'bg-amber-100',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-400'   },
+  placed:    { label: 'Order Placed',      bg: 'bg-blue-100',    text: 'text-blue-700',    border: 'border-blue-200',    dot: 'bg-blue-500'    },
+  confirmed: { label: 'Order Confirmed',   bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
 };
 
-function supplierOrderStatus(needsOrderRows) {
+function supplierOrderStatus(needsOrderRows, isConfirmed) {
   if (needsOrderRows.length === 0) return 'ok';
   const orderedCount = needsOrderRows.filter(r => r.ordered).length;
   if (orderedCount === 0) return 'needed';
-  if (orderedCount === needsOrderRows.length) return 'placed';
-  return 'partial';
+  if (orderedCount < needsOrderRows.length) return 'partial';
+  return isConfirmed ? 'confirmed' : 'placed';
 }
 
-function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectLocation }) {
+function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectLocation, orderConfirmations }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+
+  // Latest confirmation-email timestamp seen per supplier, across every
+  // location -- a Bidfood confirmation isn't location-specific.
+  const latestConfirmationBySupplier = useMemo(() => {
+    const map = {};
+    for (const c of orderConfirmations) {
+      const t = new Date(c.received_at).getTime();
+      if (!(c.supplier in map) || t > map[c.supplier]) map[c.supplier] = t;
+    }
+    return map;
+  }, [orderConfirmations]);
 
   const supplierGroups = useMemo(() => {
     const rows = sites
@@ -1527,18 +1557,25 @@ function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectL
     return Object.entries(groups)
       .map(([supplier, supplierRows]) => {
         const needsOrderRows = supplierRows.filter(r => NEEDS_ORDER_STATUSES.includes(r.current_status));
+        const orderedAts = needsOrderRows.filter(r => r.ordered && r.ordered_at).map(r => new Date(r.ordered_at).getTime());
+        const latestOrderedAt = orderedAts.length > 0 ? Math.max(...orderedAts) : null;
+        const latestConfirmationAt = latestConfirmationBySupplier[supplier];
+        // A confirmation only counts if it arrived after this cycle's order
+        // was placed -- otherwise a leftover email from a previous cycle
+        // would wrongly confirm today's order.
+        const isConfirmed = latestOrderedAt != null && latestConfirmationAt != null && latestConfirmationAt >= latestOrderedAt;
         return {
           supplier,
-          status: supplierOrderStatus(needsOrderRows),
+          status: supplierOrderStatus(needsOrderRows, isConfirmed),
           needsOrderCount: needsOrderRows.length,
           orderedCount: needsOrderRows.filter(r => r.ordered).length,
         };
       })
       .sort((a, b) => a.supplier.localeCompare(b.supplier));
-  }, [sites, selectedLocationId, itemById]);
+  }, [sites, selectedLocationId, itemById, latestConfirmationBySupplier]);
 
   const summary = useMemo(() => {
-    const counts = { ok: 0, needed: 0, partial: 0, placed: 0 };
+    const counts = { ok: 0, needed: 0, partial: 0, placed: 0, confirmed: 0 };
     for (const g of supplierGroups) counts[g.status]++;
     return counts;
   }, [supplierGroups]);
@@ -1551,7 +1588,7 @@ function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectL
     <div className="space-y-4 animate-fade-in">
       <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {Object.entries(ORDER_STATUS_CONFIG).map(([key, cfg]) => (
           <div key={key} className={`rounded-xl border ${cfg.border} ${cfg.bg} px-4 py-3`}>
             <div className="flex items-center gap-2">
@@ -2824,6 +2861,7 @@ export default function StockApp({ user, org }) {
   const [items, setItems] = useState([]);
   const [sites, setSites] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
+  const [orderConfirmations, setOrderConfirmations] = useState([]);
   const [supplierAssignments, setSupplierAssignments] = useState([]);
   const [supplierMetadata, setSupplierMetadata] = useState([]);
   const [orgMembers, setOrgMembers] = useState([]);
@@ -2838,11 +2876,12 @@ export default function StockApp({ user, org }) {
     if (!org?.id) return;
     setLoading(true);
     try {
-      const [locs, stockItems, itemSites, history, assignments, metadata, members] = await Promise.all([
+      const [locs, stockItems, itemSites, history, confirmations, assignments, metadata, members] = await Promise.all([
         db.getLocations(org.id),
         db.getStockItems(org.id),
         db.getStockItemSites(org.id),
         db.getStockOrderHistory(org.id),
+        db.getSupplierOrderConfirmations(org.id),
         db.getSupplierAssignments(org.id),
         db.getSupplierMetadata(org.id),
         db.getOrgMembersWithEmail(org.id),
@@ -2851,6 +2890,7 @@ export default function StockApp({ user, org }) {
       setItems(stockItems);
       setSites(itemSites);
       setOrderHistory(history);
+      setOrderConfirmations(confirmations);
       setSupplierAssignments(assignments);
       setSupplierMetadata(metadata);
       setOrgMembers(members);
@@ -3053,6 +3093,7 @@ export default function StockApp({ user, org }) {
           locations={activeLocations}
           selectedLocationId={selectedLocationId}
           onSelectLocation={setSelectedLocationId}
+          orderConfirmations={orderConfirmations}
         />
       )}
       {activeTab === 'history' && (
