@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAuth, Auth } from './Auth';
+import { useAuth, Auth, ResetPassword, RESET_PASSWORD_PATH } from './Auth';
 import RosterApp from './roster-app';
 import PublicScheduleView from './PublicScheduleView';
 import PublicRosterView from './PublicRosterView';
@@ -112,6 +112,9 @@ function App() {
   }
   if (PUBLIC_TOKEN) {
     return <PublicScheduleView token={PUBLIC_TOKEN} />;
+  }
+  if (window.location.pathname === RESET_PASSWORD_PATH) {
+    return <ErrorBoundary><ResetPassword /></ErrorBoundary>;
   }
   return <AuthenticatedApp />;
 }
