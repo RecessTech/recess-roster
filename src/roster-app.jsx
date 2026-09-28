@@ -558,10 +558,79 @@ const RosterApp = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps, no-use-before-define
   }, [org, staff.length, avWeekStart.toISOString()]); // use staff.length (state) not activeStaff.length (const after this effect)
 
+  // A shift's site is stamped on the shift itself (schedules.location_id);
+  // shifts saved before that column existed fall back to the staff
+  // member's home site.
+  const staffLocationById = useMemo(() => new Map(staff.map(s => [s.id, s.locationId || null])), [staff]);
+  const shiftLocationId = useCallback(
+    (shift, staffId) => shift?.locationId || staffLocationById.get(staffId) || null,
+    [staffLocationById]
+  );
+  // Site a newly created shift belongs to: the site being rostered (the
+  // location filter) if one is chosen, else the staff member's home site.
+  const newShiftLocationId = useCallback(
+    (staffId) => selectedLocationId || staffLocationById.get(staffId) || null,
+    [selectedLocationId, staffLocationById]
+  );
+
+  // The schedule as seen through the location filter: only shifts at the
+  // selected site. Everything that displays or totals shifts reads this;
+  // edits still go to the full `schedule`, so a filtered view never
+  // touches another site's shifts.
+  const viewSchedule = useMemo(() => {
+    if (!selectedLocationId) return schedule;
+    const filtered = {};
+    Object.entries(schedule).forEach(([key, shift]) => {
+      if (shiftLocationId(shift, key.split('|')[1]) === selectedLocationId) filtered[key] = shift;
+    });
+    return filtered;
+  }, [schedule, selectedLocationId, shiftLocationId]);
+
+  // True when a slot already holds a shift at a different site than the
+  // one being rostered -- painting, erasing and quick-fill skip these so
+  // working on Crown St can never overwrite or delete a Bourke St shift.
+  const isOtherSiteSlot = useCallback((sched, key) => {
+    if (!selectedLocationId || !sched[key]) return false;
+    return shiftLocationId(sched[key], key.split('|')[1]) !== selectedLocationId;
+  }, [selectedLocationId, shiftLocationId]);
+
+  // Cell styling for a slot someone is rostered at another site: greyed
+  // out so it reads as "busy elsewhere" rather than free to paint.
+  const OTHER_SITE_HATCH = 'repeating-linear-gradient(45deg, rgba(107,114,128,0.28) 0px, rgba(107,114,128,0.28) 3px, rgba(107,114,128,0.1) 3px, rgba(107,114,128,0.1) 7px)';
+  const otherSiteName = (key) => {
+    const shift = schedule[key];
+    if (!shift || viewSchedule[key]) return null;
+    const locId = shiftLocationId(shift, key.split('|')[1]);
+    if (!locId) return 'no site set';
+    return locations.find(l => l.id === locId)?.name || 'another site';
+  };
+
+  // Staff from another site pulled into this site's roster for this
+  // session, so they have a row to be rostered on. Once they have a shift
+  // here they stay visible on their own via viewSchedule.
+  const [visitingStaffIds, setVisitingStaffIds] = useState([]);
+  useEffect(() => { setVisitingStaffIds([]); }, [selectedLocationId]);
+
   const activeStaff = useMemo(() => {
     const base = staff.filter(s => s.active !== false);
-    return selectedLocationId ? base.filter(s => s.locationId === selectedLocationId) : base;
-  }, [staff, selectedLocationId]);
+    if (!selectedLocationId) return base;
+    // Same visible range generateDates() builds below (Monday + viewMode days)
+    const start = new Date(currentDate);
+    start.setDate(start.getDate() + (start.getDay() === 0 ? -6 : 1 - start.getDay()));
+    const visibleDateKeys = new Set(Array.from({ length: viewMode }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }));
+    const rosteredHere = new Set();
+    Object.keys(viewSchedule).forEach(k => {
+      const [dk, sid] = k.split('|');
+      if (visibleDateKeys.has(dk)) rosteredHere.add(sid);
+    });
+    return base.filter(s =>
+      s.locationId === selectedLocationId || rosteredHere.has(s.id) || visitingStaffIds.includes(s.id)
+    );
+  }, [staff, selectedLocationId, viewSchedule, visitingStaffIds, currentDate, viewMode]);
   // eslint-disable-next-line no-unused-vars
   const archivedStaff = useMemo(() => staff.filter(s => s.active === false), [staff]);
 
@@ -806,10 +875,12 @@ const RosterApp = () => {
       const timeSlot = `${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
 
       const key = getScheduleKey(dateKey, staffId, timeSlot);
+      if (isOtherSiteSlot(newSchedule, key)) continue;
       newSchedule[key] = {
         roleId: template.roleId,
         roleCode: template.roleCode,
-        roleColor: template.roleColor
+        roleColor: template.roleColor,
+        locationId: newShiftLocationId(staffId)
       };
     }
 
@@ -902,7 +973,7 @@ const RosterApp = () => {
     if (overlayRef.current) overlayRef.current.style.display = 'none';
 
     const key = getScheduleKey(dateKey, staffId, timeSlot);
-    const hasShift = !!schedule[key];
+    const hasShift = !!viewSchedule[key];
 
     // Clamp context menu to viewport
     const x = Math.min(e.clientX, window.innerWidth - 200);
@@ -1039,17 +1110,16 @@ const RosterApp = () => {
       saveToHistory(prevSchedule);
       const newSchedule = { ...prevSchedule };
 
-      if (drag.isEraser) {
-        keys.forEach(key => { delete newSchedule[key]; });
-      } else {
-        keys.forEach(key => {
-          newSchedule[key] = { ...drag.role };
-        });
-      }
+      const locationId = newShiftLocationId(drag.staffId);
+      keys.forEach(key => {
+        if (isOtherSiteSlot(prevSchedule, key)) return;
+        if (drag.isEraser) delete newSchedule[key];
+        else newSchedule[key] = { ...drag.role, locationId };
+      });
 
       return newSchedule;
     });
-  }, [selectedRole, saveToHistory, timeInterval]);
+  }, [selectedRole, saveToHistory, timeInterval, isOtherSiteSlot, newShiftLocationId]);
 
   useEffect(() => {
     const handleMouseUp = () => commitPendingPaint();
@@ -1124,7 +1194,7 @@ const RosterApp = () => {
 
     // Count actual 15-min slots
     let slots = 0;
-    Object.keys(schedule).forEach(key => {
+    Object.keys(viewSchedule).forEach(key => {
       if (key.startsWith(`${dateKey}|${staffId}|`)) slots++;
     });
     const hours = slots * (15 / 60);
@@ -1156,7 +1226,7 @@ const RosterApp = () => {
           if (h === endHour && m > 0) break;
           const slot = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
           const curMins = h * 60 + m;
-          const hasShift = !!schedule[getScheduleKey(dateKey, staffId, slot)];
+          const hasShift = !!viewSchedule[getScheduleKey(dateKey, staffId, slot)];
           if (hasShift && (!inShift || curMins - prevMins > 15)) {
             count++;
             inShift = true;
@@ -1253,14 +1323,16 @@ const RosterApp = () => {
       });
 
       // Calculate per staff and per role
-      Object.entries(schedule).forEach(([key, shift]) => {
+      // Same shifts and staff the totals above count (calculateDayStats walks
+      // activeStaff over viewSchedule), so the breakdowns add up to them.
+      Object.entries(viewSchedule).forEach(([key, shift]) => {
         const [keyDateKey, keyStaffId, timeSlot] = key.split('|');
         
         // Only process if this entry is for current date
         if (keyDateKey !== dateKey) return;
         
-        const s = staff.find(st => st.id === keyStaffId);
-        if (!s) return;
+        if (!staffBreakdown[keyStaffId]) return;
+        const s = activeStaff.find(st => st.id === keyStaffId);
         
         const rate = isWeekend && s.weekendRate ? s.weekendRate : s.hourlyRate;
         
@@ -2282,10 +2354,13 @@ const RosterApp = () => {
 
     for (let m = startMins; m < endMins; m += 15) {
       const slot = `${Math.floor(m / 60).toString().padStart(2, '0')}:${(m % 60).toString().padStart(2, '0')}`;
-      newSchedule[getScheduleKey(quickFillData.dateKey, quickFillData.staffId, slot)] = {
+      const key = getScheduleKey(quickFillData.dateKey, quickFillData.staffId, slot);
+      if (isOtherSiteSlot(newSchedule, key)) continue;
+      newSchedule[key] = {
         roleId: selectedRole.id,
         roleCode: selectedRole.code,
         roleColor: selectedRole.color,
+        locationId: newShiftLocationId(quickFillData.staffId),
       };
     }
 
@@ -2417,15 +2492,16 @@ const RosterApp = () => {
     
     const newSchedule = { ...schedule };
     
-    // Copy at 15m granularity to capture all sub-slots regardless of display interval
+    // Copy at 15m granularity to capture all sub-slots regardless of display interval.
+    // Only the site being viewed is copied, and never over another site's shift.
     staff.forEach(staffMember => {
       for (let h = startHour; h < endHour; h++) {
         for (let m = 0; m < 60; m += 15) {
           const slot = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
           const sourceKey = getScheduleKey(copiedDay, staffMember.id, slot);
           const targetKey = getScheduleKey(targetDateKey, staffMember.id, slot);
-          if (schedule[sourceKey]) {
-            newSchedule[targetKey] = { ...schedule[sourceKey] };
+          if (viewSchedule[sourceKey] && !isOtherSiteSlot(newSchedule, targetKey)) {
+            newSchedule[targetKey] = { ...viewSchedule[sourceKey], locationId: shiftLocationId(viewSchedule[sourceKey], staffMember.id) };
           }
         }
       }
@@ -2465,7 +2541,7 @@ const RosterApp = () => {
       const [dk, sid] = k.split('|');
       if (dk === dateKey && sid === fromStaffId) {
         const slot = k.split('|')[2];
-        newSchedule[`${dk}|${toStaffId}|${slot}`] = { ...newSchedule[k] };
+        newSchedule[`${dk}|${toStaffId}|${slot}`] = { ...newSchedule[k], locationId: shiftLocationId(newSchedule[k], fromStaffId) };
         delete newSchedule[k];
       }
     });
@@ -2493,24 +2569,25 @@ const RosterApp = () => {
       return formatDateKey(prev);
     });
 
-    const hasCurrentShifts = Object.keys(schedule).some(k => currentDateKeys.has(k.split('|')[0]));
+    const hasCurrentShifts = Object.keys(viewSchedule).some(k => currentDateKeys.has(k.split('|')[0]));
     if (hasCurrentShifts && !window.confirm('This will replace the current week\'s roster with last week\'s. Continue?')) return;
 
     saveToHistory(schedule);
     const newSchedule = { ...schedule };
 
-    // Clear current week
-    Object.keys(newSchedule).forEach(k => {
+    // Clear current week (only the site being viewed, when filtered)
+    Object.keys(viewSchedule).forEach(k => {
       if (currentDateKeys.has(k.split('|')[0])) delete newSchedule[k];
     });
 
-    // Copy prev week slots to current week
-    Object.entries(schedule).forEach(([key, value]) => {
+    // Copy prev week slots to current week, keeping each shift's site
+    Object.entries(viewSchedule).forEach(([key, value]) => {
       const [dk, staffId, timeSlot] = key.split('|');
       const prevIdx = prevDateKeys.indexOf(dk);
       if (prevIdx === -1) return;
-      const newDk = formatDateKey(dates[prevIdx]);
-      newSchedule[`${newDk}|${staffId}|${timeSlot}`] = { ...value };
+      const newKey = `${formatDateKey(dates[prevIdx])}|${staffId}|${timeSlot}`;
+      if (isOtherSiteSlot(newSchedule, newKey)) return;
+      newSchedule[newKey] = { ...value, locationId: shiftLocationId(value, staffId) };
     });
 
     setSchedule(newSchedule);
@@ -2548,7 +2625,8 @@ const RosterApp = () => {
       for (let h = startHour; h < endHour; h++) {
         for (let m = 0; m < 60; m += 15) {
           const slot = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-          delete newSchedule[getScheduleKey(dateKey, staffMember.id, slot)];
+          const key = getScheduleKey(dateKey, staffMember.id, slot);
+          if (!isOtherSiteSlot(newSchedule, key)) delete newSchedule[key];
         }
       }
     };
@@ -2602,7 +2680,7 @@ const RosterApp = () => {
         const prevTimeSlot = allSlots[shiftStartIdx - 1];
         const prevKey = getScheduleKey(contextMenu.dateKey, contextMenu.staffId, prevTimeSlot);
         const prevShift = prevSchedule[prevKey];
-        if (!prevShift || prevShift.roleId !== clickedShift.roleId) break;
+        if (!prevShift || prevShift.roleId !== clickedShift.roleId || isOtherSiteSlot(prevSchedule, prevKey)) break;
         shiftStartIdx--;
       }
 
@@ -2612,7 +2690,7 @@ const RosterApp = () => {
         const nextTimeSlot = allSlots[shiftEndIdx + 1];
         const nextKey = getScheduleKey(contextMenu.dateKey, contextMenu.staffId, nextTimeSlot);
         const nextShift = prevSchedule[nextKey];
-        if (!nextShift || nextShift.roleId !== clickedShift.roleId) break;
+        if (!nextShift || nextShift.roleId !== clickedShift.roleId || isOtherSiteSlot(prevSchedule, nextKey)) break;
         shiftEndIdx++;
       }
 
@@ -2936,7 +3014,7 @@ const RosterApp = () => {
     const { dateKey, staffId } = swapTarget;
     const fromStaff = staff.find(s => s.id === staffId);
     // Build list of shifts for this person on this day
-    const daySlots = Object.entries(schedule)
+    const daySlots = Object.entries(viewSchedule)
       .filter(([k]) => { const [dk, sid] = k.split('|'); return dk === dateKey && sid === staffId; })
       .map(([, v]) => v.roleCode)
       .filter(Boolean);
@@ -3029,7 +3107,7 @@ const RosterApp = () => {
           <button
             onClick={() => {
               const key = getScheduleKey(contextMenu.dateKey, contextMenu.staffId, contextMenu.timeSlot);
-              const shift = schedule[key];
+              const shift = viewSchedule[key];
               if (shift) {
                 const role = roles.find(r => r.id === shift.roleId);
                 // Find start and end times of continuous shift
@@ -3043,7 +3121,7 @@ const RosterApp = () => {
                   if (slotIndex <= 0) break;
                   const prevSlot = timeSlots[slotIndex - 1];
                   const prevKey = getScheduleKey(contextMenu.dateKey, contextMenu.staffId, prevSlot);
-                  if (schedule[prevKey]?.roleId === shift.roleId) {
+                  if (viewSchedule[prevKey]?.roleId === shift.roleId) {
                     startTime = prevSlot;
                     currentSlot = prevSlot;
                   } else {
@@ -3058,7 +3136,7 @@ const RosterApp = () => {
                   if (slotIndex >= timeSlots.length - 1) break;
                   const nextSlot = timeSlots[slotIndex + 1];
                   const nextKey = getScheduleKey(contextMenu.dateKey, contextMenu.staffId, nextSlot);
-                  if (schedule[nextKey]?.roleId === shift.roleId) {
+                  if (viewSchedule[nextKey]?.roleId === shift.roleId) {
                     endTime = nextSlot;
                     currentSlot = nextSlot;
                   } else {
@@ -3512,7 +3590,7 @@ const RosterApp = () => {
 
       timeSlots.forEach(slot => {
         const key = getScheduleKey(dateKey, staffId, slot);
-        const shift = schedule[key];
+        const shift = viewSchedule[key];
 
         if (shift) {
           if (!currentShift || currentShift.roleId !== shift.roleId) {
@@ -3971,7 +4049,7 @@ const RosterApp = () => {
                     const annualSalary = extraConfig.staffSalaries?.[s.id];
                     const daysScheduled = dates.filter(d => {
                       const dk = formatDateKey(d);
-                      return Object.keys(schedule).some(k => k.startsWith(`${dk}|${s.id}|`));
+                      return Object.keys(viewSchedule).some(k => k.startsWith(`${dk}|${s.id}|`));
                     }).length;
                     const empColor = s.employmentType === 'FT' ? 'bg-blue-100 text-blue-700' : s.employmentType === 'PT' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700';
                     return (
@@ -4172,7 +4250,7 @@ const RosterApp = () => {
       
       all15MinSlots.forEach(slot => {
         const key = getScheduleKey(dateKey, selectedStaffView, slot);
-        const shift = schedule[key];
+        const shift = viewSchedule[key];
         
         if (shift) {
           if (!currentShift || currentShift.roleId !== shift.roleId || !areConsecutiveSlots(currentShift.endTime, slot)) {
@@ -4707,7 +4785,7 @@ const RosterApp = () => {
       leastExpensiveDay: weekStats.dailyBreakdown.reduce((min, day) => day.cost < min.cost && day.cost > 0 ? day : min, weekStats.dailyBreakdown[0] || { cost: 0 }),
       underStaffedSlots: [],
       overStaffedSlots: [],
-      totalShifts: Object.keys(schedule).length,
+      totalShifts: Object.keys(viewSchedule).length,
       avgShiftLength: 0,
       utilizationRate: {},
       coverageGaps: []
@@ -4723,7 +4801,7 @@ const RosterApp = () => {
       return sum + ((ch * 60 + cm) - (oh * 60 + om)) / 60;
     }, 0);
 
-    staff.forEach(s => {
+    activeStaff.forEach(s => {
       const scheduledHours = calculateStaffWeekStats(s.id).hours;
       const rate = weekAvailableHours > 0 ? Math.min((scheduledHours / weekAvailableHours) * 100, 100) : 0;
       insights.utilizationRate[s.id] = {
@@ -4743,7 +4821,7 @@ const RosterApp = () => {
         
         const staffCount = activeStaff.filter(s => {
           const key = getScheduleKey(dateKey, s.id, slot);
-          return schedule[key];
+          return viewSchedule[key];
         }).length;
         
         const isPeakTime = slot >= businessSettings.peakHours.start && slot < businessSettings.peakHours.end;
@@ -4784,9 +4862,9 @@ const RosterApp = () => {
     const allShifts = [];
     dates.forEach(date => {
       const dateKey = formatDateKey(date);
-      staff.forEach(s => {
+      activeStaff.forEach(s => {
         // Find all continuous blocks of work for this staff on this day
-        const daySchedule = Object.keys(schedule)
+        const daySchedule = Object.keys(viewSchedule)
           .filter(key => key.startsWith(`${dateKey}|${s.id}|`))
           .map(key => key.split('|')[2]) // Extract time slot
           .sort();
@@ -5539,7 +5617,7 @@ const RosterApp = () => {
         coverageMatrix[t] = {};
         dates.forEach(d => {
           const dk = formatDateKey(d);
-          coverageMatrix[t][dk] = activeStaff.filter(s => !!schedule[getScheduleKey(dk, s.id, t)]).length;
+          coverageMatrix[t][dk] = activeStaff.filter(s => !!viewSchedule[getScheduleKey(dk, s.id, t)]).length;
         });
       });
       // Key hourly slots only for the heatmap
@@ -6432,7 +6510,14 @@ Key things to verify after rebuild:
                     {/* Staff label column */}
                     <td className="sticky left-0 z-20 border-r border-gray-200 bg-white px-3"
                       style={{ width: STAFF_COL_W, minWidth: STAFF_COL_W, height: ROW_H }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: isOff ? '#9CA3AF' : '#111827' }} className="truncate">{s.name}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: isOff ? '#9CA3AF' : '#111827' }} className="truncate">
+                        {s.name}
+                        {selectedLocationId && s.locationId !== selectedLocationId && (
+                          <span style={{ fontSize: 9, fontWeight: 400, color: '#9CA3AF' }} title="Home site">
+                            {' · '}{locations.find(l => l.id === s.locationId)?.name || 'Unassigned'}
+                          </span>
+                        )}
+                      </div>
                       {isOff ? (
                         <div style={{ fontSize: 10, color: '#D1D5DB', marginTop: 2 }}>Off · ${rate}/hr</div>
                       ) : (
@@ -6448,9 +6533,9 @@ Key things to verify after rebuild:
                     {/* Time cells */}
                     {timeSlots.map((slot, ci) => {
                       const k = getScheduleKey(dk, s.id, slot);
-                      const sh = schedule[k];
-                      const prevSh = ci > 0 ? schedule[getScheduleKey(dk, s.id, timeSlots[ci - 1])] : null;
-                      const nextSh = ci < timeSlots.length - 1 ? schedule[getScheduleKey(dk, s.id, timeSlots[ci + 1])] : null;
+                      const sh = viewSchedule[k];
+                      const prevSh = ci > 0 ? viewSchedule[getScheduleKey(dk, s.id, timeSlots[ci - 1])] : null;
+                      const nextSh = ci < timeSlots.length - 1 ? viewSchedule[getScheduleKey(dk, s.id, timeSlots[ci + 1])] : null;
                       const isShiftStart = sh && (!prevSh || prevSh.roleId !== sh.roleId);
                       const isShiftEnd = sh && (!nextSh || nextSh.roleId !== sh.roleId);
                       const isHour = slot.endsWith(':00');
@@ -6461,7 +6546,7 @@ Key things to verify after rebuild:
                       let shiftLen = 1;
                       if (isShiftStart) {
                         for (let j = ci + 1; j < timeSlots.length; j++) {
-                          if (schedule[getScheduleKey(dk, s.id, timeSlots[j])]?.roleId === sh.roleId) {
+                          if (viewSchedule[getScheduleKey(dk, s.id, timeSlots[j])]?.roleId === sh.roleId) {
                             shiftEndSlot = timeSlots[j]; shiftLen++;
                           } else break;
                         }
@@ -6471,8 +6556,9 @@ Key things to verify after rebuild:
                       const shiftEndTime = slotAddMins(shiftEndSlot, timeInterval);
                       const shiftHrsVal = (shiftLen * timeInterval) / 60;
 
+                      const elsewhere = sh ? null : otherSiteName(k);
                       const availStatus = availability[`${s.id}|${dk}`]?.status;
-                      const unavailOverlay = availStatus === 'unavailable'
+                      const unavailOverlay = elsewhere ? OTHER_SITE_HATCH : availStatus === 'unavailable'
                         ? 'repeating-linear-gradient(135deg, rgba(239,68,68,0.18) 0px, rgba(239,68,68,0.18) 2px, transparent 2px, transparent 7px)'
                         : availStatus === 'preferred'
                         ? 'linear-gradient(rgba(34,197,94,0.08), rgba(34,197,94,0.08))'
@@ -6480,6 +6566,7 @@ Key things to verify after rebuild:
 
                       return (
                         <td key={slot}
+                          title={elsewhere ? `Already rostered (${elsewhere})` : undefined}
                           style={{
                             height: ROW_H, width: hColW, minWidth: hColW, position: 'relative',
                             backgroundColor: sh ? sh.roleColor : undefined,
@@ -6532,7 +6619,7 @@ Key things to verify after rebuild:
                   <div style={{ fontSize: 9, color: '#D1D5DB' }}>{orderedStaff.length} staff</div>
                 </td>
                 {timeSlots.map((slot) => {
-                  const count = orderedStaff.filter(s => !!schedule[getScheduleKey(dk, s.id, slot)]).length;
+                  const count = orderedStaff.filter(s => !!viewSchedule[getScheduleKey(dk, s.id, slot)]).length;
                   const minStaff = businessSettings.minStaffCoverage || 2;
                   const maxPossible = Math.max(orderedStaff.length, 1);
                   const barPct = Math.min((count / maxPossible) * 100, 100);
@@ -6784,6 +6871,26 @@ Key things to verify after rebuild:
                           <option key={l.id} value={l.id}>{l.name}</option>
                         ))}
                       </select>
+                      {selectedLocationId && (() => {
+                        const shown = new Set(activeStaff.map(s => s.id));
+                        const others = staff.filter(s => s.active !== false && !shown.has(s.id));
+                        if (others.length === 0) return null;
+                        return (
+                          <select
+                            value=""
+                            onChange={(e) => { const id = e.target.value; if (id) setVisitingStaffIds(prev => [...prev, id]); }}
+                            className="text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded px-2 py-1 border-none transition-colors cursor-pointer"
+                            title="Add someone from another site to this site's roster"
+                          >
+                            <option value="">+ Staff from another site</option>
+                            {others.map(s => (
+                              <option key={s.id} value={s.id}>
+                                {s.name}{s.locationId ? ` (${locations.find(l => l.id === s.locationId)?.name || 'other site'})` : ' (unassigned)'}
+                              </option>
+                            ))}
+                          </select>
+                        );
+                      })()}
                     </div>
                   </>
                 )}
@@ -7024,6 +7131,11 @@ Key things to verify after rebuild:
                           onDragEnd={handleStaffDragEnd}
                         >
                           <div className="truncate text-gray-600 font-semibold">{s.name.split(' ')[0]}</div>
+                          {selectedLocationId && s.locationId !== selectedLocationId && (
+                            <div className="truncate text-gray-400 font-normal" style={{ fontSize: 9 }} title="Home site">
+                              {locations.find(l => l.id === s.locationId)?.name || 'Unassigned'}
+                            </div>
+                          )}
                         </th>
                       ))}
                     </React.Fragment>
@@ -7056,12 +7168,13 @@ Key things to verify after rebuild:
                         <React.Fragment key={`${t}-${dk}`}>
                           {orderedStaff.map((s, si) => {
                             const k = getScheduleKey(dk, s.id, t);
-                            const sh = schedule[k];
+                            const sh = viewSchedule[k];
                             const altBg = isToday
                               ? (si % 2 === 0 ? 'rgba(249,115,22,0.04)' : 'rgba(249,115,22,0.02)')
                               : (si % 2 === 1 ? 'rgba(248,250,252,0.8)' : 'transparent');
+                            const elsewhere = sh ? null : otherSiteName(k);
                             const wkAvailStatus = availability[`${s.id}|${dk}`]?.status;
-                            const wkOverlay = wkAvailStatus === 'unavailable'
+                            const wkOverlay = elsewhere ? OTHER_SITE_HATCH : wkAvailStatus === 'unavailable'
                               ? 'repeating-linear-gradient(135deg, rgba(239,68,68,0.18) 0px, rgba(239,68,68,0.18) 2px, transparent 2px, transparent 7px)'
                               : wkAvailStatus === 'preferred'
                               ? 'linear-gradient(rgba(34,197,94,0.08), rgba(34,197,94,0.08))'
@@ -7073,6 +7186,7 @@ Key things to verify after rebuild:
                                 onMouseDown={(e) => handleMouseDown(e, dk, s.id, t, rowIdx)}
                                 onMouseEnter={() => handleMouseEnter(dk, s.id, t, rowIdx)}
                                 onContextMenu={(e) => handleRightClick(e, dk, s.id, t)}
+                                title={elsewhere ? `Already rostered (${elsewhere})` : undefined}
                                 style={{ backgroundColor: sh ? sh.roleColor : altBg, backgroundImage: wkOverlay, height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
                               >
                                 {sh && <div className="relative flex items-center justify-center text-white font-semibold h-full" style={{ fontSize: zoomLevel === 1 ? '8px' : zoomLevel === 2 ? '10px' : '12px' }}>{sh.roleCode}</div>}
