@@ -71,6 +71,7 @@ export const Auth = ({ onAuthenticated }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isForgot, setIsForgot] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
@@ -95,7 +96,15 @@ export const Auth = ({ onAuthenticated }) => {
     setMessage(null);
 
     try {
-      if (isSignUp) {
+      if (isForgot) {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}${RESET_PASSWORD_PATH}`,
+        });
+        if (error) throw error;
+        // Same message whether or not the address has an account, so the
+        // form can't be used to probe which emails are registered.
+        setMessage('If that email has an R-Shift account, a reset link is on its way. Check your inbox.');
+      } else if (isSignUp) {
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -156,8 +165,8 @@ export const Auth = ({ onAuthenticated }) => {
 
           <div className="bg-white rounded-2xl shadow-modal p-8">
             <div className="hidden lg:block mb-6">
-              <h2 className="text-xl font-bold text-gray-900">{isSignUp ? 'Create your account' : 'Welcome back'}</h2>
-              <p className="text-sm text-gray-500 mt-1">{isSignUp ? 'Set up sign-in for R-Shift.' : 'Sign in to R-Shift to continue.'}</p>
+              <h2 className="text-xl font-bold text-gray-900">{isForgot ? 'Reset your password' : isSignUp ? 'Create your account' : 'Welcome back'}</h2>
+              <p className="text-sm text-gray-500 mt-1">{isForgot ? "Enter your email and we'll send you a reset link." : isSignUp ? 'Set up sign-in for R-Shift.' : 'Sign in to R-Shift to continue.'}</p>
             </div>
 
             {error && (
@@ -187,38 +196,62 @@ export const Auth = ({ onAuthenticated }) => {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Password
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={6}
-                  className="input-base"
-                  placeholder="Enter password"
-                />
-              </div>
+              {!isForgot && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Password
+                    </label>
+                    {!isSignUp && (
+                      <button
+                        type="button"
+                        onClick={() => { setIsForgot(true); setError(null); setMessage(null); }}
+                        className="text-xs font-medium"
+                        style={{ color: 'var(--primary)' }}
+                      >
+                        Forgot password?
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    className="input-base"
+                    placeholder="Enter password"
+                  />
+                </div>
+              )}
 
               <button
                 type="submit"
                 disabled={loading}
                 className="btn-primary w-full py-2.5"
               >
-                {loading ? 'Loading...' : isSignUp ? 'Sign Up' : 'Sign In'}
+                {loading ? 'Loading...' : isForgot ? 'Send reset link' : isSignUp ? 'Sign Up' : 'Sign In'}
               </button>
             </form>
 
             <div className="mt-5 text-center">
-              <button
-                onClick={() => setIsSignUp(!isSignUp)}
-                className="text-sm font-medium"
-                style={{ color: 'var(--primary)' }}
-              >
-                {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
-              </button>
+              {isForgot ? (
+                <button
+                  onClick={() => { setIsForgot(false); setError(null); setMessage(null); }}
+                  className="text-sm font-medium"
+                  style={{ color: 'var(--primary)' }}
+                >
+                  Back to sign in
+                </button>
+              ) : (
+                <button
+                  onClick={() => setIsSignUp(!isSignUp)}
+                  className="text-sm font-medium"
+                  style={{ color: 'var(--primary)' }}
+                >
+                  {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+                </button>
+              )}
             </div>
 
             <div className="mt-6 pt-5 border-t border-gray-100">
@@ -228,6 +261,107 @@ export const Auth = ({ onAuthenticated }) => {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+};
+
+// Where the emailed reset link lands. Supabase signs the user in from the
+// link's token (a recovery session) and App.jsx routes this path to
+// ResetPassword instead of the app, so they set a new password first.
+// The full URL must be in Supabase Auth's allowed Redirect URLs, or the
+// link falls back to the project's Site URL.
+export const RESET_PASSWORD_PATH = '/reset-password';
+
+// Read before supabase-js consumes the URL hash: an expired or already-used
+// link comes back as #error=...&error_description=... with no session.
+const initialHashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+const resetLinkError = initialHashParams.get('error_description');
+
+export const ResetPassword = () => {
+  const { user, loading } = useAuth();
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', 'blue');
+  }, []);
+
+  const goToApp = () => window.location.replace('/');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
+    if (password !== confirm) { setError("Passwords don't match."); return; }
+    setSaving(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      setDone(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  let body;
+  if (loading) {
+    body = <p className="text-sm text-gray-500">Checking your reset link...</p>;
+  } else if (!user) {
+    body = (
+      <>
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          {resetLinkError || 'This reset link is invalid or has expired.'}
+        </div>
+        <button onClick={goToApp} className="btn-primary w-full py-2.5">Request a new link</button>
+      </>
+    );
+  } else if (done) {
+    body = (
+      <>
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+          Password updated. You're signed in.
+        </div>
+        <button onClick={goToApp} className="btn-primary w-full py-2.5">Continue to R-Shift</button>
+      </>
+    );
+  } else {
+    body = (
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <p className="text-sm text-gray-500">Setting a new password for <span className="font-medium text-gray-700">{user.email}</span>.</p>
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>
+        )}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">New password</label>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} autoComplete="new-password" className="input-base" placeholder="At least 6 characters" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirm new password</label>
+          <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required minLength={6} autoComplete="new-password" className="input-base" placeholder="Type it again" />
+        </div>
+        <button type="submit" disabled={saving} className="btn-primary w-full py-2.5">
+          {saving ? 'Saving...' : 'Set new password'}
+        </button>
+      </form>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6" style={{ background: 'var(--app-bg, #F5F5F5)' }}>
+      <div className="w-full max-w-sm animate-fade-in">
+        <div className="text-center mb-8">
+          <div className="w-14 h-14 rounded-2xl overflow-hidden shadow-elevated mx-auto mb-4">
+            <img src={LOGO_URL} alt="R-Shift" className="w-full h-full object-cover" />
+          </div>
+          <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Reset your password</h1>
+        </div>
+        <div className="bg-white rounded-2xl shadow-modal p-8">{body}</div>
       </div>
     </div>
   );
