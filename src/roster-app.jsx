@@ -139,6 +139,7 @@ const RosterApp = () => {
   const containerRef = useRef(null);
   const timeSlotsRef = useRef([]);
   const [showStaffModal, setShowStaffModal] = useState(false);
+  const [staffForm, setStaffForm] = useState(null);
   const [editingStaff, setEditingStaff] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [zoomLevel] = useState(2);
@@ -315,6 +316,23 @@ const RosterApp = () => {
     customPublicHolidays: [], // ['YYYY-MM-DD', ...]
     staffSalaries: {}         // { [staffId]: annualSalary }
   });
+
+  // Seed the Add/Edit Staff form each time the modal opens.
+  useEffect(() => {
+    if (!showStaffModal) { setStaffForm(null); return; }
+    const s = editingStaff;
+    setStaffForm({
+      name: s?.name || '',
+      email: s?.email || '',
+      hourlyRate: s?.hourlyRate ?? '',
+      weekendRate: s?.weekendRate ?? '',
+      employmentType: s?.employmentType || 'FT',
+      locationId: s?.locationId || '',
+      annualSalary: s ? (extraConfig.staffSalaries?.[s.id] || '') : '',
+    });
+  // Only on open / switching who is edited -- not when extraConfig changes mid-edit
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showStaffModal, editingStaff]);
 
     const [saving, setSaving] = useState(false);
 
@@ -1327,22 +1345,14 @@ const RosterApp = () => {
     };
   };
 
+  // Called as a plain function (not <StaffModal />): as a component defined
+  // inside RosterApp it got a new identity on every parent render -- e.g.
+  // the once-a-minute nowTime tick -- so React remounted it and silently
+  // threw away whatever had been edited. Its form state lives up here.
   const StaffModal = () => {
-    const existingSalary = editingStaff ? (extraConfig.staffSalaries?.[editingStaff.id] || '') : '';
-    const [formData, setFormData] = useState(() => {
-      if (editingStaff) {
-        return {
-          name: editingStaff.name || '',
-          email: editingStaff.email || '',
-          hourlyRate: editingStaff.hourlyRate || '',
-          weekendRate: editingStaff.weekendRate || '',
-          employmentType: editingStaff.employmentType || 'FT',
-          locationId: editingStaff.locationId || '',
-          annualSalary: existingSalary
-        };
-      }
-      return { name: '', email: '', hourlyRate: '', weekendRate: '', employmentType: 'FT', locationId: '', annualSalary: '' };
-    });
+    const formData = staffForm;
+    const setFormData = setStaffForm;
+    if (!formData) return null;
 
     // When annual salary changes for FT, derive hourly rate
     const handleSalaryChange = (val) => {
@@ -1355,7 +1365,11 @@ const RosterApp = () => {
     };
 
     const handleSave = async () => {
-      if (!formData.name || formData.hourlyRate === '' || formData.hourlyRate === null) return;
+      if (!formData.name.trim()) { toast.error('Enter a name'); return; }
+      if (formData.hourlyRate === '' || formData.hourlyRate === null || isNaN(parseFloat(formData.hourlyRate))) {
+        toast.error('Enter a weekday hourly rate (or an annual salary for full-time staff)');
+        return;
+      }
 
       const hourlyRate = parseFloat(formData.hourlyRate);
       const weekendRate = formData.weekendRate && formData.weekendRate !== ''
@@ -1375,6 +1389,7 @@ const RosterApp = () => {
         if (editingStaff) {
           const updated = await db.updateStaff(editingStaff.id, finalData);
           setStaff(staff.map(s => s.id === editingStaff.id ? {
+            ...s,
             id: updated.id,
             name: updated.name,
             email: updated.email || '',
@@ -7179,7 +7194,7 @@ Key things to verify after rebuild:
       </div>
 
       {showSwapModal && <SwapModal />}
-      {showStaffModal && <StaffModal key={editingStaff ? editingStaff.id : 'new'} />}
+      {showStaffModal && StaffModal()}
       {showTimeSettings && <TimeSettingsModal />}
       {showSettingsModal && <BusinessSettingsModal />}
       {showQuickFillModal && <QuickFillModal />}
