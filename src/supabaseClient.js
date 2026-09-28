@@ -208,7 +208,8 @@ export const db = {
       scheduleObj[key] = {
         roleId: item.role_id,
         roleCode: item.role_code,
-        roleColor: item.role_color
+        roleColor: item.role_color,
+        locationId: item.location_id || null
       };
     });
 
@@ -226,7 +227,8 @@ export const db = {
         time_slot: timeSlot,
         role_id: value.roleId,
         role_code: value.roleCode,
-        role_color: value.roleColor
+        role_color: value.roleColor,
+        location_id: value.locationId || null
       };
     });
 
@@ -333,7 +335,7 @@ export const db = {
 
     for (const [key, value] of Object.entries(newSchedule)) {
       const prev = previousSchedule[key];
-      if (!prev || prev.roleId !== value.roleId || prev.roleCode !== value.roleCode || prev.roleColor !== value.roleColor) {
+      if (!prev || prev.roleId !== value.roleId || prev.roleCode !== value.roleCode || prev.roleColor !== value.roleColor || (prev.locationId || null) !== (value.locationId || null)) {
         const [dateKey, staffId, timeSlot] = key.split('|');
         toUpsert.push({
           org_id: orgId,
@@ -343,7 +345,8 @@ export const db = {
           time_slot: timeSlot,
           role_id: value.roleId,
           role_code: value.roleCode,
-          role_color: value.roleColor
+          role_color: value.roleColor,
+          location_id: value.locationId || null
         });
       }
     }
