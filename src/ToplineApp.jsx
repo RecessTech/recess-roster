@@ -7,6 +7,7 @@ import {
 import toast from 'react-hot-toast';
 import {
   fetchTopline, fetchItemMovers, fetchSubcategoryInsights, fetchHourlyStaffing, fetchLabourEfficiency, fetchMenuEngineering,
+  fetchPackagingAccrual,
   weeklyMoversDigest, valueAt, wowDeltaAt, chartRowsForWindow, findMetric, weekAxis, shiftWeeks,
   fmtWeekLabel, fmtWeekRange, fmtMoney, fmtNumber, fmtPct, formatMetricValue, isoWeekParts, deltaGood,
 } from './toplineData';
@@ -1673,7 +1674,7 @@ const PNL_TREND_LINES = [
 const PNL_TREND_LINE_COLORS = [CATEGORICAL[0], CATEGORICAL[1], CATEGORICAL[3], CATEGORICAL[4]];
 const PNL_TREND_PROFIT_METRIC = 'Operating Profit $';
 
-function PnlTab({ topline, period, periodTouched }) {
+function PnlTab({ topline, period, periodTouched, packagingAccrual, packagingAccrualLoading }) {
   const { asOfDate } = topline;
   const budgetGroup = topline.budget;
   const stats = PNL_SUMMARY_METRICS.map(name => findMetric(budgetGroup, '', name)).filter(Boolean);
@@ -1726,6 +1727,27 @@ function PnlTab({ topline, period, periodTouched }) {
     return { metric: m.metric, value: formatMetricValue(cur, m.kind), delta, good };
   });
 
+  // "Actual" here means computed from real sales × each item's real
+  // packaging cost (see packagingAccrual.js) -- not the Budget sheet's
+  // single manual Packaging estimate, which stays alongside it for
+  // comparison rather than being replaced.
+  const packagingBudgetM = findMetric(budgetGroup, 'PC1', 'Packaging');
+  const packagingActualSeries = packagingAccrual?.series || {};
+  const packagingTrendSeries = [
+    packagingBudgetM && { name: 'Packaging (Budget)', series: packagingBudgetM.series },
+    { name: 'Packaging (Actual)', series: packagingActualSeries },
+  ].filter(Boolean);
+  const packagingRows = chartRowsForWindow(packagingTrendSeries, dates);
+  const packagingBudgetCur = periodTouched
+    ? sumOverWindow(packagingBudgetM?.series, dates)
+    : valueAt(packagingBudgetM?.series || {}, asOfDate);
+  const packagingActualCur = periodTouched
+    ? sumOverWindow(packagingActualSeries, dates)
+    : valueAt(packagingActualSeries, asOfDate);
+  const packagingVariance = (packagingBudgetCur != null && packagingActualCur != null && packagingBudgetCur !== 0)
+    ? (packagingActualCur - packagingBudgetCur) / Math.abs(packagingBudgetCur)
+    : null;
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1740,6 +1762,17 @@ function PnlTab({ topline, period, periodTouched }) {
         <KpiSection title="Summary & Ratios" groups={[summaryGroup]} defaultOpenCount={1} defaultView="table" asOfDate={asOfDate} period={period} />
       )}
       <KpiSection title="P&L Line Items" groups={categoryGroups} defaultOpenCount={categoryGroups.length} defaultView="table" asOfDate={asOfDate} period={period} />
+      <div className="grid grid-cols-3 gap-3">
+        <StatTile label="Packaging (Budget)" value={formatMetricValue(packagingBudgetCur, 'money')} caption={caption} />
+        <StatTile label="Packaging (Actual)" value={formatMetricValue(packagingActualCur, 'money')} caption={caption} />
+        <StatTile label="Variance (Actual vs Budget)" value={formatMetricValue(packagingVariance, 'percent')} delta={packagingVariance} good={deltaGood(packagingVariance, 'down')} caption={caption} />
+      </div>
+      <ChartCard
+        title="Packaging: Budget vs Actual"
+        subtitle={packagingAccrualLoading ? 'Computing actual packaging cost from sales…' : `Actual = each week's real sales × that item's real packaging cost (via R-Recipe), all channels. Budget = the manual Packaging line from the Budget sheet.`}
+      >
+        <TrendChart rows={packagingRows} dataKeys={packagingTrendSeries.map(s => s.name)} colors={[CATEGORICAL[0], CATEGORICAL[2]]} money />
+      </ChartCard>
     </div>
   );
 }
@@ -1816,6 +1849,8 @@ export default function ToplineApp({ org }) {
   const [labourEfficiencyLoading, setLabourEfficiencyLoading] = useState(false);
   const [menuEngineering, setMenuEngineering] = useState(null);
   const [menuEngineeringLoading, setMenuEngineeringLoading] = useState(false);
+  const [packagingAccrual, setPackagingAccrual] = useState(null);
+  const [packagingAccrualLoading, setPackagingAccrualLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!orgId) return;
@@ -1857,6 +1892,20 @@ export default function ToplineApp({ org }) {
       .then(res => { if (!cancelled) setSubcatInsights(res); })
       .catch(err => { if (!cancelled) toast.error('Failed to load subcategory insights: ' + (err.message || 'unknown error')); })
       .finally(() => { if (!cancelled) setSubcatLoading(false); });
+    return () => { cancelled = true; };
+  }, [orgId, topline?.asOfDate, period]);
+
+  // Real packaging cost (sales × per-item packaging cost, see
+  // packagingAccrual.js) for the P&L's currently selected window, to sit
+  // next to the Budget sheet's single manual Packaging estimate.
+  useEffect(() => {
+    if (!orgId || !topline?.asOfDate) return;
+    let cancelled = false;
+    setPackagingAccrualLoading(true);
+    fetchPackagingAccrual(orgId, topline.asOfDate, period)
+      .then(res => { if (!cancelled) setPackagingAccrual(res); })
+      .catch(err => { if (!cancelled) toast.error('Failed to load packaging accrual: ' + (err.message || 'unknown error')); })
+      .finally(() => { if (!cancelled) setPackagingAccrualLoading(false); });
     return () => { cancelled = true; };
   }, [orgId, topline?.asOfDate, period]);
 
@@ -1942,7 +1991,7 @@ export default function ToplineApp({ org }) {
         {activeTab === 'revenue' && <RevenueTab topline={topline} period={period} itemMovers={itemMovers} itemMoversLoading={itemMoversLoading} subcatInsights={subcatInsights} subcatLoading={subcatLoading} menuEngineering={menuEngineering} menuEngineeringLoading={menuEngineeringLoading} />}
         {activeTab === 'costs' && <CostsTab topline={topline} period={period} periodTouched={periodTouched} labourEfficiency={labourEfficiency} labourEfficiencyLoading={labourEfficiencyLoading} hourlyStaffing={hourlyStaffing} hourlyStaffingLoading={hourlyStaffingLoading} />}
         {activeTab === 'customer' && <CustomerTab topline={topline} period={period} />}
-        {activeTab === 'pnl' && <PnlTab topline={topline} period={period} periodTouched={periodTouched} />}
+        {activeTab === 'pnl' && <PnlTab topline={topline} period={period} periodTouched={periodTouched} packagingAccrual={packagingAccrual} packagingAccrualLoading={packagingAccrualLoading} />}
       </div>
     </div>
   );

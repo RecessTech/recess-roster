@@ -4,6 +4,7 @@
 // section for why), so all the date-alignment / latest-value / WoW-delta work
 // that would otherwise live in the UI happens once, here.
 import { db } from './supabaseClient';
+import { weeklyPackagingAccrual } from './packagingAccrual';
 
 // A handful of sections read better pinned to the top of their tab (mirroring
 // the source sheet's own layout) -- everything else falls back to alphabetical.
@@ -241,6 +242,34 @@ export async function fetchItemMovers(orgId, asOfDate) {
     currentLabel: `${fmt(curStart)} – ${fmt(curEnd)}`,
     priorLabel: `${fmt(priorStart)} – ${fmt(priorEnd)}`,
   };
+}
+
+// A real, itemised "Packaging" figure for the P&L's period window --
+// weekly sales × each item's actual packaging cost (see packagingAccrual.js)
+// -- to sit next to the Budget sheet's single manual "Packaging" number.
+// Every channel counts (POS, UberEats, DoorDash, ClassPass/TGTG): It's
+// Recess supplies its own packaging on all of them, not just in-store.
+export async function fetchPackagingAccrual(orgId, asOfDate, period) {
+  if (!orgId || !asOfDate) return null;
+  const weeks = weekAxis(asOfDate, period);
+  const startDate = weeks[0];
+  const end = new Date(asOfDate + 'T12:00:00Z');
+  end.setUTCDate(end.getUTCDate() + 6); // Sunday of the as-of week
+  const endDate = end.toISOString().slice(0, 10);
+
+  const [salesRows, productionItems, categoryPackagingLines, packagingExclusions, menuItemLines, stockItems] = await Promise.all([
+    db.getItemSalesByRange(orgId, startDate, endDate),
+    db.getProductionItems(orgId),
+    db.getCategoryPackagingLines(orgId),
+    db.getMenuItemPackagingExclusions(orgId),
+    db.getRecipeMenuItemLines(orgId),
+    db.getStockItems(orgId),
+  ]);
+
+  const series = weeklyPackagingAccrual(salesRows, {
+    productionItems, categoryPackagingLines, packagingExclusions, menuItemLines, stockItems,
+  });
+  return { series };
 }
 
 // Raw sales_history.channel values -> the same channel labels the rest of
