@@ -6237,7 +6237,11 @@ Key things to verify after rebuild:
             shifts: buildShifts(sched),
             totalHours: `${sched.reduce((t,d)=>t+d.shifts.reduce((dt,s)=>dt+shiftHours(s),0),0).toFixed(1)}h`,
             businessName: businessSettings.businessName || 'Management',
-            fromAddress: businessSettings.senderDomain ? `roster@${businessSettings.senderDomain}` : null,
+            // itsrecess.com.au is verified in Resend (see order-status email) --
+            // there's no per-org sender-domain setting, so this is hardcoded
+            // rather than left to fall back to Resend's sandbox address, which
+            // can only deliver to the Resend account owner's own inbox.
+            fromAddress: 'R-Shift <roster@itsrecess.com.au>',
           },
         });
         if (error) throw error;

@@ -22,7 +22,7 @@ interface Payload {
   shifts: ShiftRow[];
   totalHours: string;
   businessName: string;
-  fromAddress: string; // e.g. "roster@recesstech.com.au"
+  fromAddress: string; // e.g. "R-Shift <roster@itsrecess.com.au>"
 }
 
 function buildHtml(p: Payload): string {
@@ -96,7 +96,7 @@ function buildHtml(p: Payload): string {
         <!-- Footer -->
         <tr>
           <td style="padding:20px 0 8px;text-align:center;font-size:11px;color:#94A3B8">
-            Sent by ${p.businessName} via Recess Roster
+            Sent by ${p.businessName} via R-Shift
           </td>
         </tr>
 
@@ -131,7 +131,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: payload.fromAddress || 'Recess Roster <onboarding@resend.dev>',
+        from: payload.fromAddress || 'R-Shift <roster@itsrecess.com.au>',
         to: [payload.to],
         subject: `Your roster – ${payload.weekRange}`,
         html,
