@@ -997,6 +997,19 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
 
 const NEEDS_ORDER_STATUSES = ['no_stock', 'low_stock', 'order_moq'];
 
+// Local calendar date (not UTC) -- toISOString() shifts a date backward for
+// anyone in Sydney checking stock in the early morning, since UTC is still
+// on "yesterday" until mid-morning local time.
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function todayStr() { return localDateStr(new Date()); }
+function tomorrowStr() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return localDateStr(d);
+}
+
 function slugify(str) {
   return (str || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
@@ -1071,7 +1084,7 @@ function OrderingViewSwitcher({ value, onChange }) {
   );
 }
 
-function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateOrderQty, onUpdateOrdered, mySuppliers, onManageSuppliers, supplierMetadata, onManageSupplierMetadata }) {
+function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLocation, onUpdateOrderQty, onUpdateOrdered, onUpdateDeferredUntil, mySuppliers, onManageSuppliers, supplierMetadata, onManageSupplierMetadata }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
   const [groupBy, setGroupBy] = useState('supplier');
   const [categoryFilters, setCategoryFilters] = useState([]);
@@ -1197,10 +1210,11 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
               <table className="w-full text-sm table-fixed">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/80">
-                    <th className="w-2/5 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
-                    <th className="w-[28%] px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="w-[16%] px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Order Qty</th>
-                    <th className="w-[16%] px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Ordered</th>
+                    <th className="w-[34%] px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
+                    <th className="w-[22%] px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="w-[14%] px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Order Qty</th>
+                    <th className="w-[14%] px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Ordered</th>
+                    <th className="w-[16%] px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Defer</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1211,7 +1225,7 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
                     <React.Fragment key={row.id}>
                       {groupBy === 'supplier' && isNewCategory && (
                         <tr>
-                          <td colSpan={4} className={`px-4 ${idx === 0 ? '' : 'pt-2.5'} pb-1`}>
+                          <td colSpan={5} className={`px-4 ${idx === 0 ? '' : 'pt-2.5'} pb-1`}>
                             <div className="flex items-center gap-1.5">
                               <Tag size={10} className="text-gray-400 flex-shrink-0" />
                               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{category}</span>
@@ -1248,6 +1262,27 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
                             style={{ color: 'var(--primary)' }}
                             title={row.ordered_at ? `Ordered ${new Date(row.ordered_at).toLocaleDateString('en-AU')}` : 'Confirm ordered for next delivery'}
                           />
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {(() => {
+                            const isDeferred = row.deferred_until && row.deferred_until >= todayStr();
+                            return (
+                              <button
+                                onClick={() => onUpdateDeferredUntil(row.id, isDeferred ? null : tomorrowStr())}
+                                className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                                  isDeferred
+                                    ? 'bg-amber-100 text-amber-700 border-amber-200'
+                                    : 'text-gray-400 border-transparent hover:text-gray-600 hover:bg-gray-100'
+                                }`}
+                                title={isDeferred
+                                  ? `Deferred until ${row.deferred_until} — off the Order Status tab until then. Click to un-defer.`
+                                  : "Defer to tomorrow — keeps this off the Order Status tab (and the 8pm email) without ordering it this cycle."}
+                              >
+                                <Clock size={12} />
+                                {isDeferred ? 'Deferred' : 'Defer'}
+                              </button>
+                            );
+                          })()}
                         </td>
                       </tr>
                     </React.Fragment>
@@ -1556,7 +1591,9 @@ function OrderStatusRow({ g }) {
     return (
       <div className="flex items-center justify-between px-4 py-2.5">
         <span className="text-sm text-gray-400">{g.supplier}</span>
-        <span className="text-xs text-gray-300">Nothing to order</span>
+        <span className="text-xs text-gray-300">
+          {g.deferredCount > 0 ? `${g.deferredCount} item${g.deferredCount !== 1 ? 's' : ''} deferred to tomorrow` : 'Nothing to order'}
+        </span>
       </div>
     );
   }
@@ -1611,6 +1648,9 @@ function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectL
   }, [orderConfirmations]);
 
   const supplierGroups = useMemo(() => {
+    const today = todayStr();
+    const isDeferred = r => r.deferred_until && r.deferred_until >= today;
+
     const rows = sites
       .filter(s => s.location_id === selectedLocationId)
       .map(s => ({ ...s, item: itemById.get(s.item_id) }))
@@ -1624,7 +1664,13 @@ function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectL
 
     return Object.entries(groups)
       .map(([supplier, supplierRows]) => {
-        const needsOrderRows = supplierRows.filter(r => NEEDS_ORDER_STATUSES.includes(r.current_status));
+        const stockLowRows = supplierRows.filter(r => NEEDS_ORDER_STATUSES.includes(r.current_status));
+        // Deferred rows are genuinely low but held out of this cycle's order
+        // on purpose -- excluded from the urgency calc, not just hidden, so
+        // a supplier with only deferred items reads as "nothing to order"
+        // rather than staying red.
+        const needsOrderRows = stockLowRows.filter(r => !isDeferred(r));
+        const deferredCount = stockLowRows.length - needsOrderRows.length;
         const orderedAts = needsOrderRows.filter(r => r.ordered && r.ordered_at).map(r => new Date(r.ordered_at).getTime());
         const latestOrderedAt = orderedAts.length > 0 ? Math.max(...orderedAts) : null;
         const latestConfirmationAt = latestConfirmationBySupplier[supplier] ?? null;
@@ -1637,6 +1683,7 @@ function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectL
           status: supplierOrderStatus(needsOrderRows, isConfirmed),
           needsOrderCount: needsOrderRows.length,
           orderedCount: needsOrderRows.filter(r => r.ordered).length,
+          deferredCount,
           latestOrderedAt,
           latestConfirmationAt: isConfirmed ? latestConfirmationAt : null,
         };
@@ -3023,6 +3070,17 @@ export default function StockApp({ user, org }) {
     }
   }
 
+  async function handleDeferredUntilUpdate(siteRowId, deferredUntil) {
+    setSites(prev => prev.map(s => s.id === siteRowId ? { ...s, deferred_until: deferredUntil } : s));
+    try {
+      await db.updateSiteItemDeferredUntil(siteRowId, deferredUntil);
+    } catch (err) {
+      toast.error('Failed to update defer status: ' + (err.message || 'unknown error'));
+      console.error(err);
+      loadData();
+    }
+  }
+
   const TABS = [
     { id: 'items',     label: 'Items',     Icon: Package },
     { id: 'stocktake', label: 'Stocktake', Icon: ClipboardList },
@@ -3132,6 +3190,7 @@ export default function StockApp({ user, org }) {
           onSelectLocation={setSelectedLocationId}
           onUpdateOrderQty={handleOrderQtyUpdate}
           onUpdateOrdered={handleOrderedUpdate}
+          onUpdateDeferredUntil={handleDeferredUntilUpdate}
           mySuppliers={mySuppliers}
           onManageSuppliers={() => setShowAssignmentsModal(true)}
           supplierMetadata={supplierMetadata}
