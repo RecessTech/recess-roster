@@ -100,11 +100,11 @@ function computeSupplierStatuses(
   return result.sort((a, b) => a.supplier.localeCompare(b.supplier));
 }
 
-// Brand tokens -- same orange as R-Stock's own [data-theme="stock"] palette
-// in index.css, so the email reads as the same product, not a generic
-// system notification.
-const BRAND = '#E85018';
-const BRAND_DARK = '#C94410';
+// Brand tokens -- R-Shift's own blue colourway ([data-theme="blue"] in
+// index.css / the sign-in page's brand panel gradient), not R-Stock's
+// orange -- this email is sent as R-Shift, the product staff actually know.
+const BRAND = '#3B5BDB';
+const BRAND_DARK = '#2D4EC9';
 const GOOD = '#0f9d4e';
 const BAD = '#d0393b';
 const GOOD_BG = '#EAF7EF';
@@ -179,7 +179,7 @@ function buildEmailHtml(dateLabel: string, totalOutstanding: number, sections: s
 
         <!-- Brand header -->
         <tr>
-          <td style="background:${BRAND};background:linear-gradient(135deg,${BRAND},${BRAND_DARK});border-radius:14px 14px 0 0;padding:22px 24px">
+          <td style="background:${BRAND};background:linear-gradient(160deg,${BRAND},${BRAND_DARK});border-radius:14px 14px 0 0;padding:22px 24px">
             <table width="100%" cellpadding="0" cellspacing="0"><tr>
               <td style="width:40px;vertical-align:middle">
                 <table cellpadding="0" cellspacing="0" width="36" height="36" style="border-radius:10px;overflow:hidden">
