@@ -170,7 +170,7 @@ function buildEmailHtml(dateLabel: string, totalOutstanding: number, sections: s
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>R-Stock Order Status -- ${dateLabel}</title>
+  <title>R-Shift Order Status -- ${dateLabel}</title>
 </head>
 <body style="margin:0;padding:0;background:#F1F5F9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:28px 16px">
@@ -182,12 +182,12 @@ function buildEmailHtml(dateLabel: string, totalOutstanding: number, sections: s
           <td style="background:${BRAND};background:linear-gradient(135deg,${BRAND},${BRAND_DARK});border-radius:14px 14px 0 0;padding:22px 24px">
             <table width="100%" cellpadding="0" cellspacing="0"><tr>
               <td style="width:40px;vertical-align:middle">
-                <table cellpadding="0" cellspacing="0" width="36" height="36" style="background:rgba(255,255,255,0.18);border-radius:10px">
-                  <tr><td align="center" valign="middle" style="font-size:18px;line-height:36px;height:36px">&#128230;</td></tr>
+                <table cellpadding="0" cellspacing="0" width="36" height="36" style="border-radius:10px;overflow:hidden">
+                  <tr><td style="width:36px;height:36px"><img src="https://i.postimg.cc/76YSLjdw/rshift-on-cream.jpg" alt="R-Shift" width="36" height="36" style="display:block;width:36px;height:36px;object-fit:cover;border-radius:10px"></td></tr>
                 </table>
               </td>
               <td style="vertical-align:middle;padding-left:4px">
-                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.75)">R-Stock &middot; Order Status</div>
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.75)">R-Shift &middot; Order Status</div>
                 <div style="font-size:19px;font-weight:800;color:#ffffff;margin-top:1px">${dateLabel}, 8:00pm</div>
               </td>
             </tr></table>
@@ -222,7 +222,7 @@ function buildEmailHtml(dateLabel: string, totalOutstanding: number, sections: s
         <tr>
           <td style="padding:18px 4px 0;text-align:center">
             <span style="display:inline-block;width:6px;height:6px;border-radius:999px;background:${BRAND};margin-right:6px;vertical-align:middle"></span>
-            <span style="font-size:11px;color:#94A3B8;vertical-align:middle">R-Stock, part of Recess Roster</span>
+            <span style="font-size:11px;color:#94A3B8;vertical-align:middle">R-Shift</span>
           </td>
         </tr>
 
@@ -241,7 +241,7 @@ async function sendEmail(subject: string, html: string) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'R-Stock <order-status@itsrecess.com.au>', // requires itsrecess.com.au verified at resend.com/domains
+      from: 'R-Shift <order-status@itsrecess.com.au>', // requires itsrecess.com.au verified at resend.com/domains
       to: [ORDER_STATUS_RECIPIENT],
       subject,
       html,
