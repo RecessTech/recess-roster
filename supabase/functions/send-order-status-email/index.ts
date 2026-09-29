@@ -5,8 +5,13 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // hello@itsrecess.com.au: either an all-clear ("every order that needed
 // placing today has been") or a flag naming exactly which suppliers still
 // need one. Triggered by pg_cron + pg_net -- see
-// supabase_stock_order_status_email_migration.sql, which self-gates to the
+// supabase_stock_order_status_email_schedule.sql, which self-gates to the
 // 20:00 Sydney hour so this only ever fires once a day regardless of DST.
+//
+// Requires a verified sending domain in Resend (resend.com/domains) --
+// until itsrecess.com.au (or another domain) is verified there, the
+// `from` address below is rejected and no email goes out. The cron
+// schedule and this function are otherwise fully live.
 //
 // Mirrors the same per-supplier status logic as the Order Status tab
 // (StockApp.jsx's OrderStatusTab): a supplier is outstanding if it has any
@@ -95,81 +100,132 @@ function computeSupplierStatuses(
   return result.sort((a, b) => a.supplier.localeCompare(b.supplier));
 }
 
+// Brand tokens -- same orange as R-Stock's own [data-theme="stock"] palette
+// in index.css, so the email reads as the same product, not a generic
+// system notification.
+const BRAND = '#E85018';
+const BRAND_DARK = '#C94410';
+const GOOD = '#0f9d4e';
+const BAD = '#d0393b';
+const GOOD_BG = '#EAF7EF';
+const BAD_BG = '#FDECEC';
+
 function locationSectionHtml(locationName: string, statuses: SupplierStatus[]): string {
   const outstanding = statuses.filter(s => !s.allPlaced);
   const placed = statuses.filter(s => s.allPlaced);
   const allClear = outstanding.length === 0;
 
-  const bannerColor = allClear ? '#0f9d4e' : '#d0393b';
-  const bannerBg = allClear ? '#EAF7EF' : '#FDECEC';
-  const bannerText = statuses.length === 0
-    ? 'Nothing needed ordering today'
-    : allClear
-    ? 'All orders placed'
-    : `${outstanding.length} supplier${outstanding.length !== 1 ? 's' : ''} still need${outstanding.length === 1 ? 's' : ''} ordering`;
+  if (statuses.length === 0) {
+    return `
+    <tr><td style="padding:14px 20px;border-bottom:1px solid #F1F5F9">
+      <table width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td style="font-size:13px;font-weight:700;color:#1E293B;width:1%;white-space:nowrap;padding-right:10px">${locationName}</td>
+        <td style="font-size:13px;color:#94A3B8">Nothing needed ordering today</td>
+      </tr></table>
+    </td></tr>`;
+  }
 
-  const outstandingHtml = outstanding.map(s => `
+  const outstandingRows = outstanding.map(s => `
     <tr>
-      <td style="padding:8px 16px;border-bottom:1px solid #F1F5F9">
+      <td style="padding:9px 20px;border-left:3px solid ${BAD};background:${BAD_BG}">
         <div style="font-size:13px;font-weight:700;color:#1E293B">${s.supplier}</div>
-        <div style="font-size:12px;color:#64748B;margin-top:2px">${s.outstandingItems.join(', ')}</div>
+        <div style="font-size:12px;color:#64748B;margin-top:1px">${s.outstandingItems.join(', ')}</div>
       </td>
     </tr>`).join('');
 
-  const placedHtml = placed.map(s => `
-    <span style="display:inline-block;font-size:12px;color:#64748B;margin:0 10px 4px 0">
-      ${s.supplier}${s.isConfirmed ? ' <span style="color:#0f9d4e">(confirmed)</span>' : ''}
+  const placedChips = placed.map(s => `
+    <span style="display:inline-block;font-size:11px;color:#475569;background:#F8FAFC;border:1px solid #EEF2F6;border-radius:999px;padding:3px 10px;margin:0 6px 6px 0">
+      ${s.supplier}${s.isConfirmed ? ` <span style="color:${GOOD};font-weight:700">&#10003;</span>` : ''}
     </span>`).join('');
 
   return `
-  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;margin-bottom:20px">
-    <tr>
-      <td style="background:${bannerBg};border-radius:10px 10px ${outstanding.length || placed.length ? '0 0' : '10px 10px'};padding:14px 16px">
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:${bannerColor}">${locationName}</div>
-        <div style="font-size:16px;font-weight:700;color:${bannerColor};margin-top:2px">${bannerText}</div>
+  <tr><td style="padding:16px 20px 6px">
+    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:#94A3B8">${locationName}</td>
+      <td align="right" style="font-size:11px;font-weight:700;color:${allClear ? GOOD : BAD}">
+        ${allClear ? 'All placed' : `${outstanding.length} outstanding`}
       </td>
-    </tr>
-    ${outstanding.length > 0 ? `
-    <tr>
-      <td style="background:#ffffff;border:1px solid #F1F5F9;border-top:none">
-        <table width="100%" cellpadding="0" cellspacing="0">${outstandingHtml}</table>
-      </td>
-    </tr>` : ''}
-    ${placed.length > 0 ? `
-    <tr>
-      <td style="background:#ffffff;border:1px solid #F1F5F9;border-top:${outstanding.length ? '1px solid #F1F5F9' : 'none'};border-radius:0 0 10px 10px;padding:12px 16px">
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#94A3B8;margin-bottom:6px">Already placed</div>
-        ${placedHtml}
-      </td>
-    </tr>` : ''}
-  </table>`;
+    </tr></table>
+  </td></tr>
+  ${outstandingRows ? `<tr><td style="padding:0 20px 4px"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0 6px">${outstandingRows}</table></td></tr>` : ''}
+  ${placedChips ? `<tr><td style="padding:2px 20px 4px">${placedChips}</td></tr>` : ''}
+  `;
 }
 
-function buildEmailHtml(dateLabel: string, sections: string[]): string {
+function buildEmailHtml(dateLabel: string, totalOutstanding: number, sections: string[]): string {
+  const allClear = totalOutstanding === 0;
+  const heroColor = allClear ? GOOD : BAD;
+  const heroBg = allClear ? GOOD_BG : BAD_BG;
+  const heroIcon = allClear ? '&#10003;' : '!';
+  const heroHeadline = allClear
+    ? 'All orders placed'
+    : `${totalOutstanding} supplier${totalOutstanding !== 1 ? 's' : ''} still need${totalOutstanding === 1 ? 's' : ''} ordering`;
+  const heroSub = allClear
+    ? 'Every order that needed placing today has been.'
+    : 'Scroll down for exactly which ones, and what.';
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>Order status -- ${dateLabel}</title>
+  <title>R-Stock Order Status -- ${dateLabel}</title>
 </head>
 <body style="margin:0;padding:0;background:#F1F5F9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:32px 16px">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:28px 16px">
     <tr><td align="center">
-      <table width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
+      <table width="540" cellpadding="0" cellspacing="0" style="max-width:540px;width:100%">
+
+        <!-- Brand header -->
         <tr>
-          <td style="padding:0 0 16px">
-            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#94A3B8">Order Status</div>
-            <div style="font-size:20px;font-weight:700;color:#1E293B;margin-top:2px">${dateLabel}, 8:00pm</div>
+          <td style="background:${BRAND};background:linear-gradient(135deg,${BRAND},${BRAND_DARK});border-radius:14px 14px 0 0;padding:22px 24px">
+            <table width="100%" cellpadding="0" cellspacing="0"><tr>
+              <td style="width:40px;vertical-align:middle">
+                <table cellpadding="0" cellspacing="0" width="36" height="36" style="background:rgba(255,255,255,0.18);border-radius:10px">
+                  <tr><td align="center" valign="middle" style="font-size:18px;line-height:36px;height:36px">&#128230;</td></tr>
+                </table>
+              </td>
+              <td style="vertical-align:middle;padding-left:4px">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.75)">R-Stock &middot; Order Status</div>
+                <div style="font-size:19px;font-weight:800;color:#ffffff;margin-top:1px">${dateLabel}, 8:00pm</div>
+              </td>
+            </tr></table>
           </td>
         </tr>
-        <tr><td>${sections.join('')}</td></tr>
+
+        <!-- Hero verdict -->
         <tr>
-          <td style="padding:8px 0 0;text-align:center;font-size:11px;color:#94A3B8">
-            Sent by R-Stock via Recess Roster
+          <td style="background:${heroBg};padding:20px 24px;border-left:1px solid #F1F5F9;border-right:1px solid #F1F5F9">
+            <table cellpadding="0" cellspacing="0"><tr>
+              <td style="width:34px;vertical-align:top">
+                <table cellpadding="0" cellspacing="0" width="28" height="28" style="background:${heroColor};border-radius:999px">
+                  <tr><td align="center" valign="middle" style="font-size:15px;font-weight:800;color:#ffffff;line-height:28px;height:28px">${heroIcon}</td></tr>
+                </table>
+              </td>
+              <td style="vertical-align:top;padding-left:4px">
+                <div style="font-size:18px;font-weight:800;color:${heroColor}">${heroHeadline}</div>
+                <div style="font-size:12px;color:#64748B;margin-top:2px">${heroSub}</div>
+              </td>
+            </tr></table>
           </td>
         </tr>
+
+        <!-- Per-location detail -->
+        <tr>
+          <td style="background:#ffffff;border:1px solid #F1F5F9;border-top:none;border-radius:0 0 14px 14px;padding-bottom:10px">
+            <table width="100%" cellpadding="0" cellspacing="0">${sections.join('')}</table>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding:18px 4px 0;text-align:center">
+            <span style="display:inline-block;width:6px;height:6px;border-radius:999px;background:${BRAND};margin-right:6px;vertical-align:middle"></span>
+            <span style="font-size:11px;color:#94A3B8;vertical-align:middle">R-Stock, part of Recess Roster</span>
+          </td>
+        </tr>
+
       </table>
     </td></tr>
   </table>
@@ -185,7 +241,7 @@ async function sendEmail(subject: string, html: string) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'R-Stock <order-status@recesstech.com.au>',
+      from: 'R-Stock <order-status@itsrecess.com.au>', // requires itsrecess.com.au verified at resend.com/domains
       to: [ORDER_STATUS_RECIPIENT],
       subject,
       html,
@@ -234,18 +290,18 @@ serve(async (req) => {
       }
 
       const sections: string[] = [];
-      let anyOutstanding = false;
+      let totalOutstanding = 0;
       for (const loc of locations) {
         const locSites = (sites || []).filter((s: any) => s.location_id === loc.id) as SiteRow[];
         const statuses = computeSupplierStatuses(locSites, itemNameById, confirmedAtBySupplier, today);
-        if (statuses.some(s => !s.allPlaced)) anyOutstanding = true;
+        totalOutstanding += statuses.filter(s => !s.allPlaced).length;
         sections.push(locationSectionHtml(loc.name, statuses));
       }
 
-      const subject = anyOutstanding
+      const subject = totalOutstanding > 0
         ? `⚠️ Order status: some orders still need placing -- ${dateLabel}`
         : `✅ All orders placed -- ${dateLabel}`;
-      const html = buildEmailHtml(dateLabel, sections);
+      const html = buildEmailHtml(dateLabel, totalOutstanding, sections);
       await sendEmail(subject, html);
       emailsSent++;
     }
