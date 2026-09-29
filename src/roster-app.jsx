@@ -164,6 +164,10 @@ const RosterApp = () => {
   const [exportSentId, setExportSentId] = useState(null);
   const [exportSendError, setExportSendError] = useState(null);
   const [exportSendingAll, setExportSendingAll] = useState(false);
+  // { [staffId]: { status: 'sent'|'error', detail? } } -- per-recipient outcome,
+  // so "Send to all" leaves a visible record of who actually got it rather than
+  // a single toast that can't represent a batch of individually-successful/failed sends.
+  const [exportSendResults, setExportSendResults] = useState({});
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [shareRegenerating, setShareRegenerating] = useState(false);
@@ -6144,10 +6148,13 @@ Key things to verify after rebuild:
     const setSendError = setExportSendError;
     const sendingAll = exportSendingAll;
     const setSendingAll = setExportSendingAll;
+    const sendResults = exportSendResults;
+    const setSendResults = setExportSendResults;
 
     const selectedStaff = staff.find(s => s.id === selectedStaffId) || activeStaff[0] || null;
     const scheduleByDay = selectedStaff ? generateStaffSchedule(selectedStaff) : [];
-    const weekRange = `${dates[0] ? isoWeekLabel(formatDateKey(dates[0])) + ' · ' : ''}${dates[0]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} – ${dates[dates.length - 1]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+    const weekLabel = dates[0] ? isoWeekLabel(formatDateKey(dates[0])) : '';
+    const weekRange = `${weekLabel ? weekLabel + ' · ' : ''}${dates[0]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} – ${dates[dates.length - 1]?.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`;
 
     const shiftHours = (shift) => {
       const [sh, sm] = shift.startTime.split(':').map(Number);
@@ -6234,6 +6241,7 @@ Key things to verify after rebuild:
             to: staffMember.email,
             staffName: staffMember.name,
             weekRange,
+            weekLabel,
             shifts: buildShifts(sched),
             totalHours: `${sched.reduce((t,d)=>t+d.shifts.reduce((dt,s)=>dt+shiftHours(s),0),0).toFixed(1)}h`,
             businessName: businessSettings.businessName || 'Management',
@@ -6248,6 +6256,7 @@ Key things to verify after rebuild:
         if (data?.error) throw new Error(data.error);
         setSentId(staffMember.id);
         setTimeout(() => setSentId(null), 3000);
+        setSendResults(prev => ({ ...prev, [staffMember.id]: { status: 'sent' } }));
       } catch (err) {
         // Try to read the actual HTTP error body for better diagnostics
         let detail = err.message || 'Unknown error';
@@ -6255,6 +6264,7 @@ Key things to verify after rebuild:
           try { const body = await err.context.json(); detail = body.message || body.error || JSON.stringify(body); } catch {}
         }
         setSendError(`Failed to send to ${staffMember.name}: ${detail}`);
+        setSendResults(prev => ({ ...prev, [staffMember.id]: { status: 'error', detail } }));
       } finally {
         setSendingId(null);
       }
@@ -6267,6 +6277,7 @@ Key things to verify after rebuild:
       if (!staffWithEmail.length) return;
       setSendingAll(true);
       setSendError(null);
+      setSendResults({});
       for (const s of staffWithEmail) {
         const sched = generateStaffSchedule(s);
         await sendSchedule(s, sched);
@@ -6386,6 +6397,35 @@ Key things to verify after rebuild:
                     <CalendarDays size={13} />
                     {sendingAll ? 'Sending to all…' : `Send to all staff with email (${activeStaff.filter(s=>s.email).length})`}
                   </button>
+                )}
+
+                {/* Per-recipient send results -- the only durable record of a
+                    batch send while this modal is open; Resend's own dashboard
+                    is the canonical delivery log beyond that. */}
+                {Object.keys(sendResults).length > 0 && (
+                  <div className="mt-3 border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Send results</span>
+                      <span className="text-xs text-gray-500">
+                        {Object.values(sendResults).filter(r => r.status === 'sent').length}/{Object.keys(sendResults).length} sent
+                      </span>
+                    </div>
+                    <div className="divide-y divide-gray-50 max-h-36 overflow-auto">
+                      {activeStaff.filter(s => sendResults[s.id]).map(s => {
+                        const r = sendResults[s.id];
+                        return (
+                          <div key={s.id} className="px-3 py-1.5 flex items-center justify-between text-xs">
+                            <span className="text-gray-700">{s.name}</span>
+                            {r.status === 'sent' ? (
+                              <span className="text-green-600 font-medium flex items-center gap-1"><CheckCircle size={12} /> Sent</span>
+                            ) : (
+                              <span className="text-red-500 font-medium flex items-center gap-1" title={r.detail}><AlertTriangle size={12} /> Failed</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
 
                 <p className="text-[10px] text-gray-400 mt-3 text-center">
@@ -6927,7 +6967,7 @@ Key things to verify after rebuild:
                   <Clock size={14} />
                   <span>{startHour.toString().padStart(2, '0')}:00-{endHour.toString().padStart(2, '0')}:00</span>
                 </button>
-                <button onClick={() => { setShowExportModal(true); setExportSelectedStaffId(s => s || staff[0]?.id); setExportSendError(null); }} className="btn-ghost flex items-center gap-1.5 text-xs py-1.5 px-2.5">
+                <button onClick={() => { setShowExportModal(true); setExportSelectedStaffId(s => s || staff[0]?.id); setExportSendError(null); setExportSendResults({}); }} className="btn-ghost flex items-center gap-1.5 text-xs py-1.5 px-2.5">
                   <Clipboard size={14} />
                   <span>Export</span>
                 </button>
