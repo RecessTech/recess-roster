@@ -19,6 +19,7 @@ interface Payload {
   to: string;
   staffName: string;
   weekRange: string;
+  weekLabel: string; // e.g. "W40" -- used for the subject line
   shifts: ShiftRow[];
   totalHours: string;
   businessName: string;
@@ -49,7 +50,7 @@ function buildHtml(p: Payload): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>Your roster – ${p.weekRange}</title>
+  <title>${p.weekLabel ? `Roster ${p.weekLabel}` : `Your roster – ${p.weekRange}`}</title>
 </head>
 <body style="margin:0;padding:0;background:#F1F5F9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:32px 16px">
@@ -133,7 +134,7 @@ serve(async (req) => {
       body: JSON.stringify({
         from: payload.fromAddress || 'R-Shift <roster@itsrecess.com.au>',
         to: [payload.to],
-        subject: `Your roster – ${payload.weekRange}`,
+        subject: payload.weekLabel ? `Roster ${payload.weekLabel}` : `Your roster – ${payload.weekRange}`,
         html,
       }),
     });
