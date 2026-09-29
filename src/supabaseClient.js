@@ -1177,6 +1177,21 @@ export const db = {
     return data;
   },
 
+  // Deferring an item excludes it from "needs ordering" on the Order Status
+  // tab (and the 8pm order-status email) until the date passes, without
+  // touching current_status -- it still shows normally in Stocktake/Ordering,
+  // since the stock is genuinely low, it's just not this cycle's order.
+  async updateSiteItemDeferredUntil(siteRowId, deferredUntil) {
+    const { data, error } = await supabase
+      .from('stock_item_sites')
+      .update({ deferred_until: deferredUntil, updated_at: new Date().toISOString() })
+      .eq('id', siteRowId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
   // ── Stock: Order history ────────────────────────────────────────────────────
   // Rows are written only by the nightly archive_and_reset_stock_orders()
   // Postgres function — the app only ever reads this.
