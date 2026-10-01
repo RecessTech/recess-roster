@@ -6746,7 +6746,7 @@ Key things to verify after rebuild:
       <aside className="w-16 flex flex-col items-center py-4 gap-1 shrink-0 z-50" style={{ background: 'var(--sb-bg)' }}>
         {/* Logo mark */}
         <div className="mb-5 w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center select-none">
-          <img src="https://i.postimg.cc/76YSLjdw/rshift-on-cream.jpg" alt="R-Shift" className="w-full h-full object-cover" />
+          <img src="/logo512.png" alt="R-Shift" className="w-full h-full object-cover" />
         </div>
 
         {/* Nav */}
