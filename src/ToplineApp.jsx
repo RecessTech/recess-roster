@@ -1556,18 +1556,18 @@ function CostsTab({ topline, period, periodTouched, labourEfficiency, labourEffi
   const priorDates = weekAxis(priorAsOfDate, period);
   const caption = periodTouched ? `Sum, last ${period}w` : undefined;
 
-  const pick = (series, d) => (periodTouched ? sumOverWindow(series, d) : valueAt(series, d));
+  const pick = (series, windowDates, singleDate) => (periodTouched ? sumOverWindow(series, windowDates) : valueAt(series, singleDate));
 
-  const curCogs = pick(cogsTotal?.series, dates);
-  const priorCogs = pick(cogsTotal?.series, priorDates);
+  const curCogs = pick(cogsTotal?.series, dates, asOfDate);
+  const priorCogs = pick(cogsTotal?.series, priorDates, priorAsOfDate);
   const cogsDelta = priorCogs ? (curCogs - priorCogs) / Math.abs(priorCogs) : null;
 
-  const curLabour = pick(totalLabour?.series, dates);
-  const priorLabour = pick(totalLabour?.series, priorDates);
+  const curLabour = pick(totalLabour?.series, dates, asOfDate);
+  const priorLabour = pick(totalLabour?.series, priorDates, priorAsOfDate);
   const labourDelta = priorLabour ? (curLabour - priorLabour) / Math.abs(priorLabour) : null;
 
-  const curRev = pick(revTotalM?.series, dates);
-  const priorRev = pick(revTotalM?.series, priorDates);
+  const curRev = pick(revTotalM?.series, dates, asOfDate);
+  const priorRev = pick(revTotalM?.series, priorDates, priorAsOfDate);
 
   const curCogsPct = curRev ? curCogs / curRev : null;
   const priorCogsPct = priorRev ? priorCogs / priorRev : null;
