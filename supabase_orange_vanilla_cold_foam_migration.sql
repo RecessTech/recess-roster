@@ -31,8 +31,7 @@ INSERT INTO recipe_components (org_id, name, type, uom, batch_yield, category)
 -- Vanilla extract given as "1 tsp (5ml)" -- converted to 5g (~1:1,
 -- vanilla extract's density is close to water) since the Vanilla
 -- Extract SKU is weighed in grams, matching Maple's use of the same SKU.
--- Salt given as "1/8 tsp" -- converted to 0.75g (half of the 1/4 tsp ->
--- 1.5g conversion used for Coconut Cold Foam's pinch of salt).
+-- Salt given as "1/8 tsp", rounded up to 1g.
 INSERT INTO recipe_component_lines (org_id, component_id, stock_item_id, qty, sort_order)
   SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' LIMIT 1),
     (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' LIMIT 1) AND name = 'Orange Vanilla Cold Foam'),
@@ -62,7 +61,7 @@ INSERT INTO recipe_component_lines (org_id, component_id, stock_item_id, qty, so
   SELECT (SELECT org_id FROM production_items WHERE name = 'Espresso' LIMIT 1),
     (SELECT id FROM recipe_components WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' LIMIT 1) AND name = 'Orange Vanilla Cold Foam'),
     (SELECT id FROM stock_items WHERE org_id = (SELECT org_id FROM production_items WHERE name = 'Espresso' LIMIT 1) AND name = 'Table Salt'),
-    0.75, 5;
+    1.0, 5;
 
 -- ── VERIFY ─────────────────────────────────────────────────────
 SELECT rc.name AS cold_foam, rc.batch_yield, rc.uom, si.name AS ingredient, rcl.qty
