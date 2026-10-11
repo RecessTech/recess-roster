@@ -1307,6 +1307,11 @@ export default function CateringApp({ org, user }) {
   const [showForm, setShowForm] = useState(false);
   const [editingJob, setEditingJob] = useState(null);
   const [showLibrary, setShowLibrary] = useState(false);
+  // Weeks that have fully elapsed are hidden from the feed by default once
+  // the week is over (not just once the job's own date passes) -- this
+  // reveals them again on demand rather than losing access to the history.
+  const [showPast, setShowPast] = useState(false);
+  const [pendingScrollTo, setPendingScrollTo] = useState(null);
 
   // One ref per week section (keyed by that week's Monday), so clicking a
   // calendar date can scroll the feed straight to it instead of filtering
@@ -1398,7 +1403,31 @@ export default function CateringApp({ org, user }) {
     return [...m.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1);
   }, [jobs]);
 
-  // Clicking a calendar date scrolls the feed to that week and briefly
+  const thisWeekStart = startOfWeek(todayStr());
+
+  // Once a week is fully over (not just once a job's own date passes) it
+  // drops out of the default feed -- "Show past jobs" brings it back
+  // rather than losing access to the history.
+  const pastWeeks = useMemo(() => jobsByWeek.filter(([wk]) => wk < thisWeekStart), [jobsByWeek, thisWeekStart]);
+  const visibleWeeks = useMemo(
+    () => (showPast ? jobsByWeek : jobsByWeek.filter(([wk]) => wk >= thisWeekStart)),
+    [jobsByWeek, thisWeekStart, showPast]
+  );
+
+  // Scrolls to a week once it's actually rendered -- needed because
+  // revealing a past week (via showPast) happens a render after the click
+  // that requested it, so the ref doesn't exist yet at click time.
+  useEffect(() => {
+    if (!pendingScrollTo) return;
+    const el = weekRefs.current[pendingScrollTo];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setPendingScrollTo(null);
+    }
+  }, [pendingScrollTo, showPast, jobsByWeek]);
+
+  // Clicking a calendar date scrolls the feed to that week (revealing past
+  // jobs first if the date falls in an already-hidden week) and briefly
   // highlights the matching job card(s), instead of filtering the page
   // down to a single day.
   function selectDate(dateStr) {
@@ -1408,8 +1437,9 @@ export default function CateringApp({ org, user }) {
       setCalYear(d.getFullYear());
       setCalMonth(d.getMonth());
     }
-    const el = weekRefs.current[startOfWeek(dateStr)];
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const wk = startOfWeek(dateStr);
+    if (wk < thisWeekStart) setShowPast(true);
+    setPendingScrollTo(wk);
     if (jobCountByDate.get(dateStr) > 0) {
       setHighlightDate(dateStr);
       setTimeout(() => setHighlightDate(prev => (prev === dateStr ? null : prev)), 1600);
@@ -1423,13 +1453,12 @@ export default function CateringApp({ org, user }) {
   // On first load, open the feed scrolled to the current week (or the
   // nearest upcoming one) rather than at the very start of history.
   useEffect(() => {
-    if (loading || didInitialScroll.current || jobsByWeek.length === 0) return;
+    if (loading || didInitialScroll.current || visibleWeeks.length === 0) return;
     didInitialScroll.current = true;
-    const thisWeek = startOfWeek(todayStr());
-    const target = weekRefs.current[thisWeek] || jobsByWeek.find(([wk]) => wk >= thisWeek)?.[0];
+    const target = weekRefs.current[thisWeekStart] || visibleWeeks.find(([wk]) => wk >= thisWeekStart)?.[0];
     const el = typeof target === 'string' ? weekRefs.current[target] : target;
     if (el) el.scrollIntoView({ block: 'start' });
-  }, [loading, jobsByWeek]);
+  }, [loading, visibleWeeks, thisWeekStart]);
 
   async function handleDelete(job) {
     if (!window.confirm(`Delete the catering job for "${job.company || 'this job'}"?`)) return;
@@ -1513,7 +1542,21 @@ export default function CateringApp({ org, user }) {
             </div>
           ) : (
             <div className="max-w-3xl mx-auto space-y-6 pb-8">
-              {jobsByWeek.map(([weekStart, weekJobs]) => (
+              {pastWeeks.length > 0 && (
+                <button
+                  onClick={() => setShowPast(v => !v)}
+                  className="text-xs font-medium text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  {showPast ? 'Hide past jobs' : `Show ${pastWeeks.length} past week${pastWeeks.length === 1 ? '' : 's'}`}
+                </button>
+              )}
+              {visibleWeeks.length === 0 && (
+                <p className="text-center text-gray-400 text-sm py-16">
+                  All jobs are in the past.{' '}
+                  <button onClick={() => setShowPast(true)} className="underline hover:text-gray-600">Show them</button>
+                </p>
+              )}
+              {visibleWeeks.map(([weekStart, weekJobs]) => (
                 <div key={weekStart} ref={el => { weekRefs.current[weekStart] = el; }}>
                   <div className="sticky top-0 z-10 flex items-center gap-2 py-2" style={{ background: 'var(--app-bg)' }}>
                     <span className="text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">{weekLabel(weekStart)}</span>
