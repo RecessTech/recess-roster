@@ -2027,15 +2027,15 @@ export const db = {
 
   // ── Catering (R-Cater) ───────────────────────────────────────────────────────
 
-  // Every job whose date falls within [startDate, endDate] -- used to fill in
-  // the calendar's "has a job" dots for a visible month at a time.
-  async getCateringJobsRange(orgId, startDate, endDate) {
+  // Every catering job for the org, oldest first -- job volume is low enough
+  // (dozens, not thousands) that the whole list loads in one query, grouped
+  // client-side into the week-by-week feed R-Cater's main view renders.
+  async getCateringJobs(orgId) {
     const { data, error } = await supabase
       .from('catering_jobs')
       .select('*')
       .eq('org_id', orgId)
-      .gte('job_date', startDate)
-      .lte('job_date', endDate)
+      .order('job_date', { ascending: true })
       .order('ready_by', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: true });
     if (error) throw error;
