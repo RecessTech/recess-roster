@@ -1674,10 +1674,16 @@ function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectL
         const orderedAts = needsOrderRows.filter(r => r.ordered && r.ordered_at).map(r => new Date(r.ordered_at).getTime());
         const latestOrderedAt = orderedAts.length > 0 ? Math.max(...orderedAts) : null;
         const latestConfirmationAt = latestConfirmationBySupplier[supplier] ?? null;
-        // A confirmation only counts if it arrived after this cycle's order
-        // was placed -- otherwise a leftover email from a previous cycle
-        // would wrongly confirm today's order.
-        const isConfirmed = latestOrderedAt != null && latestConfirmationAt != null && latestConfirmationAt >= latestOrderedAt;
+        // A confirmation only counts if it's from the same day as this
+        // cycle's order -- not "after", since for suppliers whose checkout
+        // auto-emails a receipt (Blackforest, Fruitique, ...), the email
+        // typically lands before anyone gets around to ticking the box in
+        // here, not after. Same-day is still enough to rule out a leftover
+        // email from a previous cycle wrongly confirming today's order,
+        // because the nightly archive wipes ordered/ordered_at at midnight
+        // -- latestOrderedAt can only ever be from today.
+        const isConfirmed = latestOrderedAt != null && latestConfirmationAt != null
+          && localDateStr(new Date(latestConfirmationAt)) === localDateStr(new Date(latestOrderedAt));
         return {
           supplier,
           status: supplierOrderStatus(needsOrderRows, isConfirmed),
