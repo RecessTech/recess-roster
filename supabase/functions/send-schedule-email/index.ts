@@ -19,13 +19,14 @@ interface Payload {
   to: string;
   staffName: string;
   weekRange: string;
+  weekLabel: string; // e.g. "W40" -- used for the subject line
   shifts: ShiftRow[];
   totalHours: string;
   ccHello?: boolean;    // CC the shared Recess inbox
   personalNote?: string | null; // note for this recipient only
   note?: string | null; // optional message from the manager, shown above the roster
   businessName: string;
-  fromAddress: string; // e.g. "roster@recesstech.com.au"
+  fromAddress: string; // e.g. "R-Shift <roster@itsrecess.com.au>"
 }
 
 // Fixed server-side so the endpoint can't be used to CC arbitrary addresses
@@ -75,7 +76,7 @@ function buildHtml(p: Payload): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>Your roster – ${esc(p.weekRange)}</title>
+  <title>${esc(p.weekLabel ? `Roster ${p.weekLabel}` : `Your roster – ${p.weekRange}`)}</title>
 </head>
 <body style="margin:0;padding:0;background:#F1F5F9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:32px 16px">
@@ -123,7 +124,7 @@ ${noteHtml}
         <!-- Footer -->
         <tr>
           <td style="padding:20px 0 8px;text-align:center;font-size:11px;color:#94A3B8">
-            Sent by ${esc(p.businessName)} via Recess Roster
+            Sent by ${esc(p.businessName)} via R-Shift
           </td>
         </tr>
 
@@ -158,10 +159,10 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: payload.fromAddress || 'Recess Roster <onboarding@resend.dev>',
+        from: payload.fromAddress || 'R-Shift <roster@itsrecess.com.au>',
         to: [payload.to],
         ...(payload.ccHello && payload.to.toLowerCase() !== CC_HELLO ? { cc: [CC_HELLO] } : {}),
-        subject: `Your roster – ${payload.weekRange}`,
+        subject: payload.weekLabel ? `Roster ${payload.weekLabel}` : `Your roster – ${payload.weekRange}`,
         html,
       }),
     });

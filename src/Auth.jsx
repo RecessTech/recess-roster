@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Quote } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
-const LOGO_URL = 'https://i.postimg.cc/76YSLjdw/rshift-on-cream.jpg';
+// Served from public/ -- self-hosted rather than a third-party image host
+// (postimg.cc), which previously went 404 and silently dropped the logo
+// everywhere it was referenced.
+const LOGO_URL = '/logo512.png';
 
 // Real, verifiably-attributed sandwich quotes only -- no invented lines
 // pinned to real names. One picked at random per mount, so it varies

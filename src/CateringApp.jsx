@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Plus, X, ChevronLeft, ChevronRight, Trash2, Edit2, Loader2, ChevronDown, ChevronUp,
   MapPin, Truck, DollarSign, StickyNote, User, Building2, UtensilsCrossed, Clock, Send,
@@ -18,14 +18,35 @@ function addDays(dateStr, n) {
   d.setDate(d.getDate() + n);
   return fmtISO(d);
 }
-function dayLabel(dateStr) {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'long' }).toUpperCase();
+function dayAbbrev(dateStr) {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase();
 }
-function fmtDateShort(dateStr) {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+function dayNum(dateStr) {
+  return new Date(dateStr + 'T12:00:00').getDate();
 }
 function monthLabel(year, month) {
   return new Date(year, month, 1).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+}
+// Monday-based start-of-week for a date string.
+function startOfWeek(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const dow = (d.getDay() + 6) % 7; // Mon=0 .. Sun=6
+  d.setDate(d.getDate() - dow);
+  return fmtISO(d);
+}
+// "This Week" / "Next Week" / "Last Week" relative to today, else a plain
+// date range -- with the year only shown when the week falls outside it.
+function weekLabel(weekStartStr) {
+  const thisWeekStart = startOfWeek(todayStr());
+  if (weekStartStr === thisWeekStart) return 'This Week';
+  if (weekStartStr === addDays(thisWeekStart, 7)) return 'Next Week';
+  if (weekStartStr === addDays(thisWeekStart, -7)) return 'Last Week';
+  const start = new Date(weekStartStr + 'T12:00:00');
+  const end = new Date(addDays(weekStartStr, 6) + 'T12:00:00');
+  const inCurrentYear = start.getFullYear() === new Date().getFullYear() && end.getFullYear() === new Date().getFullYear();
+  const startStr = start.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+  const endStr = end.toLocaleDateString('en-AU', inCurrentYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${startStr} – ${endStr}`;
 }
 // 42-cell (6 week) grid, Monday-first, for the given month.
 function getMonthGrid(year, month) {
@@ -1143,7 +1164,7 @@ function IngredientsRequiredPanel({ rollup }) {
   );
 }
 
-function JobCard({ job, expanded, onToggle, onEdit, onDelete, onToggleFlag, cateringItemLines, stockItemsById, componentsById }) {
+function JobCard({ job, expanded, onToggle, onEdit, onDelete, onToggleFlag, cateringItemLines, stockItemsById, componentsById, highlighted }) {
   const dotColor = TYPE_DOT[job.job_type] || TYPE_DOT.Other;
   const totalPieces = computeTotalPieces(job.platter_size, job.pieces_per_person);
   const dietaryTags = DIETARY_FIELDS.filter(f => job[f.key] > 0);
@@ -1155,9 +1176,19 @@ function JobCard({ job, expanded, onToggle, onEdit, onDelete, onToggleFlag, cate
   );
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+    <div
+      className="bg-white rounded-2xl border overflow-hidden transition-shadow"
+      style={{
+        borderColor: highlighted ? 'var(--primary)' : '#F3F4F6',
+        boxShadow: highlighted ? '0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent)' : 'none',
+      }}
+    >
       <button onClick={onToggle} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50/70 transition-colors">
-        <div className="w-14 shrink-0 text-xs font-medium text-gray-500 tabular-nums">{job.ready_by || '—'}</div>
+        <div className="w-9 shrink-0 text-center">
+          <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide leading-none mb-0.5">{dayAbbrev(job.job_date)}</div>
+          <div className="text-base font-bold text-gray-900 leading-none tabular-nums">{dayNum(job.job_date)}</div>
+        </div>
+        <div className="w-12 shrink-0 text-xs font-medium text-gray-500 tabular-nums">{job.ready_by || '—'}</div>
         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} title={job.job_type} />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-gray-900 truncate">{job.company || 'Untitled job'}</p>
@@ -1267,6 +1298,7 @@ function JobCard({ job, expanded, onToggle, onEdit, onDelete, onToggleFlag, cate
 export default function CateringApp({ org, user }) {
   const orgId = org?.id;
   const [selectedDate, setSelectedDate] = useState(todayStr());
+  const [highlightDate, setHighlightDate] = useState(null);
   const [calYear, setCalYear] = useState(() => new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth());
   const [jobs, setJobs] = useState([]);
@@ -1275,6 +1307,17 @@ export default function CateringApp({ org, user }) {
   const [showForm, setShowForm] = useState(false);
   const [editingJob, setEditingJob] = useState(null);
   const [showLibrary, setShowLibrary] = useState(false);
+  // Weeks that have fully elapsed are hidden from the feed by default once
+  // the week is over (not just once the job's own date passes) -- this
+  // reveals them again on demand rather than losing access to the history.
+  const [showPast, setShowPast] = useState(false);
+  const [pendingScrollTo, setPendingScrollTo] = useState(null);
+
+  // One ref per week section (keyed by that week's Monday), so clicking a
+  // calendar date can scroll the feed straight to it instead of filtering
+  // the page down to a single day.
+  const weekRefs = useRef({});
+  const didInitialScroll = useRef(false);
 
   // Catering item library + its recipe lines, plus the shared R-Recipe/
   // stock catalogs needed to resolve ingredient names/units and to seed a
@@ -1287,22 +1330,18 @@ export default function CateringApp({ org, user }) {
   const [recipeMenuItemLines, setRecipeMenuItemLines] = useState([]);
   const [productionItems, setProductionItems] = useState([]);
 
-  const gridDays = useMemo(() => getMonthGrid(calYear, calMonth), [calYear, calMonth]);
-  const rangeStart = fmtISO(gridDays[0]);
-  const rangeEnd = fmtISO(gridDays[gridDays.length - 1]);
-
   const loadJobs = useCallback(async () => {
     if (!orgId) return;
     setLoading(true);
     try {
-      const rows = await db.getCateringJobsRange(orgId, rangeStart, rangeEnd);
+      const rows = await db.getCateringJobs(orgId);
       setJobs(rows);
     } catch (err) {
       toast.error('Failed to load catering jobs: ' + (err.message || 'unknown error'));
     } finally {
       setLoading(false);
     }
-  }, [orgId, rangeStart, rangeEnd]);
+  }, [orgId]);
 
   const loadCatalog = useCallback(async () => {
     if (!orgId) return;
@@ -1341,13 +1380,69 @@ export default function CateringApp({ org, user }) {
     setCalYear(y);
   }
 
+  const jobCountByDate = useMemo(() => {
+    const m = new Map();
+    jobs.forEach(j => m.set(j.job_date, (m.get(j.job_date) || 0) + 1));
+    return m;
+  }, [jobs]);
+
+  // Every job grouped into its Monday-start week, weeks sorted oldest
+  // first -- only weeks that actually have a job produce a section, so an
+  // empty week never shows up as a blank divider.
+  const jobsByWeek = useMemo(() => {
+    const m = new Map();
+    jobs.forEach(j => {
+      const wk = startOfWeek(j.job_date);
+      if (!m.has(wk)) m.set(wk, []);
+      m.get(wk).push(j);
+    });
+    m.forEach(list => list.sort((a, b) => {
+      if (a.job_date !== b.job_date) return a.job_date < b.job_date ? -1 : 1;
+      return (a.ready_by || '').localeCompare(b.ready_by || '');
+    }));
+    return [...m.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1);
+  }, [jobs]);
+
+  const thisWeekStart = startOfWeek(todayStr());
+
+  // Once a week is fully over (not just once a job's own date passes) it
+  // drops out of the default feed -- "Show past jobs" brings it back
+  // rather than losing access to the history.
+  const pastWeeks = useMemo(() => jobsByWeek.filter(([wk]) => wk < thisWeekStart), [jobsByWeek, thisWeekStart]);
+  const visibleWeeks = useMemo(
+    () => (showPast ? jobsByWeek : jobsByWeek.filter(([wk]) => wk >= thisWeekStart)),
+    [jobsByWeek, thisWeekStart, showPast]
+  );
+
+  // Scrolls to a week once it's actually rendered -- needed because
+  // revealing a past week (via showPast) happens a render after the click
+  // that requested it, so the ref doesn't exist yet at click time.
+  useEffect(() => {
+    if (!pendingScrollTo) return;
+    const el = weekRefs.current[pendingScrollTo];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setPendingScrollTo(null);
+    }
+  }, [pendingScrollTo, showPast, jobsByWeek]);
+
+  // Clicking a calendar date scrolls the feed to that week (revealing past
+  // jobs first if the date falls in an already-hidden week) and briefly
+  // highlights the matching job card(s), instead of filtering the page
+  // down to a single day.
   function selectDate(dateStr) {
     setSelectedDate(dateStr);
-    setExpandedId(null);
     const d = new Date(dateStr + 'T12:00:00');
     if (d.getFullYear() !== calYear || d.getMonth() !== calMonth) {
       setCalYear(d.getFullYear());
       setCalMonth(d.getMonth());
+    }
+    const wk = startOfWeek(dateStr);
+    if (wk < thisWeekStart) setShowPast(true);
+    setPendingScrollTo(wk);
+    if (jobCountByDate.get(dateStr) > 0) {
+      setHighlightDate(dateStr);
+      setTimeout(() => setHighlightDate(prev => (prev === dateStr ? null : prev)), 1600);
     }
   }
 
@@ -1355,17 +1450,15 @@ export default function CateringApp({ org, user }) {
     selectDate(todayStr());
   }
 
-  function stepDay(n) {
-    selectDate(addDays(selectedDate, n));
-  }
-
-  const jobCountByDate = useMemo(() => {
-    const m = new Map();
-    jobs.forEach(j => m.set(j.job_date, (m.get(j.job_date) || 0) + 1));
-    return m;
-  }, [jobs]);
-
-  const jobsForDay = useMemo(() => jobs.filter(j => j.job_date === selectedDate), [jobs, selectedDate]);
+  // On first load, open the feed scrolled to the current week (or the
+  // nearest upcoming one) rather than at the very start of history.
+  useEffect(() => {
+    if (loading || didInitialScroll.current || visibleWeeks.length === 0) return;
+    didInitialScroll.current = true;
+    const target = weekRefs.current[thisWeekStart] || visibleWeeks.find(([wk]) => wk >= thisWeekStart)?.[0];
+    const el = typeof target === 'string' ? weekRefs.current[target] : target;
+    if (el) el.scrollIntoView({ block: 'start' });
+  }, [loading, visibleWeeks, thisWeekStart]);
 
   async function handleDelete(job) {
     if (!window.confirm(`Delete the catering job for "${job.company || 'this job'}"?`)) return;
@@ -1392,30 +1485,14 @@ export default function CateringApp({ org, user }) {
     <div className="h-full flex flex-col" style={{ background: 'var(--app-bg)' }}>
       {/* Toolbar */}
       <div className="shrink-0 border-b px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2 bg-white flex-wrap" style={{ borderColor: 'var(--top-border)' }}>
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => stepDay(-1)}
-            className="p-2 rounded-lg transition-colors hover:bg-gray-100 text-gray-500"
-          >
-            <ChevronLeft size={18} strokeWidth={2.5} />
-          </button>
-          <div className="text-center min-w-[150px]">
-            <div className="text-sm font-semibold text-gray-900 leading-tight tracking-tight">{dayLabel(selectedDate)}</div>
-            <div className="text-xs text-gray-400">{fmtDateShort(selectedDate)}</div>
-          </div>
-          <button
-            onClick={() => stepDay(1)}
-            className="p-2 rounded-lg transition-colors hover:bg-gray-100 text-gray-500"
-          >
-            <ChevronRight size={18} strokeWidth={2.5} />
-          </button>
-          {selectedDate !== todayStr() && (
-            <button onClick={goToday} className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors ml-1">
-              Today
-            </button>
-          )}
+        <div>
+          <div className="text-sm font-semibold text-gray-900 leading-tight tracking-tight">Catering Jobs</div>
+          <div className="text-xs text-gray-400">{jobs.length} job{jobs.length === 1 ? '' : 's'}</div>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={goToday} className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors">
+            Today
+          </button>
           <button
             onClick={() => setShowLibrary(true)}
             className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
@@ -1433,7 +1510,7 @@ export default function CateringApp({ org, user }) {
         </div>
       </div>
 
-      {/* Body: calendar + day list */}
+      {/* Body: calendar + vertical job feed */}
       <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
         <aside className="w-full md:w-72 shrink-0 border-b md:border-b-0 md:border-r p-3 overflow-y-auto" style={{ borderColor: 'var(--top-border)' }}>
           <MiniCalendar
@@ -1451,10 +1528,10 @@ export default function CateringApp({ org, user }) {
             <div className="flex items-center justify-center py-16">
               <Loader2 size={20} className="animate-spin text-gray-400" />
             </div>
-          ) : jobsForDay.length === 0 ? (
+          ) : jobsByWeek.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <UtensilsCrossed size={28} className="mx-auto mb-2 opacity-40" />
-              <p className="text-sm mb-3">No catering jobs on this day.</p>
+              <p className="text-sm mb-3">No catering jobs yet.</p>
               <button
                 onClick={() => { setEditingJob(null); setShowForm(true); }}
                 className="inline-flex items-center gap-1.5 text-sm font-semibold px-3.5 py-2 rounded-xl text-white"
@@ -1464,20 +1541,46 @@ export default function CateringApp({ org, user }) {
               </button>
             </div>
           ) : (
-            <div className="space-y-2 max-w-3xl mx-auto">
-              {jobsForDay.map(job => (
-                <JobCard
-                  key={job.id}
-                  job={job}
-                  expanded={expandedId === job.id}
-                  onToggle={() => setExpandedId(prev => prev === job.id ? null : job.id)}
-                  onEdit={() => { setEditingJob(job); setShowForm(true); }}
-                  onDelete={() => handleDelete(job)}
-                  onToggleFlag={(key, value) => handleToggleFlag(job, key, value)}
-                  cateringItemLines={cateringItemLines}
-                  stockItemsById={stockItemsById}
-                  componentsById={componentsById}
-                />
+            <div className="max-w-3xl mx-auto space-y-6 pb-8">
+              {pastWeeks.length > 0 && (
+                <button
+                  onClick={() => setShowPast(v => !v)}
+                  className="text-xs font-medium text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  {showPast ? 'Hide past jobs' : `Show ${pastWeeks.length} past week${pastWeeks.length === 1 ? '' : 's'}`}
+                </button>
+              )}
+              {visibleWeeks.length === 0 && (
+                <p className="text-center text-gray-400 text-sm py-16">
+                  All jobs are in the past.{' '}
+                  <button onClick={() => setShowPast(true)} className="underline hover:text-gray-600">Show them</button>
+                </p>
+              )}
+              {visibleWeeks.map(([weekStart, weekJobs]) => (
+                <div key={weekStart} ref={el => { weekRefs.current[weekStart] = el; }}>
+                  <div className="sticky top-0 z-10 flex items-center gap-2 py-2" style={{ background: 'var(--app-bg)' }}>
+                    <span className="text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">{weekLabel(weekStart)}</span>
+                    <span className="flex-1 h-px bg-gray-200" />
+                    <span className="text-[11px] text-gray-400 whitespace-nowrap">{weekJobs.length} job{weekJobs.length === 1 ? '' : 's'}</span>
+                  </div>
+                  <div className="space-y-2 mt-1">
+                    {weekJobs.map(job => (
+                      <JobCard
+                        key={job.id}
+                        job={job}
+                        expanded={expandedId === job.id}
+                        highlighted={highlightDate === job.job_date}
+                        onToggle={() => setExpandedId(prev => prev === job.id ? null : job.id)}
+                        onEdit={() => { setEditingJob(job); setShowForm(true); }}
+                        onDelete={() => handleDelete(job)}
+                        onToggleFlag={(key, value) => handleToggleFlag(job, key, value)}
+                        cateringItemLines={cateringItemLines}
+                        stockItemsById={stockItemsById}
+                        componentsById={componentsById}
+                      />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           )}
