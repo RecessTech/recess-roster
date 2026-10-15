@@ -36,14 +36,14 @@ const esc = (v: unknown) => String(v ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 function buildHtml(p: Payload): string {
-  const noteBox = (raw: string | null | undefined, label: string, bg: string, border: string, labelColor: string, textColor: string) => {
+  const noteBox = (raw: string | null | undefined, label: string | null, bg: string, border: string, labelColor: string, textColor: string) => {
     const text = (raw || '').trim().slice(0, 500);
     if (!text) return '';
     return `
         <tr>
           <td style="background:#ffffff;border-left:1px solid #E2E8F0;border-right:1px solid #E2E8F0;padding:0">
             <div style="margin:16px 16px 0;padding:14px 16px;background:${bg};border-left:4px solid ${border};border-radius:6px">
-              <div style="font-size:10px;font-weight:700;color:${labelColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">${label}</div>
+              ${label ? `<div style="font-size:10px;font-weight:700;color:${labelColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">${label}</div>` : ''}
               <div style="font-size:14px;line-height:1.5;color:${textColor}">${esc(text).replace(/\r?\n/g, '<br>')}</div>
             </div>
           </td>
@@ -51,7 +51,7 @@ function buildHtml(p: Payload): string {
   };
   // Personal note first (most relevant to the reader), then the note to everyone
   const noteHtml =
-    noteBox(p.personalNote, `A note for you, ${esc(p.staffName)}`, '#FEF3C7', '#F59E0B', '#92400E', '#451A03') +
+    noteBox(p.personalNote, null, '#FEF3C7', '#F59E0B', '#92400E', '#451A03') +
     noteBox(p.note, `A note from ${esc(p.businessName)}`, '#EEF2FF', '#3B5BDB', '#3730A3', '#1E1B4B');
   const lastIdx = p.shifts.length - 1;
   const rows = p.shifts.map((s, i) => {
