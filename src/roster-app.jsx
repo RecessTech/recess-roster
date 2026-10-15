@@ -164,6 +164,8 @@ const RosterApp = () => {
   const [exportSentId, setExportSentId] = useState(null);
   const [exportSendError, setExportSendError] = useState(null);
   const [exportSendingAll, setExportSendingAll] = useState(false);
+  const [exportNote, setExportNote] = useState('');
+  const [exportCcHello, setExportCcHello] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [shareRegenerating, setShareRegenerating] = useState(false);
@@ -6236,6 +6238,8 @@ Key things to verify after rebuild:
             weekRange,
             shifts: buildShifts(sched),
             totalHours: `${sched.reduce((t,d)=>t+d.shifts.reduce((dt,s)=>dt+shiftHours(s),0),0).toFixed(1)}h`,
+            note: exportNote.trim() || null,
+            ccHello: exportCcHello,
             businessName: businessSettings.businessName || 'Management',
             fromAddress: businessSettings.senderDomain ? `roster@${businessSettings.senderDomain}` : null,
           },
@@ -6282,6 +6286,26 @@ Key things to verify after rebuild:
           </div>
 
           <div className="p-4 overflow-auto" style={{ maxHeight: 'calc(90vh - 100px)' }}>
+            {/* Note to include in the email (applies to everyone it's sent to) */}
+            <div className="mb-4">
+              <label className="flex items-center justify-between text-xs font-semibold text-gray-700 mb-1.5">
+                <span>Note to staff <span className="font-normal text-gray-400">(optional)</span></span>
+                <span className={`font-normal ${exportNote.length > 450 ? 'text-orange-500' : 'text-gray-400'}`}>{exportNote.length}/500</span>
+              </label>
+              <textarea
+                value={exportNote}
+                onChange={(e) => setExportNote(e.target.value.slice(0, 500))}
+                rows={3}
+                placeholder="e.g. Hours are a bit lighter this week because of the public holiday — back to normal next week."
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 resize-none"
+              />
+              <label className="flex items-center gap-2 mt-2 text-xs text-gray-600 cursor-pointer">
+                <input type="checkbox" checked={exportCcHello} onChange={(e) => setExportCcHello(e.target.checked)} />
+                CC hello@itsrecess.com.au on each email
+              </label>
+              <p className="text-[10px] text-gray-400 mt-1">Shown at the top of the email, above the roster. Not included in "Copy HTML".</p>
+            </div>
+
             {/* Staff selector */}
             <div className="flex gap-1.5 mb-4 flex-wrap">
               {activeStaff.map(s => (
@@ -6923,7 +6947,7 @@ Key things to verify after rebuild:
                   <Clock size={14} />
                   <span>{startHour.toString().padStart(2, '0')}:00-{endHour.toString().padStart(2, '0')}:00</span>
                 </button>
-                <button onClick={() => { setShowExportModal(true); setExportSelectedStaffId(s => s || staff[0]?.id); setExportSendError(null); }} className="btn-ghost flex items-center gap-1.5 text-xs py-1.5 px-2.5">
+                <button onClick={() => { setShowExportModal(true); setExportSelectedStaffId(s => s || staff[0]?.id); setExportSendError(null); setExportNote(''); }} className="btn-ghost flex items-center gap-1.5 text-xs py-1.5 px-2.5">
                   <Clipboard size={14} />
                   <span>Export</span>
                 </button>

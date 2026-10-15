@@ -21,25 +21,45 @@ interface Payload {
   weekRange: string;
   shifts: ShiftRow[];
   totalHours: string;
+  ccHello?: boolean;    // CC the shared Recess inbox
+  note?: string | null; // optional message from the manager, shown above the roster
   businessName: string;
   fromAddress: string; // e.g. "roster@recesstech.com.au"
 }
 
+// Fixed server-side so the endpoint can't be used to CC arbitrary addresses
+const CC_HELLO = 'hello@itsrecess.com.au';
+
+const esc = (v: unknown) => String(v ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
 function buildHtml(p: Payload): string {
+  const note = (p.note || '').trim().slice(0, 500);
+  const noteHtml = note ? `
+        <!-- Note from manager -->
+        <tr>
+          <td style="background:#FFFBEB;border-left:1px solid #E2E8F0;border-right:1px solid #E2E8F0;padding:0">
+            <div style="margin:16px;padding:14px 16px;background:#FEF3C7;border-left:4px solid #F59E0B;border-radius:6px">
+              <div style="font-size:10px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">A note from ${esc(p.businessName)}</div>
+              <div style="font-size:14px;line-height:1.5;color:#451A03">${esc(note).replace(/\r?\n/g, '<br>')}</div>
+            </div>
+          </td>
+        </tr>
+` : '';
   const lastIdx = p.shifts.length - 1;
   const rows = p.shifts.map((s, i) => {
     const borderBottom = i < lastIdx ? 'border-bottom:1px solid #F1F5F9;' : '';
     if (s.isOff) {
       return `<tr style="background:#FAFAFA">
-        <td style="padding:11px 16px;${borderBottom}width:110px;font-size:13px;font-weight:600;color:#94A3B8">${s.date}</td>
+        <td style="padding:11px 16px;${borderBottom}width:110px;font-size:13px;font-weight:600;color:#94A3B8">${esc(s.date)}</td>
         <td style="padding:11px 16px;${borderBottom}font-size:13px;color:#94A3B8;font-style:italic">Off</td>
         <td style="padding:11px 16px;${borderBottom}text-align:right;font-size:13px;color:#CBD5E1;width:60px">–</td>
       </tr>`;
     }
     return `<tr>
-      <td style="padding:11px 16px;${borderBottom}width:110px;font-size:13px;font-weight:600;color:#1E293B">${s.date}</td>
-      <td style="padding:11px 16px;${borderBottom}font-size:13px;color:#334155;font-family:'Courier New',Courier,monospace;letter-spacing:0.01em">${s.time}</td>
-      <td style="padding:11px 16px;${borderBottom}text-align:right;font-size:13px;font-weight:700;color:#3B5BDB;width:60px">${s.hours}</td>
+      <td style="padding:11px 16px;${borderBottom}width:110px;font-size:13px;font-weight:600;color:#1E293B">${esc(s.date)}</td>
+      <td style="padding:11px 16px;${borderBottom}font-size:13px;color:#334155;font-family:'Courier New',Courier,monospace;letter-spacing:0.01em">${esc(s.time)}</td>
+      <td style="padding:11px 16px;${borderBottom}text-align:right;font-size:13px;font-weight:700;color:#3B5BDB;width:60px">${esc(s.hours)}</td>
     </tr>`;
   }).join('');
 
@@ -49,7 +69,7 @@ function buildHtml(p: Payload): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>Your roster – ${p.weekRange}</title>
+  <title>Your roster – ${esc(p.weekRange)}</title>
 </head>
 <body style="margin:0;padding:0;background:#F1F5F9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:32px 16px">
@@ -60,11 +80,12 @@ function buildHtml(p: Payload): string {
         <tr>
           <td style="background:#3B5BDB;padding:24px 28px;border-radius:10px 10px 0 0">
             <div style="color:rgba(255,255,255,0.65);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">Your roster</div>
-            <div style="color:#ffffff;font-size:24px;font-weight:700;line-height:1.2;margin-bottom:4px">${p.staffName}</div>
-            <div style="color:rgba(255,255,255,0.75);font-size:13px">${p.weekRange}</div>
+            <div style="color:#ffffff;font-size:24px;font-weight:700;line-height:1.2;margin-bottom:4px">${esc(p.staffName)}</div>
+            <div style="color:rgba(255,255,255,0.75);font-size:13px">${esc(p.weekRange)}</div>
           </td>
         </tr>
 
+${noteHtml}
         <!-- Schedule table -->
         <tr>
           <td style="background:#ffffff;border-left:1px solid #E2E8F0;border-right:1px solid #E2E8F0;padding:0">
@@ -87,7 +108,7 @@ function buildHtml(p: Payload): string {
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
                 <td style="padding:13px 16px;font-size:13px;font-weight:600;color:#3730A3">Total hours</td>
-                <td style="padding:13px 16px;text-align:right;font-size:20px;font-weight:700;color:#3B5BDB">${p.totalHours}</td>
+                <td style="padding:13px 16px;text-align:right;font-size:20px;font-weight:700;color:#3B5BDB">${esc(p.totalHours)}</td>
               </tr>
             </table>
           </td>
@@ -96,7 +117,7 @@ function buildHtml(p: Payload): string {
         <!-- Footer -->
         <tr>
           <td style="padding:20px 0 8px;text-align:center;font-size:11px;color:#94A3B8">
-            Sent by ${p.businessName} via Recess Roster
+            Sent by ${esc(p.businessName)} via Recess Roster
           </td>
         </tr>
 
@@ -133,6 +154,7 @@ serve(async (req) => {
       body: JSON.stringify({
         from: payload.fromAddress || 'Recess Roster <onboarding@resend.dev>',
         to: [payload.to],
+        ...(payload.ccHello && payload.to.toLowerCase() !== CC_HELLO ? { cc: [CC_HELLO] } : {}),
         subject: `Your roster – ${payload.weekRange}`,
         html,
       }),
