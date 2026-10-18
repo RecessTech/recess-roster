@@ -1205,6 +1205,9 @@ function OrderingTab({ items, sites, locations, selectedLocationId, onSelectLoca
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
               {groupBy === 'category' ? <Tag size={12} className="text-gray-400" /> : <Truck size={12} className="text-gray-400" />}
               {groupKey}
+              <span className="text-gray-400 font-normal normal-case tracking-normal">
+                · {rows.length} item{rows.length === 1 ? '' : 's'}
+              </span>
             </h3>
             <div className="card overflow-hidden">
               <table className="w-full text-sm table-fixed">
@@ -1383,7 +1386,12 @@ function AgentOrderTable({ supplier, portalName, agentOrderable, lines }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <h3 className="text-sm font-semibold text-gray-800">{supplier}</h3>
+        <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+          {supplier}
+          <span className="text-xs font-medium text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+            {lines.length} item{lines.length === 1 ? '' : 's'}
+          </span>
+        </h3>
         {agentOrderable && (
           <button
             onClick={() => openInClaude(buildAgentTaskPrompt(supplier, portalName, lines))}
