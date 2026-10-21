@@ -2,6 +2,13 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
 
+// Brand tokens -- R-Shift's own blue colourway, shared across every
+// R-Shift email (order-status, catering job alerts, this one) so they all
+// read as one product rather than each screen inventing its own look.
+const BRAND = '#3B5BDB';
+const BRAND_DARK = '#2D4EC9';
+const LOGO_URL = 'https://i.postimg.cc/76YSLjdw/rshift-on-cream.jpg';
+
 // Allow calls from the browser (same Supabase project)
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -79,16 +86,25 @@ function buildHtml(p: Payload): string {
   <title>${esc(p.weekLabel ? `Roster ${p.weekLabel}` : `Your roster – ${p.weekRange}`)}</title>
 </head>
 <body style="margin:0;padding:0;background:#F1F5F9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:32px 16px">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:28px 16px">
     <tr><td align="center">
-      <table width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
+      <table width="540" cellpadding="0" cellspacing="0" style="max-width:540px;width:100%">
 
-        <!-- Header -->
+        <!-- Brand header -->
         <tr>
-          <td style="background:#3B5BDB;padding:24px 28px;border-radius:10px 10px 0 0">
-            <div style="color:rgba(255,255,255,0.65);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">Your roster</div>
-            <div style="color:#ffffff;font-size:24px;font-weight:700;line-height:1.2;margin-bottom:4px">${esc(p.staffName)}</div>
-            <div style="color:rgba(255,255,255,0.75);font-size:13px">${esc(p.weekRange)}</div>
+          <td style="background:${BRAND};background:linear-gradient(160deg,${BRAND},${BRAND_DARK});border-radius:14px 14px 0 0;padding:22px 28px">
+            <table width="100%" cellpadding="0" cellspacing="0"><tr>
+              <td style="width:40px;vertical-align:middle">
+                <table cellpadding="0" cellspacing="0" width="36" height="36" style="border-radius:10px;overflow:hidden">
+                  <tr><td style="width:36px;height:36px"><img src="${LOGO_URL}" alt="R-Shift" width="36" height="36" style="display:block;width:36px;height:36px;object-fit:cover;border-radius:10px"></td></tr>
+                </table>
+              </td>
+              <td style="vertical-align:middle;padding-left:4px">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.75)">R-Shift &middot; Your Roster</div>
+                <div style="font-size:21px;font-weight:800;color:#ffffff;margin-top:1px">${esc(p.staffName)}</div>
+              </td>
+            </tr></table>
+            <div style="color:rgba(255,255,255,0.8);font-size:13px;margin-top:10px">${esc(p.weekRange)}</div>
           </td>
         </tr>
 
@@ -111,7 +127,7 @@ ${noteHtml}
 
         <!-- Total footer -->
         <tr>
-          <td style="background:#EEF2FF;border:1px solid #C7D2FE;border-top:none;border-radius:0 0 10px 10px;padding:0">
+          <td style="background:#EEF2FF;border:1px solid #C7D2FE;border-top:none;border-radius:0 0 14px 14px;padding:0">
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
                 <td style="padding:13px 16px;font-size:13px;font-weight:600;color:#3730A3">Total hours</td>
@@ -123,8 +139,10 @@ ${noteHtml}
 
         <!-- Footer -->
         <tr>
-          <td style="padding:20px 0 8px;text-align:center;font-size:11px;color:#94A3B8">
-            Sent by ${esc(p.businessName)} via R-Shift
+          <td style="padding:18px 4px 0;text-align:center">
+            <div style="font-size:11px;color:#94A3B8;margin-bottom:6px">Sent by ${esc(p.businessName)}</div>
+            <span style="display:inline-block;width:6px;height:6px;border-radius:999px;background:${BRAND};margin-right:6px;vertical-align:middle"></span>
+            <span style="font-size:11px;color:#94A3B8;vertical-align:middle">R-Shift</span>
           </td>
         </tr>
 
