@@ -52,6 +52,30 @@ function fmtDate(dateStr: string): string {
   });
 }
 
+// dd/mm, matching the "17/10" convention used throughout the Catering Hub
+// sheet this job data originally came from.
+function ddmm(dateStr: string): string {
+  const [, m, d] = dateStr.split('-');
+  return `${d}/${m}`;
+}
+
+const DAY_ABBREV = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+function dayAbbrev(dateStr: string): string {
+  return DAY_ABBREV[new Date(dateStr + 'T00:00:00Z').getUTCDay()];
+}
+
+// ISO-8601 week number (Monday-start, week 1 contains the year's first
+// Thursday) -- matches the "W42" labels in the Catering Hub sheet exactly.
+function isoWeek(dateStr: string): number {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const dayNum = (d.getUTCDay() + 6) % 7; // Mon=0 .. Sun=6
+  d.setUTCDate(d.getUTCDate() - dayNum + 3); // nearest Thursday
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const firstDayNum = (firstThursday.getUTCDay() + 6) % 7;
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDayNum + 3);
+  return 1 + Math.round((d.getTime() - firstThursday.getTime()) / (7 * 86400000));
+}
+
 const DIETARY_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'gf_ppl', label: 'GF' },
   { key: 'vego_ppl', label: 'Vego' },
@@ -204,8 +228,7 @@ serve(async (req) => {
       : APP_URL;
 
     const html = buildEmailHtml(job, viewUrl);
-    const dateLabel = new Date(job.job_date + 'T12:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
-    const subject = `📋 Catering Job Alert -- ${job.company || 'Untitled job'} (${dateLabel})`;
+    const subject = `[W${isoWeek(job.job_date)}-${dayAbbrev(job.job_date)}] New Catering Job - ${job.company || 'Untitled job'} ${ddmm(job.job_date)}`;
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
