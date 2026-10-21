@@ -27,8 +27,18 @@ const RECIPIENTS = [
 // itsrecess.com.au is hardcoded as the Resend sending domain elsewhere.
 const APP_URL = 'https://r-shift-git-main-clark-wenborns-projects.vercel.app';
 
-const ROSE = '#BE185D';
-const ROSE_DK = '#9D174D';
+// Brand tokens -- R-Shift's own blue colourway, shared across every
+// R-Shift email (order-status, the roster, this one) so they all read as
+// one product rather than each screen inventing its own look.
+const BRAND = '#3B5BDB';
+const BRAND_DARK = '#2D4EC9';
+const LOGO_URL = 'https://i.postimg.cc/76YSLjdw/rshift-on-cream.jpg';
+const TINT = '#EEF2FF';
+const TINT_TEXT = '#3730A3';
+const GOOD = '#15803D';
+const GOOD_BG = '#DCFCE7';
+const MUTED_BG = '#F1F5F9';
+const MUTED_TEXT = '#94A3B8';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -73,13 +83,13 @@ function buildEmailHtml(job: any, viewUrl: string): string {
     : null;
 
   const dietaryTags = DIETARY_FIELDS.filter(f => Number(job[f.key]) > 0)
-    .map(f => `<span style="display:inline-block;background:#FDF2F8;color:${ROSE_DK};font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;margin:0 6px 6px 0">${f.label}: ${job[f.key]}</span>`)
+    .map(f => `<span style="display:inline-block;background:${TINT};color:${TINT_TEXT};font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;margin:0 6px 6px 0">${f.label}: ${job[f.key]}</span>`)
     .join('');
 
   const checkboxTags = CHECKBOX_FIELDS
     .map(f => {
       const on = !!job[f.key];
-      return `<span style="display:inline-block;background:${on ? '#DCFCE7' : '#F1F5F9'};color:${on ? '#15803D' : '#94A3B8'};font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;margin:0 6px 6px 0">${on ? '✓' : '—'} ${f.label}</span>`;
+      return `<span style="display:inline-block;background:${on ? GOOD_BG : MUTED_BG};color:${on ? GOOD : MUTED_TEXT};font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;margin:0 6px 6px 0">${on ? '✓' : '—'} ${f.label}</span>`;
     })
     .join('');
 
@@ -110,10 +120,19 @@ function buildEmailHtml(job: any, viewUrl: string): string {
 
         <!-- Brand header -->
         <tr>
-          <td style="background:${ROSE};background:linear-gradient(160deg,${ROSE},${ROSE_DK});border-radius:14px 14px 0 0;padding:22px 24px">
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.75)">R-Cater &middot; Job Alert</div>
-            <div style="font-size:21px;font-weight:800;color:#ffffff;margin-top:2px">${job.company || 'Untitled job'}</div>
-            ${job.job_type ? `<div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:2px">${job.job_type}</div>` : ''}
+          <td style="background:${BRAND};background:linear-gradient(160deg,${BRAND},${BRAND_DARK});border-radius:14px 14px 0 0;padding:22px 24px">
+            <table width="100%" cellpadding="0" cellspacing="0"><tr>
+              <td style="width:40px;vertical-align:middle">
+                <table cellpadding="0" cellspacing="0" width="36" height="36" style="border-radius:10px;overflow:hidden">
+                  <tr><td style="width:36px;height:36px"><img src="${LOGO_URL}" alt="R-Shift" width="36" height="36" style="display:block;width:36px;height:36px;object-fit:cover;border-radius:10px"></td></tr>
+                </table>
+              </td>
+              <td style="vertical-align:middle;padding-left:4px">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.75)">R-Shift &middot; Catering Alert</div>
+                <div style="font-size:19px;font-weight:800;color:#ffffff;margin-top:1px">${job.company || 'Untitled job'}</div>
+              </td>
+            </tr></table>
+            ${job.job_type ? `<div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:10px">${job.job_type}</div>` : ''}
           </td>
         </tr>
 
@@ -134,7 +153,7 @@ function buildEmailHtml(job: any, viewUrl: string): string {
         <!-- CTA -->
         <tr>
           <td style="background:#ffffff;border:1px solid #F1F5F9;border-top:none;border-radius:0 0 14px 14px;padding:4px 24px 22px">
-            <a href="${viewUrl}" style="display:block;text-align:center;background:${ROSE};color:#ffffff;font-size:13.5px;font-weight:700;text-decoration:none;padding:12px 0;border-radius:10px">
+            <a href="${viewUrl}" style="display:block;text-align:center;background:${BRAND};color:#ffffff;font-size:13.5px;font-weight:700;text-decoration:none;padding:12px 0;border-radius:10px">
               View this job in R-Shift →
             </a>
           </td>
@@ -143,8 +162,8 @@ function buildEmailHtml(job: any, viewUrl: string): string {
         <!-- Footer -->
         <tr>
           <td style="padding:18px 4px 0;text-align:center">
-            <span style="display:inline-block;width:6px;height:6px;border-radius:999px;background:${ROSE};margin-right:6px;vertical-align:middle"></span>
-            <span style="font-size:11px;color:#94A3B8;vertical-align:middle">R-Cater</span>
+            <span style="display:inline-block;width:6px;height:6px;border-radius:999px;background:${BRAND};margin-right:6px;vertical-align:middle"></span>
+            <span style="font-size:11px;color:#94A3B8;vertical-align:middle">R-Shift</span>
           </td>
         </tr>
 
@@ -159,7 +178,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { job_id } = await req.json();
+    const { job_id, test_to } = await req.json();
     if (!job_id) return jsonResponse({ error: 'Missing job_id' }, 400);
 
     const supabase = createClient(
@@ -196,7 +215,9 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         from: 'R-Cater <catering-alert@itsrecess.com.au>',
-        to: RECIPIENTS,
+        // test_to lets a single address be used for a one-off test send
+        // instead of fanning out to the whole distribution list.
+        to: typeof test_to === 'string' && test_to ? [test_to] : RECIPIENTS,
         subject,
         html,
       }),
