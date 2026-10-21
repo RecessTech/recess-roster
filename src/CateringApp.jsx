@@ -4,7 +4,7 @@ import {
   MapPin, Truck, DollarSign, StickyNote, User, Building2, UtensilsCrossed, Clock, Send,
   Settings, Search, Copy,
 } from 'lucide-react';
-import { db } from './supabaseClient';
+import { db, supabase } from './supabaseClient';
 import toast from 'react-hot-toast';
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
@@ -1164,7 +1164,7 @@ function IngredientsRequiredPanel({ rollup }) {
   );
 }
 
-function JobCard({ job, expanded, onToggle, onEdit, onDelete, onToggleFlag, cateringItemLines, stockItemsById, componentsById, highlighted }) {
+function JobCard({ job, expanded, onToggle, onEdit, onDelete, onToggleFlag, onSendAlert, sendingAlert, cateringItemLines, stockItemsById, componentsById, highlighted }) {
   const dotColor = TYPE_DOT[job.job_type] || TYPE_DOT.Other;
   const totalPieces = computeTotalPieces(job.platter_size, job.pieces_per_person);
   const dietaryTags = DIETARY_FIELDS.filter(f => job[f.key] > 0);
@@ -1279,6 +1279,9 @@ function JobCard({ job, expanded, onToggle, onEdit, onDelete, onToggleFlag, cate
                   <DollarSign size={12} /> {Number(job.gross_rev).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               )}
+              <button onClick={onSendAlert} disabled={sendingAlert} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50" title="Send catering alert email">
+                {sendingAlert ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+              </button>
               <button onClick={onEdit} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" title="Edit">
                 <Edit2 size={13} />
               </button>
@@ -1312,6 +1315,7 @@ export default function CateringApp({ org, user }) {
   // reveals them again on demand rather than losing access to the history.
   const [showPast, setShowPast] = useState(false);
   const [pendingScrollTo, setPendingScrollTo] = useState(null);
+  const [sendingAlertId, setSendingAlertId] = useState(null);
 
   // One ref per week section (keyed by that week's Monday), so clicking a
   // calendar date can scroll the feed straight to it instead of filtering
@@ -1481,6 +1485,27 @@ export default function CateringApp({ org, user }) {
     }
   }
 
+  // One-pager "heads up" email -- critical job details + a link into
+  // R-Shift's read-only catering view -- sent to the standing catering
+  // distribution list. Manual per-job action, distinct from the automatic
+  // daily checklist nag.
+  async function handleSendAlert(job) {
+    setSendingAlertId(job.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('send-catering-job-alert', {
+        headers: { Authorization: `Bearer ${process.env.REACT_APP_SUPABASE_ANON_KEY}` },
+        body: { job_id: job.id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success('Alert sent');
+    } catch (err) {
+      toast.error('Failed to send alert: ' + (err.message || 'unknown error'));
+    } finally {
+      setSendingAlertId(null);
+    }
+  }
+
   return (
     <div className="h-full flex flex-col" style={{ background: 'var(--app-bg)' }}>
       {/* Toolbar */}
@@ -1574,6 +1599,8 @@ export default function CateringApp({ org, user }) {
                         onEdit={() => { setEditingJob(job); setShowForm(true); }}
                         onDelete={() => handleDelete(job)}
                         onToggleFlag={(key, value) => handleToggleFlag(job, key, value)}
+                        onSendAlert={() => handleSendAlert(job)}
+                        sendingAlert={sendingAlertId === job.id}
                         cateringItemLines={cateringItemLines}
                         stockItemsById={stockItemsById}
                         componentsById={componentsById}
