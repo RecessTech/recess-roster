@@ -111,6 +111,10 @@ function computeSupplierStatuses(
 // Brand tokens -- R-Shift's own blue colourway ([data-theme="blue"] in
 // index.css / the sign-in page's brand panel gradient), not R-Stock's
 // orange -- this email is sent as R-Shift, the product staff actually know.
+// The header logo below is served from the app's own deployment
+// (public/logo192.png), not a third-party image host -- postimg.cc (its
+// previous home) silently deletes hotlinked images that go unviewed for a
+// while, which is exactly what broke it before.
 const BRAND = '#3B5BDB';
 const BRAND_DARK = '#2D4EC9';
 const GOOD = '#0f9d4e';
@@ -191,7 +195,7 @@ function buildEmailHtml(dateLabel: string, totalOutstanding: number, sections: s
             <table width="100%" cellpadding="0" cellspacing="0"><tr>
               <td style="width:40px;vertical-align:middle">
                 <table cellpadding="0" cellspacing="0" width="36" height="36" style="border-radius:10px;overflow:hidden">
-                  <tr><td style="width:36px;height:36px"><img src="https://i.postimg.cc/76YSLjdw/rshift-on-cream.jpg" alt="R-Shift" width="36" height="36" style="display:block;width:36px;height:36px;object-fit:cover;border-radius:10px"></td></tr>
+                  <tr><td style="width:36px;height:36px"><img src="https://r-shift-git-main-clark-wenborns-projects.vercel.app/logo192.png" alt="R-Shift" width="36" height="36" style="display:block;width:36px;height:36px;object-fit:cover;border-radius:10px"></td></tr>
                 </table>
               </td>
               <td style="vertical-align:middle;padding-left:4px">

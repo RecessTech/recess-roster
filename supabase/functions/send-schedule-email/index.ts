@@ -7,7 +7,11 @@ const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
 // read as one product rather than each screen inventing its own look.
 const BRAND = '#3B5BDB';
 const BRAND_DARK = '#2D4EC9';
-const LOGO_URL = 'https://i.postimg.cc/76YSLjdw/rshift-on-cream.jpg';
+// Served from the app's own deployment, not a third-party image host --
+// postimg.cc (the previous home for this logo) silently deletes hotlinked
+// images that go unviewed for a while, which is exactly what broke this
+// logo in emails before. This URL is just as permanent as the app itself.
+const LOGO_URL = 'https://r-shift-git-main-clark-wenborns-projects.vercel.app/logo192.png';
 
 // Allow calls from the browser (same Supabase project)
 const corsHeaders = {
