@@ -212,7 +212,12 @@ function fmtQty(n) {
 
 // ── Shared bits ──────────────────────────────────────────────────────────────
 
-function Modal({ title, onClose, children, maxWidth = 'max-w-lg' }) {
+// `footer`, when given, stays pinned below the scrolling body instead of
+// scrolling away with the rest of the content -- on a long form (the
+// catering job editor especially) that's the difference between Save
+// always being one tap away and having to scroll past a dozen fields to
+// find it again.
+function Modal({ title, onClose, children, footer, maxWidth = 'max-w-lg' }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className={`bg-white rounded-2xl shadow-xl w-full ${maxWidth} max-h-[90vh] flex flex-col`}>
@@ -223,6 +228,7 @@ function Modal({ title, onClose, children, maxWidth = 'max-w-lg' }) {
           </button>
         </div>
         <div className="px-6 py-4 overflow-y-auto">{children}</div>
+        {footer && <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0">{footer}</div>}
       </div>
     </div>
   );
@@ -794,19 +800,25 @@ function MenuItemsEditor({ items, totalPieces, onChange, cateringItems }) {
                   <select
                     value={it.packaging || 'none'}
                     onChange={e => handlePackagingChange(idx, e.target.value)}
-                    className="w-20 shrink-0 border border-gray-200 rounded-lg px-1 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    className={`shrink-0 border border-gray-200 rounded-lg px-1 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-gray-200 ${it.packaging && it.packaging !== 'none' ? 'w-20' : 'ml-auto w-24'}`}
                   >
                     {PACKAGING_TYPES.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
                   </select>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    value={it.unit_qty}
-                    onChange={e => updateRow(idx, { unit_qty: e.target.value })}
-                    title="Calculated from pieces -- edit to override"
-                    className="w-14 shrink-0 border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-gray-200"
-                  />
+                  {/* Pieces : units is a fixed 1:1 ratio under the default "Pieces"
+                      packaging, so a separate units box there would just echo the
+                      Pieces value back -- only Roll/Slab need their own conversion,
+                      editable in case the piece count doesn't divide evenly. */}
+                  {it.packaging && it.packaging !== 'none' && (
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={it.unit_qty}
+                      onChange={e => updateRow(idx, { unit_qty: e.target.value })}
+                      title="Calculated from pieces -- edit to override"
+                      className="w-14 shrink-0 border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    />
+                  )}
                 </>
               )}
             </div>
@@ -962,7 +974,21 @@ function JobFormModal({ orgId, userId, date, job, cateringItems, onClose, onSave
   }
 
   return (
-    <Modal title={job ? 'Edit Catering Job' : 'Add Catering Job'} onClose={onClose} maxWidth="max-w-2xl">
+    <Modal
+      title={job ? 'Edit Catering Job' : 'Add Catering Job'}
+      onClose={onClose}
+      maxWidth="max-w-2xl"
+      footer={
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 rounded-xl py-2 text-sm font-medium hover:bg-gray-50 transition-colors">
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving} className="flex-1 text-white rounded-xl py-2 text-sm font-semibold disabled:opacity-50" style={{ background: 'var(--primary)' }}>
+            {saving ? 'Saving…' : job ? 'Save Changes' : 'Add Job'}
+          </button>
+        </div>
+      }
+    >
       <div className="space-y-6">
         {/* Basics */}
         <div>
@@ -1072,15 +1098,6 @@ function JobFormModal({ orgId, userId, date, job, cateringItems, onClose, onSave
               </label>
             ))}
           </div>
-        </div>
-
-        <div className="flex gap-2 pt-1">
-          <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 rounded-xl py-2 text-sm font-medium hover:bg-gray-50 transition-colors">
-            Cancel
-          </button>
-          <button onClick={handleSave} disabled={saving} className="flex-1 text-white rounded-xl py-2 text-sm font-semibold disabled:opacity-50" style={{ background: 'var(--primary)' }}>
-            {saving ? 'Saving…' : job ? 'Save Changes' : 'Add Job'}
-          </button>
         </div>
       </div>
     </Modal>
