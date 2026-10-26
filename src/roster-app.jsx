@@ -17,8 +17,21 @@ import { isoWeekLabel } from './isoWeek';
 import toast, { Toaster } from 'react-hot-toast';
 
 // Idle state for the shift-painting drag (see startDrag / dragTick in RosterApp)
-const IDLE_DRAG = { active: false, axis: 'row', cellSize: 0, interval: 15, startRowIdx: 0, currentRowIdx: 0, moved: false, staffId: null, dateKey: null, startCell: null, anchorTop: 0, anchorLeft: 0, isEraser: false, role: null };
+const IDLE_DRAG = { active: false, mode: 'paint', anchorIdx: 0, axis: 'row', cellSize: 0, interval: 15, startRowIdx: 0, currentRowIdx: 0, moved: false, staffId: null, dateKey: null, startCell: null, anchorTop: 0, anchorLeft: 0, isEraser: false, role: null };
 const DRAG_LABEL_STYLE = { position: 'absolute', whiteSpace: 'nowrap', padding: '1px 6px', borderRadius: 4, background: 'rgba(17,24,39,0.85)', color: '#fff', fontSize: 10, fontWeight: 600, fontVariantNumeric: 'tabular-nums', lineHeight: '16px', pointerEvents: 'none' };
+// Schedule keys (always stored at 15-min granularity) for a run of display slots.
+const slotKeysForRange = (slots, dateKey, staffId, startIdx, endIdx, interval) => {
+  const keys = [];
+  for (let i = startIdx; i <= endIdx; i++) {
+    const slot = slots[i];
+    if (!slot) continue;
+    keys.push(`${dateKey}|${staffId}|${slot}`);
+    for (let sub = 15; sub < interval; sub += 15) keys.push(`${dateKey}|${staffId}|${addMinsToSlot(slot, sub)}`);
+  }
+  return keys;
+};
+// How close (px) to a shift's first/last cell edge counts as grabbing its resize handle
+const DRAG_EDGE_PX = 7;
 const addMinsToSlot = (slot, m) => {
   const [h, min] = slot.split(':').map(Number);
   const t = h * 60 + min + m;
@@ -148,6 +161,7 @@ const RosterApp = () => {
   const overlayLabelRef = useRef(null);
   const dragPointerRef = useRef({ x: 0, y: 0 });
   const dragFrameRef = useRef(0);
+  const dragCtxRef = useRef(null); // fresh render-time values for the document-level drag handlers
   const containerRef = useRef(null);
   const timeSlotsRef = useRef([]);
   const [showStaffModal, setShowStaffModal] = useState(false);
@@ -954,6 +968,15 @@ const RosterApp = () => {
   };
   const getScheduleKey = (dateKey, staffId, timeSlot) => `${dateKey}|${staffId}|${timeSlot}`;
 
+  dragCtxRef.current = {
+    schedule,
+    viewSchedule,
+    staff,
+    newShiftLocationId,
+    // existing shifts can be grabbed (move / resize) only when not painting
+    canEdit: !selectedRole && !(templateMode && selectedTemplate),
+  };
+
   // --- Shift painting (drag across cells) ---------------------------------
   // The gesture is tracked from the pointer position rather than per-cell
   // mouseenter events, so the selection keeps following the pointer when it
@@ -964,6 +987,7 @@ const RosterApp = () => {
     dragRef.current = { ...IDLE_DRAG };
     if (dragFrameRef.current) { cancelAnimationFrame(dragFrameRef.current); dragFrameRef.current = 0; }
     if (overlayRef.current) overlayRef.current.style.display = 'none';
+    if (containerRef.current) containerRef.current.style.cursor = '';
   };
 
   // Map a viewport point to a slot index along the drag axis (clamped).
@@ -989,24 +1013,28 @@ const RosterApp = () => {
     const d = dragRef.current;
     const overlay = overlayRef.current;
     if (!overlay) return;
-    const minIdx = Math.min(d.startRowIdx, d.currentRowIdx);
-    const span = Math.abs(d.currentRowIdx - d.startRowIdx) + 1;
-    const offset = (minIdx - d.startRowIdx) * d.cellSize;
-    if (d.axis === 'col') {
-      overlay.style.left = `${d.anchorLeft + offset}px`;
-      overlay.style.width = `${span * d.cellSize}px`;
-    } else {
-      overlay.style.top = `${d.anchorTop + offset}px`;
-      overlay.style.height = `${span * d.cellSize}px`;
+    const isPaint = d.mode === 'paint';
+    const selStart = isPaint ? Math.min(d.startRowIdx, d.currentRowIdx) : d.selStart;
+    const selEnd = isPaint ? Math.max(d.startRowIdx, d.currentRowIdx) : d.selEnd;
+    const span = selEnd - selStart + 1;
+    const offset = (selStart - d.anchorIdx) * d.cellSize;
+    overlay.style.top = `${d.anchorTop + (d.axis === 'col' ? 0 : offset)}px`;
+    overlay.style.left = `${d.anchorLeft + (d.axis === 'col' ? offset : 0)}px`;
+    if (d.axis === 'col') overlay.style.width = `${span * d.cellSize}px`;
+    else overlay.style.height = `${span * d.cellSize}px`;
+    if (!isPaint) {
+      overlay.style.backgroundColor = d.valid ? d.fill : 'rgba(239, 68, 68, 0.35)';
+      overlay.style.borderColor = d.valid ? 'rgba(255,255,255,0.85)' : 'rgba(239, 68, 68, 0.9)';
+      overlay.style.borderStyle = d.valid ? 'solid' : 'dashed';
     }
     const label = overlayLabelRef.current;
     const slots = timeSlotsRef.current;
-    if (label && slots[minIdx] && slots[minIdx + span - 1]) {
-      const mins = span * d.interval;
-      const hrs = mins / 60;
+    if (label && slots[selStart] && slots[selEnd]) {
+      const hrs = (span * d.interval) / 60;
+      const range = `${slots[selStart]}–${addMinsToSlot(slots[selEnd], d.interval)}`;
       label.textContent = d.isEraser
-        ? `Erase ${slots[minIdx]}–${addMinsToSlot(slots[minIdx + span - 1], d.interval)}`
-        : `${slots[minIdx]}–${addMinsToSlot(slots[minIdx + span - 1], d.interval)} · ${hrs % 1 === 0 ? hrs : hrs.toFixed(2).replace(/0$/, '')}h`;
+        ? `Erase ${range}`
+        : `${range} · ${hrs % 1 === 0 ? hrs : hrs.toFixed(2).replace(/0$/, '')}h${d.valid === false ? ' · overlaps' : ''}`;
     }
   };
 
@@ -1016,6 +1044,56 @@ const RosterApp = () => {
     d.currentRowIdx = idx;
     if (idx !== d.startRowIdx) d.moved = true;
     paintDragOverlay();
+  };
+
+  // Move/resize preview: set the shift's new range + target, check it doesn't
+  // collide with another shift, and redraw the overlay.
+  const applyShiftEdit = (selStart, selEnd, dateKey, staffId) => {
+    const d = dragRef.current;
+    const ctx = dragCtxRef.current;
+    if (selStart === d.selStart && selEnd === d.selEnd && dateKey === d.tdk && String(staffId) === String(d.tsid)) return;
+    d.selStart = selStart;
+    d.selEnd = selEnd;
+    d.tdk = dateKey;
+    d.tsid = staffId;
+    d.moved = selStart !== d.runStart || selEnd !== d.runEnd || dateKey !== d.dateKey || String(staffId) !== String(d.staffId);
+    d.valid = slotKeysForRange(timeSlotsRef.current, dateKey, staffId, selStart, selEnd, d.interval)
+      .every(k => !ctx.schedule[k] || d.srcKeys.has(k));
+    paintDragOverlay();
+  };
+
+  const updateDragFromPoint = (x, y) => {
+    const d = dragRef.current;
+    const container = containerRef.current;
+    if (!d.active || !container) return;
+    if (d.mode === 'paint') { updateDragSelection(dragIdxFromPoint(x, y)); return; }
+
+    if (d.mode === 'resize-start' || d.mode === 'resize-end') {
+      const idx = dragIdxFromPoint(x, y);
+      if (idx == null) return;
+      if (d.mode === 'resize-start') applyShiftEdit(Math.min(idx, d.runEnd), d.runEnd, d.tdk, d.tsid);
+      else applyShiftEdit(d.runStart, Math.max(idx, d.runStart), d.tdk, d.tsid);
+      return;
+    }
+
+    // move: follow whichever staff/day cell is under the pointer
+    const idxAttr = d.axis === 'col' ? 'data-cidx' : 'data-ridx';
+    const el = document.elementFromPoint(x, y);
+    const cell = el && el.closest ? el.closest('[data-sid]') : null;
+    if (!cell || !cell.hasAttribute(idxAttr) || cell === d.lastCell) return;
+    d.lastCell = cell;
+    const idx = Number(cell.getAttribute(idxAttr));
+    const len = d.runEnd - d.runStart + 1;
+    const last = timeSlotsRef.current.length - 1;
+    const selStart = Math.max(0, Math.min(last - len + 1, idx - d.grabOffset));
+    const cr = container.getBoundingClientRect();
+    const r = cell.getBoundingClientRect();
+    d.anchorTop = r.top - cr.top + container.scrollTop;
+    d.anchorLeft = r.left - cr.left + container.scrollLeft;
+    d.anchorIdx = idx;
+    d.moved = true; // force a redraw below even if the range is unchanged
+    d.selStart = -1;
+    applyShiftEdit(selStart, selStart + len - 1, cell.getAttribute('data-dk'), cell.getAttribute('data-sid'));
   };
 
   // Runs every frame while a drag is in progress (started by the first mousemove):
@@ -1029,13 +1107,122 @@ const RosterApp = () => {
     const r = container.getBoundingClientRect();
     const EDGE = 48, MAX = 22;
     const speed = (depth) => Math.round(MAX * Math.min(1, Math.max(0, depth) / EDGE));
-    if (d.axis === 'col') {
+    // moving a shift can cross to another day/staff, so scroll both ways then
+    if (d.mode === 'move' || d.axis === 'col') {
       container.scrollLeft += speed(x - (r.right - EDGE)) - speed((r.left + EDGE) - x);
-    } else {
+    }
+    if (d.mode === 'move' || d.axis !== 'col') {
       container.scrollTop += speed(y - (r.bottom - EDGE)) - speed((r.top + EDGE) - y);
     }
-    updateDragSelection(dragIdxFromPoint(x, y));
+    d.lastCell = null; // cells shift under a scrolling pointer, so re-resolve
+    updateDragFromPoint(x, y);
     dragFrameRef.current = requestAnimationFrame(dragTick);
+  };
+
+  // Grab an existing shift (no role selected): the first/last cell edge resizes
+  // it, anywhere else moves it -- to another time, staff member or day.
+  const startShiftEdit = (e, dateKey, staffId, timeSlot, idx, axis, cellSize) => {
+    if (e.button !== 0) return;
+    const ctx = dragCtxRef.current;
+    const slots = timeSlotsRef.current;
+    const sh = ctx.viewSchedule[getScheduleKey(dateKey, staffId, timeSlot)];
+    if (!sh) return;
+    e.preventDefault();
+
+    const same = (i) => ctx.viewSchedule[getScheduleKey(dateKey, staffId, slots[i])]?.roleId === sh.roleId;
+    let runStart = idx, runEnd = idx;
+    while (runStart > 0 && same(runStart - 1)) runStart--;
+    while (runEnd < slots.length - 1 && same(runEnd + 1)) runEnd++;
+
+    const cellRect = e.currentTarget.getBoundingClientRect();
+    const size = axis === 'col' ? cellRect.width : cellRect.height;
+    const pos = axis === 'col' ? e.clientX - cellRect.left : e.clientY - cellRect.top;
+    const edge = Math.min(DRAG_EDGE_PX, size * 0.4);
+    const atStart = idx === runStart && pos < edge;
+    const atEnd = idx === runEnd && pos > size - edge;
+    let mode = 'move';
+    if (atStart && atEnd) mode = pos < size / 2 ? 'resize-start' : 'resize-end';
+    else if (atStart) mode = 'resize-start';
+    else if (atEnd) mode = 'resize-end';
+
+    const srcKeys = new Set(
+      slotKeysForRange(timeSlotsRef.current, dateKey, staffId, runStart, runEnd, timeInterval)
+        .filter(k => ctx.schedule[k]?.roleId === sh.roleId)
+    );
+
+    const container = containerRef.current;
+    const containerRect = container.getBoundingClientRect();
+    const cellTop = cellRect.top - containerRect.top + container.scrollTop;
+    const cellLeft = cellRect.left - containerRect.left + container.scrollLeft;
+    const fill = sh.roleColor + 'B0';
+
+    dragRef.current = {
+      ...IDLE_DRAG,
+      active: true,
+      mode,
+      axis,
+      cellSize,
+      interval: timeInterval,
+      anchorIdx: idx,
+      anchorTop: cellTop,
+      anchorLeft: cellLeft,
+      staffId,
+      dateKey,
+      runStart,
+      runEnd,
+      selStart: runStart,
+      selEnd: runEnd,
+      tdk: dateKey,
+      tsid: staffId,
+      grabOffset: idx - runStart,
+      srcKeys,
+      fill,
+      valid: true,
+      moved: false,
+      lastCell: null,
+    };
+    dragPointerRef.current = { x: e.clientX, y: e.clientY };
+    container.style.cursor = mode === 'move' ? 'grabbing' : (axis === 'col' ? 'ew-resize' : 'ns-resize');
+
+    const overlay = overlayRef.current;
+    if (overlay) {
+      overlay.style.display = 'block';
+      overlay.style.width = `${cellRect.width}px`;
+      overlay.style.height = `${cellRect.height}px`;
+    }
+    const label = overlayLabelRef.current;
+    if (label) {
+      if (axis === 'col') { label.style.left = '0'; label.style.bottom = '100%'; label.style.top = 'auto'; label.style.marginBottom = '4px'; label.style.marginLeft = '0'; }
+      else { label.style.left = '100%'; label.style.top = '0'; label.style.bottom = 'auto'; label.style.marginLeft = '6px'; label.style.marginBottom = '0'; }
+    }
+    // the overlay spans the whole shift so it reads as the shift being dragged
+    const len = runEnd - runStart + 1;
+    if (overlay) {
+      if (axis === 'col') overlay.style.width = `${len * cellSize}px`;
+      else overlay.style.height = `${len * cellSize}px`;
+    }
+    paintDragOverlay();
+  };
+
+  // Hover affordance: grab cursor over a shift, resize cursor on its first/last cell edge.
+  const updateHoverCursor = (ev) => {
+    const container = containerRef.current;
+    if (!container) return;
+    let cursor = '';
+    if (dragCtxRef.current?.canEdit && ev.target && ev.target.closest && container.contains(ev.target)) {
+      const cell = ev.target.closest('[data-shift]');
+      if (cell) {
+        const isCol = cell.hasAttribute('data-cidx');
+        const r = cell.getBoundingClientRect();
+        const size = isCol ? r.width : r.height;
+        const pos = isCol ? ev.clientX - r.left : ev.clientY - r.top;
+        const edge = Math.min(DRAG_EDGE_PX, size * 0.4);
+        const atStart = cell.hasAttribute('data-ss') && pos < edge;
+        const atEnd = cell.hasAttribute('data-se') && pos > size - edge;
+        cursor = atStart || atEnd ? (isCol ? 'ew-resize' : 'ns-resize') : 'grab';
+      }
+    }
+    if (container.style.cursor !== cursor) container.style.cursor = cursor;
   };
 
   const startDrag = (e, dateKey, staffId, timeSlot, idx, axis, cellSize) => {
@@ -1044,7 +1231,9 @@ const RosterApp = () => {
       applyTemplate(selectedTemplate, dateKey, staffId);
       return;
     }
-    if (e.button !== 0 || !selectedRole) return;
+    // No role selected: grab an existing shift to move / resize it
+    if (!selectedRole) { startShiftEdit(e, dateKey, staffId, timeSlot, idx, axis, cellSize); return; }
+    if (e.button !== 0) return;
 
     // Prevent text selection while painting
     e.preventDefault();
@@ -1059,10 +1248,13 @@ const RosterApp = () => {
     const cellLeft = cellRect.left - containerRect.left + container.scrollLeft;
 
     dragRef.current = {
+      ...IDLE_DRAG,
       active: true,
+      mode: 'paint',
       axis,
       cellSize,
       interval: timeInterval,
+      anchorIdx: idx,
       startRowIdx: idx,
       currentRowIdx: idx,
       moved: false,
@@ -1086,6 +1278,7 @@ const RosterApp = () => {
       overlay.style.height = `${cellRect.height}px`;
       overlay.style.backgroundColor = isEraser ? 'rgba(239, 68, 68, 0.3)' : (selectedRole.color + '80');
       overlay.style.borderColor = isEraser ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255,255,255,0.6)';
+      overlay.style.borderStyle = 'solid';
     }
     const label = overlayLabelRef.current;
     if (label) {
@@ -1131,6 +1324,35 @@ const RosterApp = () => {
     const drag = { ...dragRef.current };
     resetDrag();
 
+    // Move / resize of an existing shift
+    if (drag.mode !== 'paint') {
+      if (!drag.moved) return;
+      if (!drag.valid) { toast.error('That overlaps another shift'); return; }
+      const ctx = dragCtxRef.current;
+      const sameStaff = String(drag.tsid) === String(drag.staffId);
+      const targetStaff = sameStaff ? null : ctx.staff.find(st => String(st.id) === String(drag.tsid));
+      setSchedule(prevSchedule => {
+        saveToHistory(prevSchedule);
+        const next = { ...prevSchedule };
+        if (drag.mode === 'move') {
+          const delta = (drag.selStart - drag.runStart) * drag.interval;
+          const entries = [...drag.srcKeys].map(k => [k, prevSchedule[k]]);
+          entries.forEach(([k]) => { delete next[k]; });
+          entries.forEach(([k, entry]) => {
+            const nk = getScheduleKey(drag.tdk, drag.tsid, addMinsToSlot(k.split('|')[2], delta));
+            next[nk] = targetStaff ? { ...entry, locationId: ctx.newShiftLocationId(targetStaff.id) } : entry;
+          });
+        } else {
+          const newKeys = new Set(slotKeysForRange(timeSlotsRef.current, drag.tdk, drag.tsid, drag.selStart, drag.selEnd, drag.interval));
+          const template = prevSchedule[drag.srcKeys.values().next().value];
+          drag.srcKeys.forEach(k => { if (!newKeys.has(k)) delete next[k]; });
+          newKeys.forEach(k => { if (!next[k]) next[k] = { ...template }; });
+        }
+        return next;
+      });
+      return;
+    }
+
     // Single click (no drag) → open QuickFill instead of painting one cell
     if (!drag.moved && !drag.isEraser && selectedRole && selectedRole.id !== 'eraser') {
       setQuickFillData({
@@ -1145,22 +1367,9 @@ const RosterApp = () => {
     // Calculate keys from the drag range.
     // When interval > 15m, also fill all 15-min sub-slots so the data is
     // always stored at 15m granularity — switching intervals shows consistent shifts.
-    const slots = timeSlotsRef.current;
     const minIdx = Math.min(drag.startRowIdx, drag.currentRowIdx);
     const maxIdx = Math.max(drag.startRowIdx, drag.currentRowIdx);
-    const keys = new Set();
-    for (let i = minIdx; i <= maxIdx; i++) {
-      const slot = slots[i];
-      keys.add(getScheduleKey(drag.dateKey, drag.staffId, slot));
-      if (timeInterval > 15) {
-        const [h, m] = slot.split(':').map(Number);
-        for (let sub = 15; sub < timeInterval; sub += 15) {
-          const totalMins = h * 60 + m + sub;
-          const subSlot = `${Math.floor(totalMins / 60).toString().padStart(2, '0')}:${(totalMins % 60).toString().padStart(2, '0')}`;
-          keys.add(getScheduleKey(drag.dateKey, drag.staffId, subSlot));
-        }
-      }
-    }
+    const keys = new Set(slotKeysForRange(timeSlotsRef.current, drag.dateKey, drag.staffId, minIdx, maxIdx, timeInterval));
 
     if (keys.size === 0) return;
 
@@ -1182,13 +1391,13 @@ const RosterApp = () => {
 
   useEffect(() => {
     const handleMouseMove = (ev) => {
-      if (!dragRef.current.active) return;
+      if (!dragRef.current.active) { updateHoverCursor(ev); return; }
       dragPointerRef.current = { x: ev.clientX, y: ev.clientY };
       if (!dragFrameRef.current) dragFrameRef.current = requestAnimationFrame(dragTick);
     };
     const handleMouseUp = (ev) => {
       // Sync to the release point first: the last frame may not have seen the final move.
-      if (dragRef.current.active) updateDragSelection(dragIdxFromPoint(ev.clientX, ev.clientY));
+      if (dragRef.current.active) { if (dragRef.current.lastCell) dragRef.current.lastCell = null; updateDragFromPoint(ev.clientX, ev.clientY); }
       commitPendingPaint();
     };
     const handleClick = () => setContextMenu(null);
@@ -6724,9 +6933,14 @@ Key things to verify after rebuild:
                               ? (isShiftEnd ? '2px solid rgba(255,255,255,0.5)' : 'none')
                               : (isHour ? '1px solid #E5E7EB' : isHalf ? '1px solid #F0F0F0' : '1px solid #F9FAFB'),
                             borderLeft: sh && isShiftStart ? '2px solid rgba(255,255,255,0.5)' : undefined,
-                            cursor: selectedRole ? (selectedRole.id === 'eraser' ? 'cell' : 'crosshair') : 'pointer',
+                            cursor: selectedRole ? (selectedRole.id === 'eraser' ? 'cell' : 'crosshair') : (sh ? 'inherit' : 'pointer'),
                           }}
                           data-cidx={ci}
+                          data-dk={dk}
+                          data-sid={s.id}
+                          data-shift={sh ? '1' : undefined}
+                          data-ss={sh && isShiftStart ? '1' : undefined}
+                          data-se={sh && isShiftEnd ? '1' : undefined}
                           onMouseDown={(e) => handleHMouseDown(e, dk, s.id, slot, ci)}
                           onContextMenu={(e) => handleRightClick(e, dk, s.id, slot)}
                         >
@@ -7334,10 +7548,15 @@ Key things to verify after rebuild:
                                 key={k}
                                 className={`border-r border-gray-100 p-0 relative ${selectedRole ? (selectedRole.id === 'eraser' ? 'cursor-cell' : 'cursor-crosshair') : 'cursor-pointer'} ${si === orderedStaff.length - 1 && di < dates.length - 1 ? 'border-r-2 border-gray-200' : ''}`}
                                 data-ridx={rowIdx}
+                                data-dk={dk}
+                                data-sid={s.id}
+                                data-shift={sh ? '1' : undefined}
+                                data-ss={sh && viewSchedule[getScheduleKey(dk, s.id, timeSlots[rowIdx - 1])]?.roleId !== sh.roleId ? '1' : undefined}
+                                data-se={sh && viewSchedule[getScheduleKey(dk, s.id, timeSlots[rowIdx + 1])]?.roleId !== sh.roleId ? '1' : undefined}
                                 onMouseDown={(e) => handleMouseDown(e, dk, s.id, t, rowIdx)}
                                 onContextMenu={(e) => handleRightClick(e, dk, s.id, t)}
                                 title={elsewhere ? `Already rostered (${elsewhere})` : undefined}
-                                style={{ backgroundColor: sh ? sh.roleColor : altBg, backgroundImage: wkOverlay, height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px` }}
+                                style={{ backgroundColor: sh ? sh.roleColor : altBg, backgroundImage: wkOverlay, height: `${rowHeight}px`, width: `${columnWidth}px`, maxWidth: `${columnWidth}px`, minWidth: `${columnWidth}px`, ...(sh && !selectedRole ? { cursor: 'inherit' } : null) }}
                               >
                                 {sh && <div className="relative flex items-center justify-center text-white font-semibold h-full" style={{ fontSize: zoomLevel === 1 ? '8px' : zoomLevel === 2 ? '10px' : '12px' }}>{sh.roleCode}</div>}
                                 {swapRequests.has(`${dk}|${s.id}`) && (
