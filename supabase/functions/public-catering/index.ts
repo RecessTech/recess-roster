@@ -6,22 +6,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-function todayStr(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { token, date } = await req.json();
+    const { token } = await req.json();
     if (!token) {
       return new Response(JSON.stringify({ error: 'Missing token' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    const jobDate = date || todayStr();
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -52,6 +46,12 @@ serve(async (req) => {
     // gross_rev is deliberately excluded from the select -- this is a
     // staff-facing surface, not admin, and revenue should never leave the
     // server for this link, not just be hidden client-side.
+    //
+    // Every job, not just one day's -- job volume is low enough (dozens,
+    // not thousands) to load in one query, same reasoning as the admin
+    // app's own db.getCateringJobs. The client groups this into "this
+    // week" and a full calendar with per-date job dots, so a single
+    // fetch covers both instead of one round-trip per date or month.
     const { data: jobs } = await supabase
       .from('catering_jobs')
       .select(`
@@ -61,12 +61,11 @@ serve(async (req) => {
         confirmed, invoiced, bread_ordered, delivery_booked, notes, items
       `)
       .eq('org_id', org.id)
-      .eq('job_date', jobDate)
+      .order('job_date', { ascending: true })
       .order('ready_by', { ascending: true, nullsFirst: false });
 
     return new Response(JSON.stringify({
       businessName: settings?.business_name || org.name || 'Catering',
-      date: jobDate,
       jobs: jobs || [],
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
