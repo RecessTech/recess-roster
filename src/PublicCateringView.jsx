@@ -39,8 +39,34 @@ function addDays(dateStr, n) {
 function dayLabel(dateStr) {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'long' }).toUpperCase();
 }
+function dayAbbrev(dateStr) {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase();
+}
+function dayNum(dateStr) {
+  return new Date(dateStr + 'T12:00:00').getDate();
+}
 function fmtDateShort(dateStr) {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function monthLabel(year, month) {
+  return new Date(year, month, 1).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+}
+// Monday-based start-of-week for a date string.
+function startOfWeek(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const dow = (d.getDay() + 6) % 7; // Mon=0 .. Sun=6
+  d.setDate(d.getDate() - dow);
+  return fmtISO(d);
+}
+function getMonthGrid(year, month) {
+  const first = new Date(year, month, 1);
+  const startDow = (first.getDay() + 6) % 7; // Mon=0 .. Sun=6
+  const gridStart = new Date(year, month, 1 - startDow);
+  return Array.from({ length: 42 }, (_, i) => {
+    const d = new Date(gridStart);
+    d.setDate(gridStart.getDate() + i);
+    return d;
+  });
 }
 function computeTotalPieces(platterSize, piecesPerPerson) {
   const p = Number(platterSize);
@@ -75,11 +101,15 @@ function StatTile({ label, value, highlight }) {
   );
 }
 
-function JobCard({ job, expanded, onToggle }) {
+// `showDate`, when true, swaps the leading ready-by column for a day
+// badge (used in the week list, where jobs span several different days)
+// and moves ready-by into the subtitle line instead.
+function JobCard({ job, expanded, onToggle, showDate }) {
   const dotColor = TYPE_DOT[job.job_type] || TYPE_DOT.Other;
   const totalPieces = computeTotalPieces(job.platter_size, job.pieces_per_person);
   const dietaryTags = DIETARY_FIELDS.filter(f => job[f.key] > 0);
   const itemsTotal = (job.items || []).reduce((s, it) => s + (Number(it.pieces) || 0), 0);
+  const subtitle = [job.contact, job.job_type, showDate ? job.ready_by : null].filter(Boolean).join(' · ');
 
   return (
     <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, overflow: 'hidden' }}>
@@ -90,11 +120,18 @@ function JobCard({ job, expanded, onToggle }) {
           background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: FONT,
         }}
       >
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#475569', width: 46, flexShrink: 0 }}>{job.ready_by || '—'}</div>
+        {showDate ? (
+          <div style={{ width: 34, flexShrink: 0, textAlign: 'center' }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: '#94A3B8', letterSpacing: '0.04em' }}>{dayAbbrev(job.job_date)}</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#1E293B' }}>{dayNum(job.job_date)}</div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#475569', width: 46, flexShrink: 0 }}>{job.ready_by || '—'}</div>
+        )}
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#1E293B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{job.company || 'Untitled job'}</div>
-          <div style={{ fontSize: 11.5, color: '#94A3B8' }}>{[job.contact, job.job_type].filter(Boolean).join(' · ')}</div>
+          <div style={{ fontSize: 11.5, color: '#94A3B8' }}>{subtitle}</div>
         </div>
         <span style={{ fontSize: 16, color: '#CBD5E1', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>⌄</span>
       </button>
@@ -174,23 +211,97 @@ function JobCard({ job, expanded, onToggle }) {
   );
 }
 
+// Full-screen month calendar -- tapping a date hands it back via
+// onSelectDate and lets the caller decide what to do (switch to day view).
+// Dots mark every date with at least one job, computed from the same
+// full job list the week view uses, so no extra fetch is needed as the
+// user pages between months.
+function CalendarOverlay({ year, month, onMonthChange, selectedDate, jobCountByDate, onSelectDate, onClose }) {
+  const days = useMemo(() => getMonthGrid(year, month), [year, month]);
+  const todayKey = todayStr();
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: '#F1F5F9', zIndex: 50, display: 'flex', flexDirection: 'column', fontFamily: FONT }}>
+      <div style={{ background: ROSE, padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <span style={{ color: 'white', fontSize: 17, fontWeight: 700 }}>Calendar</span>
+        <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.18)', border: 'none', color: 'white', borderRadius: 999, width: 30, height: 30, fontSize: 15, cursor: 'pointer' }}>✕</button>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+        <div style={{ maxWidth: 420, margin: '0 auto' }}>
+          <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <button onClick={() => onMonthChange(-1)} style={{ background: 'none', border: 'none', color: ROSE, fontSize: 20, padding: '4px 10px', cursor: 'pointer' }}>‹</button>
+              <span style={{ fontSize: 15, fontWeight: 700, color: '#1E293B' }}>{monthLabel(year, month)}</span>
+              <button onClick={() => onMonthChange(1)} style={{ background: 'none', border: 'none', color: ROSE, fontSize: 20, padding: '4px 10px', cursor: 'pointer' }}>›</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 2 }}>
+              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
+                <div key={i} style={{ textAlign: 'center', fontSize: 10.5, fontWeight: 700, color: '#94A3B8', padding: '4px 0' }}>{d}</div>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+              {days.map((d, i) => {
+                const key = fmtISO(d);
+                const inMonth = d.getMonth() === month;
+                const isToday = key === todayKey;
+                const isSelected = key === selectedDate;
+                const count = jobCountByDate.get(key) || 0;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => onSelectDate(key)}
+                    style={{
+                      position: 'relative', aspectRatio: '1', display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center', borderRadius: 10, fontSize: 13, border: 'none',
+                      cursor: 'pointer', fontFamily: FONT,
+                      color: !inMonth ? '#D1D5DB' : isSelected ? 'white' : isToday ? ROSE_DK : '#374151',
+                      background: isSelected ? ROSE : isToday ? '#FDF2F8' : 'transparent',
+                      fontWeight: isToday || isSelected ? 700 : 400,
+                    }}
+                  >
+                    {d.getDate()}
+                    {count > 0 && (
+                      <span style={{ position: 'absolute', bottom: 5, width: 4, height: 4, borderRadius: '50%', background: isSelected ? 'white' : ROSE }} />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <button
+            onClick={() => onSelectDate(todayStr())}
+            style={{ display: 'block', margin: '14px auto 0', background: 'none', border: 'none', color: ROSE_DK, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+          >
+            Jump to Today
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PublicCateringView({ token }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [date, setDate] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('d') || todayStr();
-  });
-  const [expandedId, setExpandedId] = useState(null);
 
-  const load = useCallback(async (d) => {
+  // `view` is 'week' (default -- this week's jobs, like the desktop app's
+  // feed) or 'day' (a single date, reached via the calendar or a deep
+  // link like the catering-alert emails' "View this job" button).
+  const [view, setView] = useState(() => (new URLSearchParams(window.location.search).get('d') ? 'day' : 'week'));
+  const [selectedDate, setSelectedDate] = useState(() => new URLSearchParams(window.location.search).get('d') || todayStr());
+  const [expandedId, setExpandedId] = useState(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calDate, setCalDate] = useState(() => new Date());
+
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const { data: result, error: err } = await supabase.functions.invoke('public-catering', {
         headers: { Authorization: `Bearer ${ANON_KEY}` },
-        body: { token, date: d },
+        body: { token },
       });
       if (err) throw new Error(err.message);
       if (result?.error) throw new Error(result.error);
@@ -202,22 +313,59 @@ export default function PublicCateringView({ token }) {
     }
   }, [token]);
 
+  useEffect(() => { load(); }, [load]);
+
+  // Keep the URL's ?d= in sync with day view, so the page stays
+  // shareable/bookmarkable and a browser refresh lands back where it was.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    params.set('d', date);
-    window.history.replaceState(null, '', `${window.location.pathname}?${params}`);
-    load(date);
-    setExpandedId(null);
-  }, [date, load]);
+    if (view === 'day') params.set('d', selectedDate);
+    else params.delete('d');
+    const qs = params.toString();
+    window.history.replaceState(null, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+  }, [view, selectedDate]);
 
-  // First job open by default -- most days have one or two jobs, and
-  // someone tapping this link on their phone wants the details now, not
-  // another tap first.
+  const allJobs = useMemo(() => data?.jobs || [], [data]);
+
+  const jobCountByDate = useMemo(() => {
+    const m = new Map();
+    allJobs.forEach(j => m.set(j.job_date, (m.get(j.job_date) || 0) + 1));
+    return m;
+  }, [allJobs]);
+
+  const thisWeekStart = useMemo(() => startOfWeek(todayStr()), []);
+  const thisWeekEnd = useMemo(() => addDays(thisWeekStart, 6), [thisWeekStart]);
+  const weekJobs = useMemo(
+    () => allJobs.filter(j => j.job_date >= thisWeekStart && j.job_date <= thisWeekEnd),
+    [allJobs, thisWeekStart, thisWeekEnd]
+  );
+  const dayJobs = useMemo(() => allJobs.filter(j => j.job_date === selectedDate), [allJobs, selectedDate]);
+
+  const visibleJobs = view === 'day' ? dayJobs : weekJobs;
+
+  // Auto-expand the single relevant job on a deep-linked day view --
+  // someone tapping an email's "View this job" link wants the details
+  // immediately, not another tap. Week view starts fully collapsed since
+  // it can span several jobs across several days.
   useEffect(() => {
-    if (data?.jobs?.length) setExpandedId(prev => prev ?? data.jobs[0].id);
-  }, [data]);
+    if (view === 'day' && dayJobs.length) setExpandedId(prev => prev ?? dayJobs[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, data]);
 
-  const jobs = useMemo(() => data?.jobs || [], [data]);
+  function openDay(dateStr) {
+    setSelectedDate(dateStr);
+    setView('day');
+    setExpandedId(null);
+    setCalendarOpen(false);
+  }
+  function backToWeek() {
+    setView('week');
+    setExpandedId(null);
+  }
+  function openCalendar() {
+    setCalDate(new Date((view === 'day' ? selectedDate : todayStr()) + 'T12:00:00'));
+    setCalendarOpen(true);
+  }
 
   if (loading) {
     return (
@@ -273,28 +421,44 @@ export default function PublicCateringView({ token }) {
             Catering
           </div>
           <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>
-            {dayLabel(date)} · {fmtDateShort(date)}
+            {view === 'day'
+              ? `${dayLabel(selectedDate)} · ${fmtDateShort(selectedDate)}`
+              : `This Week · ${fmtDateShort(thisWeekStart)} – ${fmtDateShort(thisWeekEnd)}`}
           </div>
         </div>
 
-        {/* Date navigation */}
-        <div style={{ background: '#FDF2F8', borderLeft: '1px solid #FBCFE8', borderRight: '1px solid #FBCFE8', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <button onClick={() => setDate(d => addDays(d, -1))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: ROSE, fontSize: 18, padding: '4px 8px', borderRadius: 6, lineHeight: 1 }}>←</button>
-          <span style={{ fontSize: 12, color: ROSE_DK, fontWeight: 600 }}>read-only</span>
-          <button onClick={() => setDate(d => addDays(d, 1))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: ROSE, fontSize: 18, padding: '4px 8px', borderRadius: 6, lineHeight: 1 }}>→</button>
+        {/* Toolbar */}
+        <div style={{ background: '#FDF2F8', borderLeft: '1px solid #FBCFE8', borderRight: '1px solid #FBCFE8', padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          {view === 'day' ? (
+            <button onClick={backToWeek} style={{ background: 'none', border: 'none', cursor: 'pointer', color: ROSE_DK, fontSize: 12.5, fontWeight: 700, padding: '6px 4px' }}>
+              ← This Week
+            </button>
+          ) : (
+            <span style={{ fontSize: 12, color: ROSE_DK, fontWeight: 600, padding: '6px 4px' }}>read-only</span>
+          )}
+          <button
+            onClick={openCalendar}
+            style={{
+              background: ROSE, color: 'white', border: 'none', borderRadius: 999, cursor: 'pointer',
+              fontSize: 12.5, fontWeight: 700, padding: '7px 14px', display: 'flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            📅 View Calendar
+          </button>
         </div>
 
         <div style={{ background: '#F1F5F9', border: '1px solid transparent', borderTop: 'none', padding: '14px 0 4px' }}>
-          {jobs.length === 0 ? (
+          {visibleJobs.length === 0 ? (
             <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '32px 20px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
-              No catering jobs on this day.
+              {view === 'day' ? 'No catering jobs on this day.' : 'No catering jobs this week.'}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {jobs.map(job => (
+              {visibleJobs.map(job => (
                 <JobCard
                   key={job.id}
                   job={job}
+                  showDate={view === 'week'}
                   expanded={expandedId === job.id}
                   onToggle={() => setExpandedId(prev => prev === job.id ? null : job.id)}
                 />
@@ -307,6 +471,18 @@ export default function PublicCateringView({ token }) {
           Powered by Recess Roster
         </p>
       </div>
+
+      {calendarOpen && (
+        <CalendarOverlay
+          year={calDate.getFullYear()}
+          month={calDate.getMonth()}
+          onMonthChange={(delta) => setCalDate(d => new Date(d.getFullYear(), d.getMonth() + delta, 1))}
+          selectedDate={view === 'day' ? selectedDate : null}
+          jobCountByDate={jobCountByDate}
+          onSelectDate={openDay}
+          onClose={() => setCalendarOpen(false)}
+        />
+      )}
     </div>
   );
 }
