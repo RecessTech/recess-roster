@@ -57,12 +57,37 @@ interface SupplierStatus {
   isConfirmed: boolean;
   outstandingItems: string[];
   placedCount: number;
+  priceVariance: { invoiceTotal: number; expectedTotal: number } | null;
+}
+
+interface ConfirmationRow {
+  received_at: string;
+  invoice_total: number | null;
+  expected_total: number | null;
+  auto_marked_count: number;
+  priced_item_count: number;
+}
+
+// Flags a price variance only when there's enough signal to trust it: the
+// confirmation actually auto-marked something, most of what it marked had
+// a known cost to sum (otherwise "expected" is really "expected for half
+// the order"), and the gap is bigger than normal rounding/pack-size noise
+// ($10 or 10%, whichever is larger). Mirrors priceVarianceFor() in
+// StockApp.jsx's OrderStatusTab.
+function priceVarianceFor(confirmation: ConfirmationRow | null): { invoiceTotal: number; expectedTotal: number } | null {
+  if (!confirmation) return null;
+  const { invoice_total: invoiceTotal, expected_total: expectedTotal, auto_marked_count: autoMarkedCount, priced_item_count: pricedItemCount } = confirmation;
+  if (invoiceTotal == null || expectedTotal == null || !autoMarkedCount) return null;
+  if (pricedItemCount / autoMarkedCount < 0.6) return null;
+  const diff = Math.abs(invoiceTotal - expectedTotal);
+  if (diff <= Math.max(10, expectedTotal * 0.1)) return null;
+  return { invoiceTotal, expectedTotal };
 }
 
 function computeSupplierStatuses(
   rows: SiteRow[],
   itemNameById: Map<string, string>,
-  confirmedAtBySupplier: Map<string, number>,
+  confirmedAtBySupplier: Map<string, ConfirmationRow>,
   today: string
 ): SupplierStatus[] {
   const isDeferred = (r: SiteRow) => !!r.deferred_until && r.deferred_until >= today;
@@ -86,7 +111,8 @@ function computeSupplierStatuses(
 
     const orderedAts = ordered.filter(r => r.ordered_at).map(r => new Date(r.ordered_at!).getTime());
     const latestOrderedAt = orderedAts.length > 0 ? Math.max(...orderedAts) : null;
-    const confirmedAt = confirmedAtBySupplier.get(supplier) ?? null;
+    const confirmation = confirmedAtBySupplier.get(supplier) ?? null;
+    const confirmedAt = confirmation ? new Date(confirmation.received_at).getTime() : null;
     // Same-day, not "confirmation after order placed" -- for suppliers whose
     // checkout auto-emails a receipt (Blackforest, Fruitique, ...), the
     // email typically lands before anyone ticks the box in the app, not
@@ -103,6 +129,7 @@ function computeSupplierStatuses(
       isConfirmed,
       outstandingItems: notOrdered.map(r => itemNameById.get(r.item_id) || 'Unknown item'),
       placedCount: ordered.length,
+      priceVariance: isConfirmed ? priceVarianceFor(confirmation) : null,
     });
   }
   return result.sort((a, b) => a.supplier.localeCompare(b.supplier));
@@ -121,6 +148,8 @@ const GOOD = '#0f9d4e';
 const BAD = '#d0393b';
 const GOOD_BG = '#EAF7EF';
 const BAD_BG = '#FDECEC';
+const WARN = '#B45309';
+const WARN_BG = '#FFFBEB';
 
 function locationSectionHtml(locationName: string, statuses: SupplierStatus[]): string {
   const outstanding = statuses.filter(s => !s.allPlaced);
@@ -150,6 +179,14 @@ function locationSectionHtml(locationName: string, statuses: SupplierStatus[]): 
       ${s.supplier}${s.isConfirmed ? ` <span style="color:${GOOD};font-weight:700">&#10003;</span>` : ''}
     </span>`).join('');
 
+  const varianceRows = placed.filter(s => s.priceVariance).map(s => `
+    <tr>
+      <td style="padding:9px 20px;border-left:3px solid ${WARN};background:${WARN_BG}">
+        <div style="font-size:13px;font-weight:700;color:#1E293B">${s.supplier} &middot; price variance</div>
+        <div style="font-size:12px;color:#92400E;margin-top:1px">Invoice $${s.priceVariance!.invoiceTotal.toFixed(2)} vs expected $${s.priceVariance!.expectedTotal.toFixed(2)}</div>
+      </td>
+    </tr>`).join('');
+
   return `
   <tr><td style="padding:16px 20px 6px">
     <table width="100%" cellpadding="0" cellspacing="0"><tr>
@@ -161,6 +198,7 @@ function locationSectionHtml(locationName: string, statuses: SupplierStatus[]): 
   </td></tr>
   ${outstandingRows ? `<tr><td style="padding:0 20px 4px"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0 6px">${outstandingRows}</table></td></tr>` : ''}
   ${placedChips ? `<tr><td style="padding:2px 20px 4px">${placedChips}</td></tr>` : ''}
+  ${varianceRows ? `<tr><td style="padding:0 20px 4px"><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0 6px">${varianceRows}</table></td></tr>` : ''}
   `;
 }
 
@@ -289,16 +327,16 @@ serve(async (req) => {
         supabase.from('locations').select('id, name').eq('org_id', orgId).eq('active', true),
         supabase.from('stock_item_sites').select('item_id, location_id, supplier, current_status, ordered, ordered_at, deferred_until').eq('org_id', orgId),
         supabase.from('stock_items').select('id, name').eq('org_id', orgId),
-        supabase.from('supplier_order_confirmations').select('supplier, received_at').eq('org_id', orgId),
+        supabase.from('supplier_order_confirmations').select('supplier, received_at, invoice_total, expected_total, auto_marked_count, priced_item_count').eq('org_id', orgId),
       ]);
       if (!locations || locations.length === 0) continue;
 
       const itemNameById = new Map((items || []).map((i: any) => [i.id, i.name]));
-      const confirmedAtBySupplier = new Map<string, number>();
+      const confirmedAtBySupplier = new Map<string, ConfirmationRow>();
       for (const c of confirmations || []) {
         const t = new Date(c.received_at).getTime();
         const prev = confirmedAtBySupplier.get(c.supplier);
-        if (prev == null || t > prev) confirmedAtBySupplier.set(c.supplier, t);
+        if (!prev || t > new Date(prev.received_at).getTime()) confirmedAtBySupplier.set(c.supplier, c as ConfirmationRow);
       }
 
       const sections: string[] = [];

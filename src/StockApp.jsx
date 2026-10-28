@@ -1631,26 +1631,54 @@ function OrderStatusRow({ g }) {
     );
   }
   return (
-    <div className="flex items-center justify-between px-4 py-2.5">
-      <div className="flex items-center gap-2.5 min-w-0">
-        <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
-        <span className="text-sm text-gray-500 truncate">{g.supplier}</span>
+    <div className="px-4 py-2.5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
+          <span className="text-sm text-gray-500 truncate">{g.supplier}</span>
+        </div>
+        <span className="text-xs text-emerald-600 shrink-0 ml-3">Confirmed{g.latestConfirmationAt ? ` · ${timeAgo(g.latestConfirmationAt)}` : ''}</span>
       </div>
-      <span className="text-xs text-emerald-600 shrink-0 ml-3">Confirmed{g.latestConfirmationAt ? ` · ${timeAgo(g.latestConfirmationAt)}` : ''}</span>
+      {g.priceVariance && (
+        <div className="flex items-center gap-1.5 mt-1 pl-[23px]">
+          <AlertTriangle size={11} className="text-amber-500 shrink-0" />
+          <span className="text-[11px] text-amber-600">
+            Invoice ${g.priceVariance.invoiceTotal.toFixed(2)} vs expected ${g.priceVariance.expectedTotal.toFixed(2)}
+          </span>
+        </div>
+      )}
     </div>
   );
+}
+
+// Flags a price variance only when there's enough signal to trust it: the
+// confirmation actually auto-marked something, most of what it marked had
+// a known cost to sum (otherwise "expected" is really "expected for half
+// the order"), and the gap is bigger than normal rounding/pack-size noise
+// ($10 or 10%, whichever is larger).
+function priceVarianceFor(confirmation) {
+  if (!confirmation) return null;
+  const { invoice_total: invoiceTotal, expected_total: expectedTotal, auto_marked_count: autoMarkedCount, priced_item_count: pricedItemCount } = confirmation;
+  if (invoiceTotal == null || expectedTotal == null || !autoMarkedCount) return null;
+  if (pricedItemCount / autoMarkedCount < 0.6) return null;
+  const diff = Math.abs(invoiceTotal - expectedTotal);
+  if (diff <= Math.max(10, expectedTotal * 0.1)) return null;
+  return { invoiceTotal, expectedTotal };
 }
 
 function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectLocation, orderConfirmations }) {
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
 
-  // Latest confirmation-email timestamp seen per supplier, across every
-  // location -- a Bidfood confirmation isn't location-specific.
+  // Latest confirmation-email record seen per supplier, across every
+  // location -- a Bidfood confirmation isn't location-specific. Keeps the
+  // whole row (not just the timestamp) so price-variance fields travel
+  // with it.
   const latestConfirmationBySupplier = useMemo(() => {
     const map = {};
     for (const c of orderConfirmations) {
       const t = new Date(c.received_at).getTime();
-      if (!(c.supplier in map) || t > map[c.supplier]) map[c.supplier] = t;
+      const existing = map[c.supplier];
+      if (!existing || t > existing.t) map[c.supplier] = { ...c, t };
     }
     return map;
   }, [orderConfirmations]);
@@ -1681,7 +1709,8 @@ function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectL
         const deferredCount = stockLowRows.length - needsOrderRows.length;
         const orderedAts = needsOrderRows.filter(r => r.ordered && r.ordered_at).map(r => new Date(r.ordered_at).getTime());
         const latestOrderedAt = orderedAts.length > 0 ? Math.max(...orderedAts) : null;
-        const latestConfirmationAt = latestConfirmationBySupplier[supplier] ?? null;
+        const latestConfirmation = latestConfirmationBySupplier[supplier] ?? null;
+        const latestConfirmationAt = latestConfirmation?.t ?? null;
         // A confirmation only counts if it's from the same day as this
         // cycle's order -- not "after", since for suppliers whose checkout
         // auto-emails a receipt (Blackforest, Fruitique, ...), the email
@@ -1700,6 +1729,7 @@ function OrderStatusTab({ items, sites, locations, selectedLocationId, onSelectL
           deferredCount,
           latestOrderedAt,
           latestConfirmationAt: isConfirmed ? latestConfirmationAt : null,
+          priceVariance: isConfirmed ? priceVarianceFor(latestConfirmation) : null,
         };
       })
       .sort((a, b) => ORDER_STATUS_PRIORITY[a.status] - ORDER_STATUS_PRIORITY[b.status] || a.supplier.localeCompare(b.supplier));
