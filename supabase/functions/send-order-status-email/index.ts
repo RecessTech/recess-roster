@@ -18,6 +18,15 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // item currently low/out/order_moq, not marked Ordered, and not deferred
 // past today. "Confirmed" (vs just self-reported Placed) reuses
 // supplier_order_confirmations, written by check-order-confirmations.
+//
+// The SQL-side cron gate only governs pg_cron's own calls -- this
+// function is otherwise a plain public URL (verify_jwt is off), so a
+// stray GET (a link-preview crawler, a health check, anyone who finds
+// the URL) could trigger a real send at any hour -- exactly what
+// happened to its sibling send-catering-weekly-overview via Meta's
+// crawler. The method check and the Sydney hour check in the handler
+// below are the fix -- real protection now lives in the function itself,
+// not just in the SQL wrapper that's supposed to be the only caller.
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -39,6 +48,16 @@ const ORDER_STATUS_RECIPIENT = 'hello@itsrecess.com.au';
 // browser's local (Sydney) date.
 function sydneyDateStr(d: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(d);
+}
+// Current Sydney-local hour (0-23) -- the function's own safety check
+// against being invoked outside its intended window, independent of and
+// in addition to the SQL-side cron gate.
+function sydneyHour(d: Date = new Date()): number {
+  const hourStr = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Australia/Sydney', hour: 'numeric', hour12: false,
+  }).formatToParts(d).find(p => p.type === 'hour')!.value;
+  const hour = parseInt(hourStr, 10);
+  return hour === 24 ? 0 : hour;
 }
 
 interface SiteRow {
@@ -304,6 +323,17 @@ async function sendEmail(subject: string, html: string) {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  // GET (link-preview crawlers, browser hits, health checks) can never be
+  // a legitimate call here -- only the cron trigger calls this, and it
+  // POSTs. Rejecting outright is cheap, effective insurance on top of the
+  // hour check below.
+  if (req.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
+  // Real protection against a stray/accidental call belongs in the
+  // function itself, not just the SQL wrapper that's supposed to be the
+  // only caller -- see supabase_stock_order_status_email_schedule.sql.
+  if (sydneyHour() !== 20) {
+    return jsonResponse({ skipped: true, reason: 'Not the scheduled 8pm Sydney window.' });
+  }
 
   try {
     const supabase = createClient(

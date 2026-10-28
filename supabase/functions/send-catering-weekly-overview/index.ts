@@ -8,6 +8,16 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // stays silent on a day with nothing on. Triggered by pg_cron + pg_net --
 // see supabase_catering_weekly_overview_email_schedule.sql, which
 // self-gates to Sunday 18:00 Sydney time.
+//
+// That SQL-side gate only governs pg_cron's own calls -- this function is
+// otherwise a plain public URL (verify_jwt is off, same as every sibling
+// alert function), so it was reachable by anyone/anything that found it.
+// That's exactly what happened once: Meta's link-preview crawler GET the
+// URL (picked up from somewhere it got pasted/shared) and triggered a real
+// send outside the Sunday window, since nothing here checked the day or
+// even the HTTP method. The method check and the Sydney day/hour check
+// below are the fix -- real protection now lives in the function itself,
+// not just in the SQL wrapper that's supposed to be the only caller.
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -41,6 +51,19 @@ function jsonResponse(body: unknown, status = 200) {
 
 function sydneyDateStr(d: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(d);
+}
+// Current Sydney-local day-of-week (0=Sun..6=Sat) and hour (0-23) -- the
+// function's own safety check against being invoked outside its intended
+// window, independent of and in addition to the SQL-side cron gate.
+function sydneyDowHour(d: Date = new Date()): { dow: number; hour: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Australia/Sydney', weekday: 'short', hour: 'numeric', hour12: false,
+  }).formatToParts(d);
+  const DOW: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const weekday = parts.find(p => p.type === 'weekday')!.value;
+  let hour = parseInt(parts.find(p => p.type === 'hour')!.value, 10);
+  if (hour === 24) hour = 0;
+  return { dow: DOW[weekday], hour };
 }
 function addDaysStr(dateStr: string, n: number): string {
   const d = new Date(dateStr + 'T12:00:00Z');
@@ -228,10 +251,27 @@ async function sendEmail(subject: string, html: string, to: string[]) {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  // GET (link-preview crawlers, browser hits, health checks) can never be
+  // a legitimate call here -- the cron trigger and manual test sends both
+  // POST. Rejecting outright is cheap, effective insurance on top of the
+  // day/hour check below.
+  if (req.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
 
   try {
     const body = await req.json().catch(() => ({}));
     const test_to: string | undefined = body?.test_to;
+
+    // A test send (explicit test_to) is always allowed, any time -- it's a
+    // deliberate, single-address POST. A real send to the full
+    // distribution list only goes out in the actual Sunday 6pm Sydney
+    // window; anything else is treated as a stray/accidental call and
+    // skipped rather than sent.
+    if (!test_to) {
+      const { dow, hour } = sydneyDowHour();
+      if (dow !== 0 || hour !== 18) {
+        return jsonResponse({ skipped: true, reason: 'Not the scheduled Sunday 6pm Sydney window.' });
+      }
+    }
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,

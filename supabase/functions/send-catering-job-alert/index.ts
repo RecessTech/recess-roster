@@ -204,6 +204,11 @@ function buildEmailHtml(job: any, viewUrl: string): string {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  // GET (link-preview crawlers, browser hits, health checks) already
+  // can't send here in practice -- there's no job_id to find on a bare
+  // GET -- but rejecting the method outright closes the gap for good
+  // instead of relying on that incidentally working.
+  if (req.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
 
   try {
     const { job_id, test_to } = await req.json();
