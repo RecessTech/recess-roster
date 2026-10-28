@@ -162,6 +162,15 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
+  // GET (link-preview crawlers, browser hits, health checks) already
+  // can't send here in practice -- there's no `to`/`staffName` on a bare
+  // GET -- but rejecting the method outright closes the gap for good
+  // instead of relying on that incidentally working.
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
 
   try {
     const payload: Payload = await req.json();
