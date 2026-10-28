@@ -1066,6 +1066,155 @@ function useOrderingUrlState() {
   return { view, setView, locationSlug, setLocationSlug, supplierSlug, setSupplierSlug };
 }
 
+// ── Stock Check Tab (end-of-day shelf walk → replenishment routing) ───────
+// Fast, exception-friendly: every active item at the selected location,
+// grouped and ordered exactly like the physical shelf (category ->
+// sort_order), defaulting to "full" so the closer only taps the ones
+// that are actually down. Submitting writes stock_check_lines (the
+// history), writes current_level/current_status back onto
+// stock_item_sites (so supplier-route flags show up for free in the
+// existing Ordering tab / Order Status tab / 8pm email / Bidfood
+// auto-confirm), and auto-creates a Transfer Hub request for every
+// flagged transfer-route item.
+
+const LEVEL_RANK = { full: 4, half: 3, low: 2, critical: 1 };
+const LEVELS = [
+  { id: 'full',     label: 'Full' },
+  { id: 'half',     label: 'Half' },
+  { id: 'low',      label: '<Half' },
+  { id: 'critical', label: 'Critical' },
+];
+const LEVEL_CONFIG = {
+  full:     { label: 'Full',     bg: 'bg-green-100', text: 'text-green-700', ring: 'ring-green-500' },
+  half:     { label: 'Half',     bg: 'bg-blue-100',  text: 'text-blue-700',  ring: 'ring-blue-500'  },
+  low:      { label: '<Half',    bg: 'bg-amber-100', text: 'text-amber-700', ring: 'ring-amber-500' },
+  critical: { label: 'Critical', bg: 'bg-red-100',   text: 'text-red-700',   ring: 'ring-red-500'   },
+};
+
+function StockCheckTab({ items, sites, locations, selectedLocationId, onSelectLocation, orgId, user, onRefresh }) {
+  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+  const [levels, setLevels] = useState({}); // siteId -> level
+  const [submitting, setSubmitting] = useState(false);
+  const [lastCheck, setLastCheck] = useState(null);
+
+  const siteRows = useMemo(() => {
+    return sites
+      .filter(s => s.location_id === selectedLocationId)
+      .map(s => ({ ...s, item: itemById.get(s.item_id) }))
+      .filter(r => r.item && r.item.active !== false)
+      .sort((a, b) =>
+        (a.item.category || '').localeCompare(b.item.category || '') ||
+        (a.item.sort_order || 0) - (b.item.sort_order || 0) ||
+        a.item.name.localeCompare(b.item.name)
+      );
+  }, [sites, selectedLocationId, itemById]);
+
+  useEffect(() => {
+    setLevels({});
+    if (!orgId || !selectedLocationId) return;
+    db.getLatestStockCheck(orgId, selectedLocationId).then(setLastCheck).catch(() => setLastCheck(null));
+  }, [orgId, selectedLocationId]);
+
+  const levelFor = (siteId) => levels[siteId] || 'full';
+  const setLevel = (siteId, level) => setLevels(prev => ({ ...prev, [siteId]: level }));
+
+  const flaggedCount = siteRows.filter(r => LEVEL_RANK[levelFor(r.id)] <= LEVEL_RANK[r.reorder_trigger_level || 'low']).length;
+
+  async function handleSubmit() {
+    if (siteRows.length === 0) return;
+    setSubmitting(true);
+    try {
+      const sourceLocationNameById = Object.fromEntries(locations.map(l => [l.id, l.name]));
+      const lines = siteRows.map(r => ({ site: r, level: levelFor(r.id) }));
+      const result = await db.submitStockCheck(orgId, selectedLocationId, lines, {
+        performedBy: user?.id,
+        performedByName: user?.email || null,
+        sourceLocationNameById,
+      });
+      toast.success(
+        result.flaggedCount === 0
+          ? 'Stock check submitted — nothing flagged'
+          : `Stock check submitted — ${result.flaggedCount} flagged (${result.supplierCount} to order, ${result.transferCount} transfer)`
+      );
+      setLevels({});
+      onRefresh();
+      db.getLatestStockCheck(orgId, selectedLocationId).then(setLastCheck).catch(() => {});
+    } catch (err) {
+      toast.error('Failed to submit stock check: ' + (err.message || 'unknown error'));
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (locations.length === 0) {
+    return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
+  }
+
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <LocationSwitcher locations={locations} selectedLocationId={selectedLocationId} onSelectLocation={onSelectLocation} />
+        {lastCheck && (
+          <span className="text-xs text-gray-400">
+            Last check {timeAgo(new Date(lastCheck.performed_at).getTime())}{lastCheck.performed_by_name ? ` by ${lastCheck.performed_by_name}` : ''}
+          </span>
+        )}
+      </div>
+
+      {siteRows.length === 0 ? (
+        <EmptyState Icon={Flag} title="No items at this site yet" hint="Assign items to this location in the Items tab first." />
+      ) : (
+        <>
+          <div className="card divide-y divide-gray-50 overflow-hidden">
+            {withCategoryDividers(siteRows).map(({ row, isNewCategory, category }) => (
+              <React.Fragment key={row.id}>
+                {isNewCategory && (
+                  <div className="px-4 py-2 bg-gray-50/80 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                    {category}
+                  </div>
+                )}
+                <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <div className="text-[15px] font-semibold text-gray-900">{row.item.name}</div>
+                    <div className="text-xs text-gray-400">{row.item.order_pack_label || row.item.uom}</div>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    {LEVELS.map(l => {
+                      const active = levelFor(row.id) === l.id;
+                      const cfg = LEVEL_CONFIG[l.id];
+                      return (
+                        <button
+                          key={l.id}
+                          onClick={() => setLevel(row.id, l.id)}
+                          className={`px-3 py-2.5 rounded-lg text-xs font-semibold border transition-all ${
+                            active ? `${cfg.bg} ${cfg.text} ring-2 ${cfg.ring} border-transparent` : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          {l.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </React.Fragment>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between gap-3 sticky bottom-4">
+            <span className="text-sm text-gray-500">
+              {flaggedCount === 0 ? 'Nothing flagged yet' : `${flaggedCount} item${flaggedCount !== 1 ? 's' : ''} will be flagged`}
+            </span>
+            <button onClick={handleSubmit} disabled={submitting} className="btn-primary flex items-center gap-2 px-5 py-2.5 disabled:opacity-50">
+              <Check size={15} /> {submitting ? 'Submitting…' : 'Submit Stock Check'}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // Standard vs Agent view -- shares the Ordering page's location switcher
 // but is otherwise a completely separate rendering path (see AgentOrderingView).
 function OrderingViewSwitcher({ value, onChange }) {
@@ -2496,7 +2645,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
 
   function blankAssignments() {
     const initial = {};
-    locations.forEach(loc => { initial[loc.id] = { assigned: false, supplier: '', supplierCode: '', referenceOrderQty: 0 }; });
+    locations.forEach(loc => { initial[loc.id] = { assigned: false, supplier: '', supplierCode: '', referenceOrderQty: 0, fulfilmentRoute: 'supplier', transferSourceLocationId: '', reorderTriggerLevel: 'low' }; });
     return initial;
   }
 
@@ -2522,7 +2671,15 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
     });
     const initial = blankAssignments();
     (sitesByItem.get(item.id) || []).forEach(s => {
-      initial[s.location_id] = { assigned: true, supplier: s.supplier || '', supplierCode: s.supplier_code || '', referenceOrderQty: s.reference_order_qty ?? 0 };
+      initial[s.location_id] = {
+        assigned: true,
+        supplier: s.supplier || '',
+        supplierCode: s.supplier_code || '',
+        referenceOrderQty: s.reference_order_qty ?? 0,
+        fulfilmentRoute: s.fulfilment_route || 'supplier',
+        transferSourceLocationId: s.transfer_source_location_id || '',
+        reorderTriggerLevel: s.reorder_trigger_level || 'low',
+      };
     });
     setSiteAssignments(initial);
     setShowForm(true);
@@ -2552,7 +2709,14 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
       await Promise.all(locations.map(loc => {
         const a = siteAssignments[loc.id];
         if (a?.assigned) {
-          return db.assignItemToSite(orgId, item.id, loc.id, { supplier: a.supplier, supplierCode: a.supplierCode, referenceOrderQty: parseFloat(a.referenceOrderQty) || 0 });
+          return db.assignItemToSite(orgId, item.id, loc.id, {
+            supplier: a.supplier,
+            supplierCode: a.supplierCode,
+            referenceOrderQty: parseFloat(a.referenceOrderQty) || 0,
+            fulfilmentRoute: a.fulfilmentRoute,
+            transferSourceLocationId: a.transferSourceLocationId || null,
+            reorderTriggerLevel: a.reorderTriggerLevel,
+          });
         } else if (previouslyAssigned.has(loc.id)) {
           return db.unassignItemFromSite(item.id, loc.id);
         }
@@ -2804,7 +2968,7 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                 <label className="block text-xs font-medium text-gray-700 mb-2">Sites carrying this item</label>
                 <div className="space-y-2">
                   {locations.map(loc => {
-                    const a = siteAssignments[loc.id] || { assigned: false, supplier: '', supplierCode: '', referenceOrderQty: 0 };
+                    const a = siteAssignments[loc.id] || { assigned: false, supplier: '', supplierCode: '', referenceOrderQty: 0, fulfilmentRoute: 'supplier', transferSourceLocationId: '', reorderTriggerLevel: 'low' };
                     return (
                       <div
                         key={loc.id}
@@ -2850,6 +3014,42 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
                                 className="input-base py-1.5"
                               />
                             </div>
+                            <div>
+                              <span className="text-xs text-gray-500">Replenish via</span>
+                              <select
+                                value={a.fulfilmentRoute}
+                                onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, fulfilmentRoute: e.target.value, transferSourceLocationId: e.target.value === 'supplier' ? '' : a.transferSourceLocationId } }))}
+                                className="input-base py-1.5 bg-white"
+                              >
+                                <option value="supplier">Supplier order</option>
+                                <option value="transfer">Transfer from another site</option>
+                              </select>
+                            </div>
+                            <div>
+                              <span className="text-xs text-gray-500">Flags Stock Check at</span>
+                              <select
+                                value={a.reorderTriggerLevel}
+                                onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, reorderTriggerLevel: e.target.value } }))}
+                                className="input-base py-1.5 bg-white"
+                              >
+                                {LEVELS.map(l => <option key={l.id} value={l.id}>{l.label} or below</option>)}
+                              </select>
+                            </div>
+                            {a.fulfilmentRoute === 'transfer' && (
+                              <div className="col-span-2">
+                                <span className="text-xs text-gray-500">Usual transfer source</span>
+                                <select
+                                  value={a.transferSourceLocationId}
+                                  onChange={e => setSiteAssignments(s => ({ ...s, [loc.id]: { ...a, transferSourceLocationId: e.target.value } }))}
+                                  className="input-base py-1.5 bg-white"
+                                >
+                                  <option value="">Select a site…</option>
+                                  {locations.filter(l => l.id !== loc.id).map(l => (
+                                    <option key={l.id} value={l.id}>{l.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -3128,6 +3328,7 @@ export default function StockApp({ user, org }) {
   const TABS = [
     { id: 'items',     label: 'Items',     Icon: Package },
     { id: 'stocktake', label: 'Stocktake', Icon: ClipboardList },
+    { id: 'stock-check', label: 'Stock Check', Icon: Flag },
     { id: 'packaging', label: 'Packaging', Icon: Box },
     { id: 'ordering',  label: 'Ordering',  Icon: ShoppingCart },
     { id: 'order-status', label: 'Order Status', Icon: Truck },
@@ -3207,6 +3408,18 @@ export default function StockApp({ user, org }) {
           lastOrderedByKey={lastOrderedByKey}
           mySuppliers={mySuppliers}
           onManageSuppliers={() => setShowAssignmentsModal(true)}
+        />
+      )}
+      {activeTab === 'stock-check' && (
+        <StockCheckTab
+          items={items}
+          sites={sites}
+          locations={activeLocations}
+          selectedLocationId={selectedLocationId}
+          onSelectLocation={setSelectedLocationId}
+          orgId={org.id}
+          user={user}
+          onRefresh={loadData}
         />
       )}
       {activeTab === 'packaging' && (

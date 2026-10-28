@@ -1099,8 +1099,12 @@ export const db = {
   },
 
   // Upserts so re-assigning an already-assigned item just updates its
-  // supplier/qty rather than erroring.
-  async assignItemToSite(orgId, itemId, locationId, { supplier, supplierCode, referenceOrderQty } = {}) {
+  // supplier/qty rather than erroring. fulfilmentRoute/transferSourceLocationId/
+  // reorderTriggerLevel are the Bourke St replenishment-routing fields --
+  // the caller (ItemsTab) always prefills these from the existing row when
+  // editing, so a save never silently resets a configured route back to
+  // the 'supplier' default.
+  async assignItemToSite(orgId, itemId, locationId, { supplier, supplierCode, referenceOrderQty, fulfilmentRoute, transferSourceLocationId, reorderTriggerLevel } = {}) {
     const { data, error } = await supabase
       .from('stock_item_sites')
       .upsert([{
@@ -1110,6 +1114,9 @@ export const db = {
         supplier: supplier || null,
         supplier_code: supplierCode || null,
         reference_order_qty: referenceOrderQty || 0,
+        fulfilment_route: fulfilmentRoute || 'supplier',
+        transfer_source_location_id: fulfilmentRoute === 'transfer' ? (transferSourceLocationId || null) : null,
+        reorder_trigger_level: reorderTriggerLevel || 'low',
         updated_at: new Date().toISOString(),
       }], { onConflict: 'item_id,location_id' })
       .select()
@@ -1333,6 +1340,87 @@ export const db = {
       .eq('org_id', orgId);
     if (error) throw error;
     return data || [];
+  },
+
+  // ── Stock: end-of-day stock check & replenishment routing ──────────────────
+  // See supabase_stock_bourke_replenishment.sql. One client-side call does
+  // the whole submit: write the check + its lines, write current_level/
+  // current_status back onto stock_item_sites, and for every flagged
+  // transfer-route item create a Transfer Hub request -- orchestration
+  // lives here rather than in a trigger, same convention as the rest of
+  // this file (e.g. createStockItem provisioning site rows).
+
+  async getLatestStockCheck(orgId, locationId) {
+    const { data, error } = await supabase
+      .from('stock_checks')
+      .select('id, performed_at, performed_by_name')
+      .eq('org_id', orgId)
+      .eq('location_id', locationId)
+      .order('performed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  },
+
+  // rank: full=4 > half=3 > low=2 > critical=1 -- flags when level's rank
+  // is at or below the item's configured trigger rank.
+  async submitStockCheck(orgId, locationId, lines, { performedBy, performedByName, sourceLocationNameById } = {}) {
+    const RANK = { full: 4, half: 3, low: 2, critical: 1 };
+
+    const { data: check, error: checkError } = await supabase
+      .from('stock_checks')
+      .insert([{
+        org_id: orgId,
+        location_id: locationId,
+        performed_by: performedBy || null,
+        performed_by_name: performedByName || null,
+        status: 'submitted',
+      }])
+      .select()
+      .single();
+    if (checkError) throw checkError;
+
+    const flaggedLines = [];
+    const checkLines = lines.map(({ site, level }) => {
+      const flagged = RANK[level] <= RANK[site.reorder_trigger_level || 'low'];
+      if (flagged) flaggedLines.push({ site, level });
+      return { org_id: orgId, stock_check_id: check.id, site_id: site.id, level, flagged };
+    });
+
+    const { error: linesError } = await supabase.from('stock_check_lines').insert(checkLines);
+    if (linesError) throw linesError;
+
+    const nowIso = new Date().toISOString();
+    await Promise.all(lines.map(({ site, level }) => {
+      const flagged = RANK[level] <= RANK[site.reorder_trigger_level || 'low'];
+      const newStatus = !flagged ? 'in_stock' : (level === 'critical' ? 'no_stock' : 'low_stock');
+      return supabase
+        .from('stock_item_sites')
+        .update({ current_level: level, current_level_at: nowIso, current_status: newStatus, updated_at: nowIso })
+        .eq('id', site.id);
+    }));
+
+    const transferLines = flaggedLines.filter(({ site }) => site.fulfilment_route === 'transfer');
+    await Promise.all(transferLines.map(({ site, level }) => {
+      const sourceName = sourceLocationNameById?.[site.transfer_source_location_id] || 'usual source';
+      return supabase.from('transfer_requests').insert([{
+        org_id: orgId,
+        stock_item_id: site.item_id,
+        requesting_location_id: locationId,
+        quantity: site.reference_order_qty || 1,
+        priority: level === 'critical' ? 'high' : 'low',
+        note: `Auto-flagged from end-of-day stock check (${level}). Usual source: ${sourceName}.`,
+        requested_by: performedBy || null,
+      }]);
+    }));
+
+    return {
+      checkId: check.id,
+      flaggedCount: flaggedLines.length,
+      transferCount: transferLines.length,
+      supplierCount: flaggedLines.length - transferLines.length,
+    };
   },
 
   // ── Production Planning (R-Prod) ────────────────────────────────────────────
