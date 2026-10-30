@@ -9,12 +9,22 @@ const CARD_SHADOW = '0 1px 2px rgba(15,23,42,0.04), 0 6px 20px -8px rgba(15,23,4
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
 // A single landing link for staff -- no data of its own, just a launcher
-// pointing at the other read-only public pages (R-Prod, Transfer Hub).
+// pointing at the other public pages (R-Prod, Transfer Hub, and Roster --
+// the one tile behind a personal PIN rather than open to anyone with the link).
 // See supabase/functions/public-staff-hub. Each tile keeps the destination
 // page's own accent colour, so it reads as a preview of what's behind it --
 // the same colour greets you again once you tap through.
 
 const LINKS = [
+  {
+    key: 'roster',
+    label: 'Roster',
+    description: 'My shifts & time off',
+    icon: '🗓️',
+    color: '#3B5BDB',
+    tint: '#EEF2FF',
+    path: '/roster/',
+  },
   {
     key: 'production',
     label: 'R-Prod',
