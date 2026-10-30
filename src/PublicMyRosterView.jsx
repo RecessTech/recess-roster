@@ -211,11 +211,6 @@ function DaySheet({ day, saving, onClose, onSetUnavailable, onClear }) {
           </>
         ) : (
           <>
-            {day.shifts.length > 0 && (
-              <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E', fontSize: 12.5, borderRadius: 10, padding: '8px 10px', margin: '8px 0 2px' }}>
-                You're rostered on this day. Marking it unavailable won't remove your shift — let your manager know too.
-              </div>
-            )}
             <p style={{ fontSize: 14, color: MUTED, margin: '6px 0 10px' }}>Let your manager know you can't work this day.</p>
             <input
               value={note}
@@ -277,8 +272,9 @@ function DayRow({ day, last, onOpen }) {
         {!working && !day.unavailable && <div style={{ fontSize: 13, color: '#B4BDC9' }}>Day off</div>}
       </div>
 
-      {/* Action */}
-      {!day.isPast && (
+      {/* Action -- a rostered day can't be blocked out from here, but an
+          existing "unavailable" mark stays editable so it can be undone. */}
+      {!day.isPast && (!working || day.unavailable) && (
         <button className="rr-btn" onClick={onOpen} style={{
           flexShrink: 0, borderRadius: 999, padding: '6px 11px', fontSize: 12, fontWeight: 700,
           border: `1px solid ${day.unavailable ? '#FECACA' : '#E2E8F0'}`,
