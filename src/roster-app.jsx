@@ -109,6 +109,34 @@ function generateStaffPin(taken) {
   return null;
 }
 
+const UNAVAIL_HATCH = 'repeating-linear-gradient(135deg, rgba(239,68,68,0.18) 0px, rgba(239,68,68,0.18) 2px, transparent 2px, transparent 7px)';
+
+// Roster-grid cell tint for one availability entry at one time slot ('HH:MM').
+// 'partial' means the person can only work inside [startTime, endTime) -- an
+// open end is null -- so only the hours *outside* that window are hatched.
+function availabilityOverlay(av, slot) {
+  if (!av) return undefined;
+  if (av.status === 'unavailable') return UNAVAIL_HATCH;
+  if (av.status === 'preferred') return 'linear-gradient(rgba(34,197,94,0.08), rgba(34,197,94,0.08))';
+  if (av.status === 'partial') {
+    const outside = (av.startTime && slot < av.startTime) || (av.endTime && slot >= av.endTime);
+    return outside ? UNAVAIL_HATCH : 'linear-gradient(rgba(245,158,11,0.12), rgba(245,158,11,0.12))';
+  }
+  return undefined;
+}
+
+// "until 2:00pm" / "from 2:00pm" / "9:00am–2:00pm" for a partial entry.
+function partialWindowLabel(av) {
+  const t = (hhmm) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    return `${h % 12 === 0 ? 12 : h % 12}${m ? ':' + String(m).padStart(2, '0') : ''}${h >= 12 ? 'pm' : 'am'}`;
+  };
+  if (av.startTime && av.endTime) return `${t(av.startTime)}–${t(av.endTime)}`;
+  if (av.endTime) return `until ${t(av.endTime)}`;
+  if (av.startTime) return `from ${t(av.startTime)}`;
+  return 'part of the day';
+}
+
 const RosterApp = () => {
   const { user } = useAuth();
 
@@ -208,7 +236,7 @@ const RosterApp = () => {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [activeView, setActiveView] = useState('roster'); // 'roster', 'analytics', or 'staff-view'
   const [isMobileView, setIsMobileView] = useState(false);
-  const [rosterView, setRosterView] = useState('weekly'); // 'weekly' | 'daily'
+  const [rosterView, setRosterView] = useState('weekly'); // 'weekly' | 'daily' | 'availability'
   const [dailyViewDate, setDailyViewDate] = useState(() => new Date());
 
   // Detect mobile on mount and resize
@@ -304,7 +332,7 @@ const RosterApp = () => {
   // wherever it has data (see RevenueTab), which is now every day going
   // forward since R-Topline's imports started.
   const [actualDailyRevenue, setActualDailyRevenue] = useState({});
-  // availability[`${staffId}|${dateKey}`] = { status: 'available'|'unavailable'|'preferred', startTime, endTime }
+  // availability[`${staffId}|${dateKey}`] = { status: 'available'|'unavailable'|'preferred'|'partial', startTime, endTime, notes } -- partial = can only work inside [startTime, endTime)
   const [availability, setAvailability] = useState({});
   const [showRevenueModal, setShowRevenueModal] = useState(false);
   const [revenueEditDate, setRevenueEditDate] = useState(null);
@@ -566,7 +594,7 @@ const RosterApp = () => {
       .then(results => {
         const map = {};
         results.forEach((rows, i) => {
-          rows.forEach(r => { map[`${activeStaff[i].id}|${r.date}`] = { status: r.status, startTime: r.start_time, endTime: r.end_time }; });
+          rows.forEach(r => { map[`${activeStaff[i].id}|${r.date}`] = { status: r.status, startTime: r.start_time, endTime: r.end_time, notes: r.notes || '' }; });
         });
         setAvailability(map);
       })
@@ -588,7 +616,7 @@ const RosterApp = () => {
           const updated = { ...prev };
           results.forEach((rows, i) => {
             rows.forEach(r => {
-              updated[`${activeStaff[i].id}|${r.date}`] = { status: r.status, startTime: r.start_time, endTime: r.end_time };
+              updated[`${activeStaff[i].id}|${r.date}`] = { status: r.status, startTime: r.start_time, endTime: r.end_time, notes: r.notes || '' };
             });
           });
           return updated;
@@ -3002,8 +3030,11 @@ const RosterApp = () => {
       pairs.forEach(({ prevDk, thisDk }) => {
         const src = availability[`${s.id}|${prevDk}`];
         if (src?.status) {
-          optimistic[`${s.id}|${thisDk}`] = { status: src.status, startTime: null, endTime: null };
-          writes.push(db.setAvailability(org.id, s.id, thisDk, src.status, null, null));
+          const isPartial = src.status === 'partial';
+          const startTime = isPartial ? src.startTime || null : null;
+          const endTime = isPartial ? src.endTime || null : null;
+          optimistic[`${s.id}|${thisDk}`] = { status: src.status, startTime, endTime };
+          writes.push(db.setAvailability(org.id, s.id, thisDk, src.status, startTime, endTime));
         }
       });
     });
@@ -3084,10 +3115,21 @@ const RosterApp = () => {
                   {avDates.map((d, dowIdx) => {
                     const dk = formatDateKey(d);
                     const status = availability[`${s.id}|${dk}`]?.status || null;
+                    const partialAv = status === 'partial' ? availability[`${s.id}|${dk}`] : null;
                     return (
                       <td key={dowIdx} className="py-2 px-1.5 text-center">
                         <div className="flex gap-1 justify-center">
-                          {OPTIONS.map(opt => {
+                          {/* Set by staff from their phone ("can work until 2pm"):
+                              shown amber with the window; click to clear. */}
+                          {partialAv && (
+                            <button
+                              onClick={() => avHandleSet(s.id, dk, 'partial')}
+                              title={`Can work ${partialWindowLabel(partialAv)}${partialAv.notes ? ` — ${partialAv.notes}` : ''} (click to clear)`}
+                              style={{ height: 28, borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: '0 7px', background: '#fffbeb', border: '1.5px solid #fcd34d', color: '#b45309', whiteSpace: 'nowrap' }}>
+                              ◐ {partialWindowLabel(partialAv)}
+                            </button>
+                          )}
+                          {!partialAv && OPTIONS.map(opt => {
                             const isActive = status === opt.value;
                             return (
                               <button key={opt.value}
@@ -3166,6 +3208,7 @@ const RosterApp = () => {
                           {s.role && <div className="text-xs text-gray-400">{s.role}</div>}
                         </div>
                         {avail?.status === 'preferred' && <span className="text-xs text-green-600 font-medium">Preferred</span>}
+                        {avail?.status === 'partial' && <span className="text-xs text-amber-600 font-medium">Can work {partialWindowLabel(avail)}</span>}
                         {isUnavailable && <span className="text-xs text-red-400">Unavailable</span>}
                       </button>
                     );
@@ -6590,6 +6633,137 @@ Key things to verify after rebuild:
     );
   }
 
+  // Read-only "who can work when" matrix for the roster week: one row per
+  // staff member, Mon-Sun across, each cell their availability plus any shift
+  // they're rostered on -- with a red ring where the two clash. Called as a
+  // plain function (not a component) for the same remount reason as StaffModal.
+  // Always the full week of currentDate, whatever 1D/3D/7D the grid is on;
+  // availability for that week is already loaded by the effect up top.
+  const renderAvailabilityOverview = () => {
+    const monday = new Date(currentDate);
+    monday.setDate(monday.getDate() + (monday.getDay() === 0 ? -6 : 1 - monday.getDay()));
+    monday.setHours(0, 0, 0, 0);
+    const weekDays = Array.from({ length: 7 }, (_, i) => { const d = new Date(monday); d.setDate(d.getDate() + i); return d; });
+    const todayKey = formatDateKey(new Date());
+
+    // Contiguous runs of rostered 15-minute slots for one person on one day.
+    const shiftRuns = (dk, staffId) => {
+      const runs = [];
+      let cur = null;
+      for (let h = startHour; h <= endHour; h++) {
+        for (let m = 0; m < 60; m += 15) {
+          if (h === endHour && m > 0) break;
+          const slot = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+          if (viewSchedule[getScheduleKey(dk, staffId, slot)]) {
+            const end = `${String(Math.floor((h * 60 + m + 15) / 60)).padStart(2, '0')}:${String((m + 15) % 60).padStart(2, '0')}`;
+            if (cur && cur.end === slot) cur.end = end; else { cur = { start: slot, end }; runs.push(cur); }
+          }
+        }
+      }
+      return runs;
+    };
+
+    const clashes = (runs, av) => {
+      if (!av || runs.length === 0) return false;
+      if (av.status === 'unavailable') return true;
+      if (av.status === 'partial') {
+        return runs.some(r => (av.startTime && r.start < av.startTime) || (av.endTime && r.end > av.endTime));
+      }
+      return false;
+    };
+
+    const rows = orderedStaff.map(s => ({
+      s,
+      cells: weekDays.map(d => {
+        const dk = formatDateKey(d);
+        const av = availability[`${s.id}|${dk}`] || null;
+        const runs = shiftRuns(dk, s.id);
+        return { dk, av, runs, clash: clashes(runs, av) };
+      }),
+    }));
+
+    const totals = weekDays.map((_, i) => rows.reduce((acc, r) => {
+      const st = r.cells[i].av?.status;
+      if (st === 'unavailable') acc.out++;
+      else if (st === 'partial') acc.limited++;
+      return acc;
+    }, { out: 0, limited: 0 }));
+    const clashCount = rows.reduce((n, r) => n + r.cells.filter(c => c.clash).length, 0);
+
+    const chip = (av) => {
+      if (!av) return <span className="text-gray-300 text-xs">—</span>;
+      if (av.status === 'unavailable') return <span className="inline-block px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[11px] font-semibold">✕ Unavailable</span>;
+      if (av.status === 'partial') return <span className="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[11px] font-semibold whitespace-nowrap">◐ {partialWindowLabel(av)}</span>;
+      if (av.status === 'preferred') return <span className="inline-block px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 text-[11px] font-semibold">★ Preferred</span>;
+      return <span className="inline-block px-1.5 py-0.5 rounded bg-green-50 text-green-600 text-[11px] font-semibold">✓ Available</span>;
+    };
+
+    return (
+      <div className="min-w-[760px]">
+        <div className="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-4 text-[11px] text-gray-500">
+          <span className="font-semibold text-gray-700 text-xs">Availability this week</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-400" /> Unavailable</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-400" /> Limited hours</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-400" /> Preferred</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm ring-2 ring-red-500 bg-white" /> Rostered against availability</span>
+          <span className="text-gray-400">— = nothing set (assumed available)</span>
+          {clashCount > 0 && <span className="ml-auto text-red-600 font-semibold">{clashCount} clash{clashCount === 1 ? '' : 'es'} this week</span>}
+          <button
+            onClick={() => { setAvWeekStart(new Date(monday)); setActiveView('availability'); }}
+            className={`${clashCount > 0 ? '' : 'ml-auto '}text-blue-600 hover:text-blue-700 font-semibold`}
+          >Edit availability →</button>
+        </div>
+        <table className="w-full border-collapse table-fixed">
+          <thead className="sticky top-[33px] z-10 bg-gray-50">
+            <tr className="border-b border-gray-200">
+              <th className="w-40 p-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider sticky left-0 bg-gray-50 z-20">Staff</th>
+              {weekDays.map((d, i) => {
+                const dk = formatDateKey(d);
+                return (
+                  <th key={dk} className={`p-2 text-center text-xs font-semibold ${dk === todayKey ? 'text-orange-600 bg-orange-50/60' : i >= 5 ? 'text-blue-500' : 'text-gray-500'}`}>
+                    <div>{d.toLocaleDateString('en-AU', { weekday: 'short' })} <span className="font-normal text-gray-400">{d.getDate()}/{d.getMonth() + 1}</span></div>
+                    <div className="h-4 text-[10px] font-medium">
+                      {totals[i].out > 0 && <span className="text-red-500">{totals[i].out} out</span>}
+                      {totals[i].out > 0 && totals[i].limited > 0 && <span className="text-gray-300"> · </span>}
+                      {totals[i].limited > 0 && <span className="text-amber-600">{totals[i].limited} limited</span>}
+                    </div>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ s, cells }, si) => (
+              <tr key={s.id} className={`border-b border-gray-100 ${si % 2 === 1 ? 'bg-gray-50/50' : 'bg-white'}`}>
+                <td className="p-2 sticky left-0 z-10 border-r border-gray-100" style={{ background: 'inherit' }}>
+                  <div className="text-sm font-medium text-gray-800 truncate">{s.name}</div>
+                  <div className="text-[10px] text-gray-400">{s.employmentType}</div>
+                </td>
+                {cells.map(({ dk, av, runs, clash }) => (
+                  <td
+                    key={dk}
+                    title={av ? `${av.status === 'partial' ? `Can work ${partialWindowLabel(av)}` : av.status.charAt(0).toUpperCase() + av.status.slice(1)}${av.notes ? ` — ${av.notes}` : ''}` : undefined}
+                    className={`p-1.5 align-top ${av?.status === 'unavailable' ? 'bg-red-50/70' : av?.status === 'partial' ? 'bg-amber-50/70' : ''}`}
+                  >
+                    <div className={`rounded-md px-1 py-1 text-center min-h-[44px] ${clash ? 'ring-2 ring-red-500 bg-white' : ''}`}>
+                      {chip(av)}
+                      {av?.notes && <div className="text-[10px] text-gray-500 truncate mt-0.5" title={av.notes}>{av.notes}</div>}
+                      {runs.map((r, i) => (
+                        <div key={i} className={`text-[10px] font-mono mt-0.5 ${clash ? 'text-red-600 font-semibold' : 'text-blue-600'}`}>
+                          {partialWindowLabel({ startTime: r.start, endTime: r.end })}
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   const renderDailyTimeline = () => {
     const dk = formatDateKey(dailyViewDate);
     const todayKey = formatDateKey(new Date());
@@ -6757,12 +6931,7 @@ Key things to verify after rebuild:
                       const shiftHrsVal = (shiftLen * timeInterval) / 60;
 
                       const elsewhere = sh ? null : otherSiteName(k);
-                      const availStatus = availability[`${s.id}|${dk}`]?.status;
-                      const unavailOverlay = elsewhere ? OTHER_SITE_HATCH : availStatus === 'unavailable'
-                        ? 'repeating-linear-gradient(135deg, rgba(239,68,68,0.18) 0px, rgba(239,68,68,0.18) 2px, transparent 2px, transparent 7px)'
-                        : availStatus === 'preferred'
-                        ? 'linear-gradient(rgba(34,197,94,0.08), rgba(34,197,94,0.08))'
-                        : undefined;
+                      const unavailOverlay = elsewhere ? OTHER_SITE_HATCH : availabilityOverlay(availability[`${s.id}|${dk}`], slot);
 
                       return (
                         <td key={slot}
@@ -7153,11 +7322,17 @@ Key things to verify after rebuild:
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors border-l border-gray-200 ${rosterView === 'daily' ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
                   <LayoutList size={13} /> Day
                 </button>
+                <button onClick={() => setRosterView('availability')}
+                  title="Everyone's availability this week"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors border-l border-gray-200 ${rosterView === 'availability' ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  <CalendarCheck size={13} /> Avail.
+                </button>
               </div>
               {/* View mode — only relevant for weekly grid */}
               {rosterView === 'weekly' && <div className="flex bg-gray-100 p-0.5 rounded-lg">
                 {[1, 3, 7].map(m => <button key={m} onClick={() => setViewMode(m)} className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{m}D</button>)}
               </div>}
+              {rosterView !== 'availability' && <>
               {/* Time interval */}
               <div className="flex bg-gray-100 p-0.5 rounded-lg">
                 {[15, 30, 60].map(i => <button key={i} onClick={() => setTimeInterval(i)} className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${timeInterval === i ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{i === 60 ? '1h' : `${i}m`}</button>)}
@@ -7168,8 +7343,10 @@ Key things to verify after rebuild:
                 <span className="px-1.5 text-xs text-gray-400 min-w-[36px] text-center">{columnWidth}px</span>
                 <button onClick={() => setColumnWidth(Math.min(200, columnWidth + 10))} className="px-2 py-1.5 rounded text-xs text-gray-500 hover:text-gray-700 transition-colors">+</button>
               </div>
+              </>}
             </div>
 
+            {rosterView !== 'availability' && <>
             <div className="h-4 w-px bg-gray-200 mx-1"></div>
 
             {/* Paint mode / Template mode */}
@@ -7224,6 +7401,7 @@ Key things to verify after rebuild:
               </button>
               <button onClick={clearWeek} className="text-xs py-1.5 px-2.5 rounded-lg text-red-600 hover:bg-red-50 font-medium transition-colors">Clear Week</button>
             </div>
+            </>}
           </div>}
         </div>
 
@@ -7268,6 +7446,12 @@ Key things to verify after rebuild:
               <p className="text-sm text-gray-500 mb-5 text-center">Add your first team member to start building schedules.</p>
               <button onClick={() => setShowStaffModal(true)} className="btn-primary w-full">Add Staff</button>
             </div>
+          </div>
+        )}
+
+        {activeStaff.length > 0 && rosterView === 'availability' && (
+          <div className="card overflow-auto relative flex-1 min-h-0">
+            {renderAvailabilityOverview()}
           </div>
         )}
 
@@ -7373,12 +7557,7 @@ Key things to verify after rebuild:
                               ? (si % 2 === 0 ? 'rgba(249,115,22,0.04)' : 'rgba(249,115,22,0.02)')
                               : (si % 2 === 1 ? 'rgba(248,250,252,0.8)' : 'transparent');
                             const elsewhere = sh ? null : otherSiteName(k);
-                            const wkAvailStatus = availability[`${s.id}|${dk}`]?.status;
-                            const wkOverlay = elsewhere ? OTHER_SITE_HATCH : wkAvailStatus === 'unavailable'
-                              ? 'repeating-linear-gradient(135deg, rgba(239,68,68,0.18) 0px, rgba(239,68,68,0.18) 2px, transparent 2px, transparent 7px)'
-                              : wkAvailStatus === 'preferred'
-                              ? 'linear-gradient(rgba(34,197,94,0.08), rgba(34,197,94,0.08))'
-                              : undefined;
+                            const wkOverlay = elsewhere ? OTHER_SITE_HATCH : availabilityOverlay(availability[`${s.id}|${dk}`], t);
                             return (
                               <td
                                 key={k}

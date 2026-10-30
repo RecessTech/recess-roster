@@ -4,6 +4,8 @@ import { supabase } from './supabaseClient';
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
 const BLUE = '#3B5BDB';
 const RED = '#DC2626';
+const AMBER = '#D97706';
+const AMBER_INK = '#B45309';
 const INK = '#1E293B';
 const MUTED = '#64748B';
 const FAINT = '#94A3B8';
@@ -70,17 +72,32 @@ function fmtHours(h) {
   return `${Number.isInteger(h) ? h : h.toFixed(1)}h`;
 }
 
-// Collapse consecutive dates that share a note into ranges, so a week off
-// reads as one line instead of seven.
+// Half-hour choices for "I can work from / until" -- 5am to 11pm covers any
+// rostered day. A time already stored from elsewhere is added by the picker.
+const TIME_OPTIONS = Array.from({ length: 37 }, (_, i) => {
+  const mins = 5 * 60 + i * 30;
+  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+});
+
+// "until 2pm" / "from 2pm" / "9am – 2pm": the window someone CAN work.
+function fmtWindow(from, to) {
+  if (from && to) return `${fmtTime(from)} – ${fmtTime(to)}`;
+  if (to) return `until ${fmtTime(to)}`;
+  if (from) return `from ${fmtTime(from)}`;
+  return '';
+}
+
+// Collapse consecutive dates that share a kind, window and note into ranges,
+// so a week off reads as one line instead of seven.
 function groupTimeOff(timeOff) {
   const groups = [];
   for (const t of timeOff) {
     const last = groups[groups.length - 1];
-    if (last && last.note === t.note && addDays(last.to, 1) === t.dateKey) {
+    if (last && last.kind === t.kind && last.winFrom === t.from && last.winTo === t.to && last.note === t.note && addDays(last.to, 1) === t.dateKey) {
       last.to = t.dateKey;
       last.dates.push(t.dateKey);
     } else {
-      groups.push({ from: t.dateKey, to: t.dateKey, note: t.note, dates: [t.dateKey] });
+      groups.push({ from: t.dateKey, to: t.dateKey, kind: t.kind, winFrom: t.from, winTo: t.to, note: t.note, dates: [t.dateKey] });
     }
   }
   return groups;
@@ -188,43 +205,92 @@ function PinPad({ token, busy, error, locked, onSubmit }) {
   );
 }
 
-// ── Bottom sheet: mark one day unavailable (or take it back) ────────────────
+// ── Bottom sheet: set (or change, or take back) one day's availability ──────
 
-function DaySheet({ day, saving, onClose, onSetUnavailable, onClear }) {
-  const [note, setNote] = useState('');
-  const isUnavailable = !!day.unavailable;
+function TimeSelect({ value, onChange, emptyLabel, label }) {
+  const options = value && !TIME_OPTIONS.includes(value) ? [...TIME_OPTIONS, value].sort() : TIME_OPTIONS;
+  return (
+    <label style={{ display: 'block', minWidth: 0, fontSize: 10.5, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+      <span style={{ display: 'block', marginBottom: 3 }}>{label}</span>
+      <select value={value} onChange={e => onChange(e.target.value)} style={{
+        width: '100%', boxSizing: 'border-box', border: '1px solid #E2E8F0', borderRadius: 10, padding: '10px 8px', fontSize: 16,
+        fontFamily: FONT, background: 'white', color: value ? INK : FAINT, outline: 'none', textTransform: 'none', letterSpacing: 0, fontWeight: 400,
+      }}>
+        <option value="">{emptyLabel}</option>
+        {options.map(t => <option key={t} value={t}>{fmtTime(t)}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function DaySheet({ day, saving, onClose, onSave, onClear }) {
+  const existing = day.availability;
+  const [mode, setMode] = useState(existing?.kind || 'unavailable'); // 'unavailable' | 'partial'
+  const [note, setNote] = useState(existing?.note || '');
+  const [from, setFrom] = useState(existing?.from || '');
+  const [to, setTo] = useState(existing?.to || '');
+  const [err, setErr] = useState('');
+  const partial = mode === 'partial';
+
+  const save = () => {
+    if (partial) {
+      if (!from && !to) { setErr('Pick a start or end time.'); return; }
+      if (from && to && from >= to) { setErr('The end time has to be after the start time.'); return; }
+    }
+    setErr('');
+    onSave(mode, note, from, to);
+  };
+
+  const tab = (key, label) => (
+    <button key={key} className="rr-btn" onClick={() => { setMode(key); setErr(''); }} style={{
+      flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', fontSize: 13.5, fontWeight: 700,
+      background: mode === key ? 'white' : 'transparent', color: mode === key ? INK : MUTED,
+      boxShadow: mode === key ? '0 1px 2px rgba(15,23,42,0.1)' : 'none',
+    }}>{label}</button>
+  );
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 50 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'white', width: '100%', maxWidth: 480, borderRadius: '20px 20px 0 0', padding: '8px 18px calc(16px + env(safe-area-inset-bottom))', fontFamily: FONT, boxSizing: 'border-box', animation: 'rise 0.18s ease-out' }}>
         <div style={{ width: 36, height: 4, borderRadius: 2, background: '#E2E8F0', margin: '0 auto 14px' }} />
-        <div style={{ fontSize: 17, fontWeight: 800, color: INK, marginBottom: 2 }}>{shortLabel(day.dateKey)}</div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: INK, marginBottom: 10 }}>{shortLabel(day.dateKey)}</div>
 
-        {isUnavailable ? (
+        <div style={{ display: 'flex', gap: 3, background: '#E6EAF0', borderRadius: 11, padding: 3, marginBottom: 12 }}>
+          {tab('unavailable', "Can't work")}
+          {tab('partial', 'Part of the day')}
+        </div>
+
+        {partial ? (
           <>
-            <p style={{ fontSize: 14, color: MUTED, margin: '0 0 14px' }}>
-              You're marked unavailable{day.unavailable.note ? ` — “${day.unavailable.note}”` : ''}.
+            <p style={{ fontSize: 13.5, color: MUTED, margin: '0 0 10px' }}>
+              {fmtWindow(from, to) ? <>You can work <strong style={{ color: INK }}>{fmtWindow(from, to)}</strong>.</> : 'Set the hours you can work. Leave one side open for “until” or “from”.'}
             </p>
-            <button className="rr-btn" disabled={saving} onClick={onClear} style={primaryBtn(BLUE)}>
-              {saving ? 'Saving…' : 'Mark me available again'}
-            </button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+              <TimeSelect label="Can start from" value={from} onChange={v => { setFrom(v); setErr(''); }} emptyLabel="Any time" />
+              <TimeSelect label="Must finish by" value={to} onChange={v => { setTo(v); setErr(''); }} emptyLabel="Any time" />
+            </div>
           </>
         ) : (
-          <>
-            <p style={{ fontSize: 14, color: MUTED, margin: '6px 0 10px' }}>Let your manager know you can't work this day.</p>
-            <input
-              value={note}
-              onChange={e => setNote(e.target.value)}
-              maxLength={200}
-              placeholder="Reason (optional)"
-              style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #E2E8F0', borderRadius: 12, padding: '12px 14px', fontSize: 16, fontFamily: FONT, marginBottom: 12, outline: 'none' }}
-            />
-            <button className="rr-btn" disabled={saving} onClick={() => onSetUnavailable(note)} style={primaryBtn(RED)}>
-              {saving ? 'Saving…' : "I'm unavailable"}
-            </button>
-          </>
+          <p style={{ fontSize: 13.5, color: MUTED, margin: '0 0 10px' }}>Let your manager know you can't work this day at all.</p>
         )}
-        <button className="rr-btn" onClick={onClose} style={{ width: '100%', marginTop: 4, padding: 11, background: 'none', border: 'none', color: MUTED, fontSize: 14, fontWeight: 600 }}>Cancel</button>
+
+        <input
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          maxLength={200}
+          placeholder="Reason (optional)"
+          style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #E2E8F0', borderRadius: 12, padding: '12px 14px', fontSize: 16, fontFamily: FONT, marginBottom: 12, outline: 'none' }}
+        />
+        {err && <div style={{ color: RED, fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>{err}</div>}
+        <button className="rr-btn" disabled={saving} onClick={save} style={primaryBtn(partial ? AMBER : RED)}>
+          {saving ? 'Saving…' : partial ? 'Save my hours' : "I'm unavailable"}
+        </button>
+        {existing && (
+          <button className="rr-btn" disabled={saving} onClick={onClear} style={{ width: '100%', marginTop: 8, padding: 11, borderRadius: 12, border: '1px solid #E2E8F0', background: 'white', color: BLUE, fontSize: 14, fontWeight: 700 }}>
+            Mark me available again
+          </button>
+        )}
+        <button className="rr-btn" onClick={onClose} style={{ width: '100%', marginTop: 2, padding: 11, background: 'none', border: 'none', color: MUTED, fontSize: 14, fontWeight: 600 }}>Cancel</button>
       </div>
     </div>
   );
@@ -234,12 +300,15 @@ function DaySheet({ day, saving, onClose, onSetUnavailable, onClear }) {
 
 function DayRow({ day, last, onOpen }) {
   const working = day.shifts.length > 0;
-  const bg = day.unavailable ? '#FEF8F8' : 'white';
+  const av = day.availability;
+  const limited = av?.kind === 'partial';
+  const accent = limited ? AMBER : RED;
+  const bg = av ? (limited ? '#FFFBF0' : '#FEF8F8') : 'white';
   return (
     <div style={{
       flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', gap: 12, padding: '0 12px 0 14px', background: bg,
       borderBottom: last ? 'none' : `1px solid ${HAIRLINE}`, opacity: day.isPast ? 0.5 : 1,
-      boxShadow: working ? `inset 3px 0 0 ${BLUE}` : day.unavailable ? `inset 3px 0 0 ${RED}` : 'none',
+      boxShadow: working ? `inset 3px 0 0 ${BLUE}` : av ? `inset 3px 0 0 ${accent}` : 'none',
     }}>
       {/* Date */}
       <div style={{ width: 38, flexShrink: 0, textAlign: 'center', lineHeight: 1 }}>
@@ -264,22 +333,22 @@ function DayRow({ day, last, onOpen }) {
             {sh.roleCode && <span style={{ color: FAINT, fontWeight: 500, fontSize: 12 }}>{sh.roleCode}</span>}
           </div>
         ))}
-        {day.unavailable && (
-          <div style={{ fontSize: 12.5, fontWeight: 600, color: RED, lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            Unavailable{day.unavailable.note ? ` · ${day.unavailable.note}` : ''}
+        {av && (
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: limited ? AMBER_INK : RED, lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {limited ? `Limited · ${fmtWindow(av.from, av.to)}` : 'Unavailable'}{av.note ? ` · ${av.note}` : ''}
           </div>
         )}
-        {!working && !day.unavailable && <div style={{ fontSize: 13, color: '#B4BDC9' }}>Day off</div>}
+        {!working && !av && <div style={{ fontSize: 13, color: '#B4BDC9' }}>Day off</div>}
       </div>
 
       {/* Action -- a rostered day can't be blocked out from here, but an
           existing "unavailable" mark stays editable so it can be undone. */}
-      {!day.isPast && (!working || day.unavailable) && (
+      {!day.isPast && (!working || av) && (
         <button className="rr-btn" onClick={onOpen} style={{
           flexShrink: 0, borderRadius: 999, padding: '6px 11px', fontSize: 12, fontWeight: 700,
-          border: `1px solid ${day.unavailable ? '#FECACA' : '#E2E8F0'}`,
-          background: day.unavailable ? '#FEE2E2' : 'white', color: day.unavailable ? RED : MUTED,
-        }}>{day.unavailable ? 'Edit' : "Can't work"}</button>
+          border: `1px solid ${av ? (limited ? '#FDE68A' : '#FECACA') : '#E2E8F0'}`,
+          background: av ? (limited ? '#FEF3C7' : '#FEE2E2') : 'white', color: av ? (limited ? AMBER_INK : RED) : MUTED,
+        }}>{av ? 'Edit' : 'Availability'}</button>
       )}
     </div>
   );
@@ -367,13 +436,15 @@ export default function PublicMyRosterView({ token }) {
     setPin(entered);
   };
 
-  const mutate = async (action, dates, note) => {
+  const mutate = async (action, dates, note, extra = {}) => {
     setSaving(true);
     try {
-      const result = await call(action, pin, { dates, ...(note !== undefined ? { note } : {}) });
+      const result = await call(action, pin, { dates, ...(note !== undefined ? { note } : {}), ...extra });
       if (result?.error) { flash('error', result.error); return false; }
       await load(pin, data.weekStart);
-      if (action === 'set-unavailable') {
+      if (action === 'set-partial') {
+        flash('ok', 'Saved your hours.');
+      } else if (action === 'set-unavailable') {
         if (result.rostered?.length) {
           flash('warn', `Saved. You're already rostered on ${result.rostered.map(r => r.label).join(', ')} — tell your manager.`);
         } else {
@@ -503,7 +574,12 @@ export default function PublicMyRosterView({ token }) {
       {sheetDay && (
         <DaySheet day={sheetDay} saving={saving}
           onClose={() => setSheetDate(null)}
-          onSetUnavailable={async (note) => { if (await mutate('set-unavailable', [sheetDay.dateKey], note)) setSheetDate(null); }}
+          onSave={async (mode, note, from, to) => {
+            const ok = mode === 'partial'
+              ? await mutate('set-partial', [sheetDay.dateKey], note, { from: from || null, to: to || null })
+              : await mutate('set-unavailable', [sheetDay.dateKey], note);
+            if (ok) setSheetDate(null);
+          }}
           onClear={async () => { if (await mutate('clear-unavailable', [sheetDay.dateKey])) setSheetDate(null); }} />
       )}
     </Page>
@@ -560,12 +636,13 @@ function TimeOffTab({ today, groups, saving, onAdd, onRemove }) {
         ) : (
           <div style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW }}>
             {groups.map((g, i) => (
-              <div key={g.from} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 12px 10px 14px', borderBottom: i === groups.length - 1 ? 'none' : `1px solid ${HAIRLINE}`, boxShadow: `inset 3px 0 0 ${RED}` }}>
+              <div key={`${g.from}-${g.kind}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 12px 10px 14px', borderBottom: i === groups.length - 1 ? 'none' : `1px solid ${HAIRLINE}`, boxShadow: `inset 3px 0 0 ${g.kind === 'partial' ? AMBER : RED}` }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, color: INK }}>
                     {g.from === g.to ? shortLabel(g.from) : `${shortLabel(g.from)} → ${shortLabel(g.to)}`}
                   </div>
                   <div style={{ fontSize: 12, color: MUTED, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {g.kind === 'partial' && <span style={{ color: AMBER_INK, fontWeight: 600 }}>Limited · {fmtWindow(g.winFrom, g.winTo)} · </span>}
                     {g.dates.length} {g.dates.length === 1 ? 'day' : 'days'}{g.note ? ` · ${g.note}` : ''}
                   </div>
                 </div>
