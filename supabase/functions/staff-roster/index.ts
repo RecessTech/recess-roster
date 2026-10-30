@@ -9,7 +9,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // own availability back.
 //
 // Actions: 'load' (a week + next shift + upcoming time off),
-// 'set-unavailable' (mark dates), 'clear-unavailable' (undo them).
+// 'set-unavailable' (can't work at all), 'set-partial' (can work, but only
+// inside a window -- "until 2pm", "from 2pm", "9am to 2pm"), and
+// 'clear-unavailable' (undo either).
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,6 +23,7 @@ const MAX_FAILS_PER_IP = 5;
 const MAX_FAILS_PER_ORG = 40;
 const MAX_DATES_PER_CALL = 62;
 const MAX_NOTE_LENGTH = 200;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const NEXT_SHIFT_LOOKAHEAD_DAYS = 28;
 const TIME_OFF_LOOKAHEAD_DAYS = 365;
 
@@ -104,6 +107,17 @@ function groupIntoShifts(rows: SlotRow[]): Shift[] {
   return shifts;
 }
 
+type AvailRow = { status: string; notes: string | null; start_time: string | null; end_time: string | null };
+
+function availabilityOf(row: AvailRow) {
+  return {
+    kind: row.status === 'partial' ? 'partial' : 'unavailable',
+    from: row.status === 'partial' ? row.start_time : null,
+    to: row.status === 'partial' ? row.end_time : null,
+    note: row.notes || '',
+  };
+}
+
 function groupSlotsByDate(rows: (SlotRow & { date_key: string })[]) {
   const byDate = new Map<string, SlotRow[]>();
   for (const r of rows) {
@@ -177,7 +191,7 @@ serve(async (req) => {
     const today = todayIn(org.timezone || 'Australia/Sydney');
 
     // ── set-unavailable / clear-unavailable
-    if (action === 'set-unavailable' || action === 'clear-unavailable') {
+    if (action === 'set-unavailable' || action === 'set-partial' || action === 'clear-unavailable') {
       const dates: unknown = body.dates;
       if (!Array.isArray(dates) || dates.length === 0 || !dates.every(isDateKey)) {
         return json({ error: 'Pick at least one valid date.' });
@@ -191,18 +205,34 @@ serve(async (req) => {
       }
 
       if (action === 'clear-unavailable') {
-        // Only ever remove "unavailable" rows -- never a manager's own entries.
+        // Only ever remove the rows staff create here ("unavailable" and
+        // "partial") -- never a manager's own available/preferred entries.
         const { error } = await supabase.from('staff_availability').delete()
-          .eq('staff_id', staff.id).eq('status', 'unavailable').in('date', unique);
+          .eq('staff_id', staff.id).in('status', ['unavailable', 'partial']).in('date', unique);
         if (error) throw error;
         return json({ ok: true });
       }
 
       const note = typeof body.note === 'string' ? body.note.trim().slice(0, MAX_NOTE_LENGTH) : '';
+
+      // 'partial': the window they CAN work. Either end may be open, but not both.
+      let startTime: string | null = null;
+      let endTime: string | null = null;
+      if (action === 'set-partial') {
+        startTime = body.from || null;
+        endTime = body.to || null;
+        if ((startTime && !TIME_RE.test(startTime)) || (endTime && !TIME_RE.test(endTime))) {
+          return json({ error: 'Pick valid times.' });
+        }
+        if (!startTime && !endTime) return json({ error: 'Pick a start or end time.' });
+        if (startTime && endTime && startTime >= endTime) return json({ error: 'The end time has to be after the start time.' });
+      }
+
       const { error } = await supabase.from('staff_availability').upsert(
         unique.map(date => ({
-          org_id: org.id, staff_id: staff.id, date, status: 'unavailable',
-          start_time: null, end_time: null, notes: note || null,
+          org_id: org.id, staff_id: staff.id, date,
+          status: action === 'set-partial' ? 'partial' : 'unavailable',
+          start_time: startTime, end_time: endTime, notes: note || null,
         })),
         { onConflict: 'staff_id,date' }
       );
@@ -232,10 +262,10 @@ serve(async (req) => {
           .eq('staff_id', staff.id).in('date_key', weekKeys),
         supabase.from('schedules').select('date_key, time_slot, role_code, role_color')
           .eq('staff_id', staff.id).gte('date_key', today).lte('date_key', lookaheadEnd),
-        supabase.from('staff_availability').select('date, status, notes')
-          .eq('staff_id', staff.id).in('date', weekKeys),
-        supabase.from('staff_availability').select('date, notes')
-          .eq('staff_id', staff.id).eq('status', 'unavailable')
+        supabase.from('staff_availability').select('date, status, notes, start_time, end_time')
+          .eq('staff_id', staff.id).in('status', ['unavailable', 'partial']).in('date', weekKeys),
+        supabase.from('staff_availability').select('date, status, notes, start_time, end_time')
+          .eq('staff_id', staff.id).in('status', ['unavailable', 'partial'])
           .gte('date', today).lte('date', timeOffEnd).order('date', { ascending: true }),
       ]);
 
@@ -252,6 +282,10 @@ serve(async (req) => {
         isToday: dateKey === today,
         isPast: dateKey < today,
         shifts: groupIntoShifts(slotsByDate.get(dateKey) || []),
+        // What the staff member told us about this day: can't work at all, or
+        // can only work inside a window (either end may be open).
+        availability: avail ? availabilityOf(avail) : null,
+        // Kept so a not-yet-updated client still shows full-day unavailability.
         unavailable: avail?.status === 'unavailable' ? { note: avail.notes || '' } : null,
       };
     });
@@ -282,7 +316,7 @@ serve(async (req) => {
       weekHours: days.reduce((sum, d) => sum + d.shifts.reduce((s, sh) => s + sh.hours, 0), 0),
       days,
       nextShift,
-      timeOff: (timeOff || []).map(t => ({ dateKey: t.date, label: dayLabel(t.date), note: t.notes || '' })),
+      timeOff: (timeOff || []).map(t => ({ dateKey: t.date, label: dayLabel(t.date), ...availabilityOf(t) })),
     });
 
   } catch (err) {
