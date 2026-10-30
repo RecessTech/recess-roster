@@ -114,6 +114,7 @@ export const db = {
         name: staff.name,
         email: staff.email || '',
         publicToken: staff.public_token || null,
+        pin: staff.pin || '',
         hourlyRate: staff.hourly_rate,
         weekendRate: staff.weekend_rate,
         employmentType,

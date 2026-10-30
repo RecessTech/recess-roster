@@ -8,6 +8,7 @@ import PublicTransferHubView from './PublicTransferHubView';
 import PublicPrepListView from './PublicPrepListView';
 import PublicChecklistsView from './PublicChecklistsView';
 import PublicStaffHubView from './PublicStaffHubView';
+import PublicMyRosterView from './PublicMyRosterView';
 import PublicCateringView from './PublicCateringView';
 import PublicBuildsView from './PublicBuildsView';
 import PublicBaristaView from './PublicBaristaView';
@@ -49,6 +50,9 @@ const PUBLIC_BUILDS_TOKEN = publicBuildsMatch ? publicBuildsMatch[1] : null;
 
 const publicBaristaMatch = window.location.pathname.match(/^\/barista\/([^/]+)/);
 const PUBLIC_BARISTA_TOKEN = publicBaristaMatch ? publicBaristaMatch[1] : null;
+
+const publicMyRosterMatch = window.location.pathname.match(/^\/roster\/([^/]+)/);
+const PUBLIC_MY_ROSTER_TOKEN = publicMyRosterMatch ? publicMyRosterMatch[1] : null;
 
 const publicHubMatch = window.location.pathname.match(/^\/hub\/([^/]+)/);
 const PUBLIC_HUB_TOKEN = publicHubMatch ? publicHubMatch[1] : null;
@@ -106,6 +110,9 @@ function App() {
   }
   if (PUBLIC_BARISTA_TOKEN) {
     return <PublicBaristaView token={PUBLIC_BARISTA_TOKEN} />;
+  }
+  if (PUBLIC_MY_ROSTER_TOKEN) {
+    return <PublicMyRosterView token={PUBLIC_MY_ROSTER_TOKEN} />;
   }
   if (PUBLIC_HUB_TOKEN) {
     return <PublicStaffHubView token={PUBLIC_HUB_TOKEN} />;

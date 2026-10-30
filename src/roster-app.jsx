@@ -93,6 +93,21 @@ function getAUPublicHolidays(year, region) {
   return set;
 }
 
+// Random 4-digit PIN for the mobile Roster page that isn't in `taken`. The
+// database enforces per-org uniqueness among active staff as well; this just
+// avoids handing out one that would bounce. Skips the guessable ones.
+function generateStaffPin(taken) {
+  const guessable = (p) => /^(\d)\1{3}$/.test(p) || '01234567890'.includes(p) || '98765432109'.includes(p);
+  for (let i = 0; i < 200; i++) {
+    const pin = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+    if (!taken.has(pin) && !guessable(pin)) return pin;
+  }
+  for (let n = 0; n < 10000; n++) {
+    const pin = String(n).padStart(4, '0');
+    if (!taken.has(pin)) return pin;
+  }
+  return null;
+}
 
 const RosterApp = () => {
   const { user } = useAuth();
@@ -335,6 +350,7 @@ const RosterApp = () => {
       weekendRate: s?.weekendRate ?? '',
       employmentType: s?.employmentType || 'FT',
       locationId: s?.locationId || '',
+      pin: s?.pin || '',
       annualSalary: s ? (extraConfig.staffSalaries?.[s.id] || '') : '',
     });
   // Only on open / switching who is edited -- not when extraConfig changes mid-edit
@@ -1455,9 +1471,17 @@ const RosterApp = () => {
         ? parseFloat(formData.weekendRate)
         : hourlyRate;
 
+      const pin = (formData.pin || '').trim();
+      if (pin && !/^\d{4}$/.test(pin)) { toast.error('PIN must be exactly 4 digits'); return; }
+      if (pin && staff.some(s => s.active !== false && s.id !== editingStaff?.id && s.pin === pin)) {
+        toast.error('That PIN is already used by another staff member');
+        return;
+      }
+
       const finalData = {
         name: formData.name,
         email: formData.email || null,
+        pin: pin || null,
         hourly_rate: hourlyRate,
         weekend_rate: weekendRate,
         employment_type: formData.employmentType,
@@ -1475,7 +1499,8 @@ const RosterApp = () => {
             hourlyRate: updated.hourly_rate,
             weekendRate: updated.weekend_rate,
             employmentType: updated.employment_type,
-            locationId: updated.location_id || null
+            locationId: updated.location_id || null,
+            pin: updated.pin || ''
           } : s));
           // Save annual salary to extraConfig if FT
           if (formData.employmentType === 'FT') {
@@ -1497,7 +1522,8 @@ const RosterApp = () => {
             hourlyRate: created.hourly_rate,
             weekendRate: created.weekend_rate,
             employmentType: created.employment_type,
-            locationId: created.location_id || null
+            locationId: created.location_id || null,
+            pin: created.pin || ''
           }]);
           // Save annual salary to extraConfig if FT
           if (formData.employmentType === 'FT') {
@@ -1514,7 +1540,9 @@ const RosterApp = () => {
         setEditingStaff(null);
       } catch (error) {
         console.error('Error saving staff:', error);
-        toast.error('Error saving staff member. Please try again.');
+        toast.error(error?.code === '23505'
+          ? 'That PIN is already used by another staff member'
+          : 'Error saving staff member. Please try again.');
       }
     };
 
@@ -1545,6 +1573,33 @@ const RosterApp = () => {
                 className="input-base"
               />
               <p className="text-xs text-gray-400 mt-1">Used to send weekly schedules</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Roster PIN</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
+                  value={formData.pin}
+                  onChange={(e) => setFormData(prev => ({ ...prev, pin: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
+                  placeholder="4 digits"
+                  className="input-base font-mono tracking-widest"
+                />
+                <button
+                  type="button"
+                  className="btn-secondary whitespace-nowrap"
+                  onClick={() => {
+                    const taken = new Set(staff.filter(s => s.active !== false && s.id !== editingStaff?.id && s.pin).map(s => s.pin));
+                    const pin = generateStaffPin(taken);
+                    if (pin) setFormData(prev => ({ ...prev, pin }));
+                  }}
+                >
+                  Generate
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Lets them see their own shifts and set unavailable dates from the Roster tile on mobile. Must be unique.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Weekday Hourly Rate ($)</label>
@@ -2449,10 +2504,41 @@ const RosterApp = () => {
     });
   };
 
+  // Give every active staff member without one a fresh unique PIN, in one go --
+  // the quick way to roll out the mobile Roster page to an existing team.
+  const assignMissingPins = async () => {
+    const active = staff.filter(s => s.active !== false);
+    const missing = active.filter(s => !s.pin);
+    if (missing.length === 0) { toast('Everyone already has a PIN'); return; }
+    const taken = new Set(active.filter(s => s.pin).map(s => s.pin));
+    const assigned = {};
+    try {
+      for (const s of missing) {
+        const pin = generateStaffPin(taken);
+        if (!pin) throw new Error('No unused PINs left');
+        await db.updateStaff(s.id, { pin });
+        taken.add(pin);
+        assigned[s.id] = pin;
+      }
+      toast.success(`Assigned ${missing.length} PIN${missing.length === 1 ? '' : 's'}`);
+    } catch (error) {
+      console.error('Error assigning PINs:', error);
+      toast.error('Could not assign every PIN. Please try again.');
+    } finally {
+      setStaff(prev => prev.map(s => assigned[s.id] ? { ...s, pin: assigned[s.id] } : s));
+    }
+  };
+
   const restoreStaff = async (staffId) => {
     try {
+      // Their old PIN may have been reissued while they were archived -- clear
+      // it rather than fail the restore on the per-org uniqueness rule.
+      const member = staff.find(s => s.id === staffId);
+      const pinTaken = !!member?.pin && staff.some(s => s.active !== false && s.id !== staffId && s.pin === member.pin);
+      if (pinTaken) await db.updateStaff(staffId, { pin: null });
       await db.restoreStaff(staffId);
-      setStaff(staff.map(s => s.id === staffId ? { ...s, active: true } : s));
+      setStaff(staff.map(s => s.id === staffId ? { ...s, active: true, ...(pinTaken ? { pin: '' } : {}) } : s));
+      if (pinTaken) toast('Their old PIN was reissued — set a new one in Edit', { icon: '🔑' });
       // Add back to staff order
       if (!staffOrder.includes(staffId)) {
         setStaffOrder([...staffOrder, staffId]);
@@ -4049,6 +4135,11 @@ const RosterApp = () => {
                 <p className="text-xs text-gray-400">Individual schedules and work summaries</p>
               </div>
               <div className="flex items-center gap-2">
+                {staff.some(s => s.active !== false && !s.pin) && (
+                  <button onClick={assignMissingPins}
+                    title="Give every staff member without one a unique 4-digit PIN for the mobile Roster page"
+                    className="btn-secondary text-xs py-1.5 px-3">Assign PINs</button>
+                )}
                 <button onClick={() => { setEditingStaff(null); setShowStaffModal(true); }}
                   className="btn-primary text-xs py-1.5 px-3">+ Add Staff</button>
                 <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg">
@@ -4081,6 +4172,9 @@ const RosterApp = () => {
                           <div className="min-w-0 flex-1">
                             <h3 className="font-semibold text-gray-900">{s.name}</h3>
                             {s.email && <p className="text-xs text-gray-400 truncate">{s.email}</p>}
+                            <p className={`text-xs mt-0.5 ${s.pin ? 'text-gray-400' : 'text-amber-500'}`}>
+                              {s.pin ? <>PIN <span className="font-mono tracking-widest">{s.pin}</span></> : 'No PIN'}
+                            </p>
                             {locations.length > 0 && (
                               <p className="text-xs text-gray-400 truncate flex items-center gap-1 mt-0.5">
                                 <MapPin size={10} />
@@ -4160,6 +4254,9 @@ const RosterApp = () => {
                           <tr key={s.id} className="hover:bg-blue-50 transition-colors">
                             <td className="px-4 py-4">
                               <div className="font-semibold text-gray-800">{s.name}</div>
+                              <div className={`text-xs mt-0.5 ${s.pin ? 'text-gray-400' : 'text-amber-500'}`}>
+                                {s.pin ? <>PIN <span className="font-mono tracking-widest">{s.pin}</span></> : 'No PIN'}
+                              </div>
                               {locations.length > 0 && (
                                 <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
                                   <MapPin size={10} />
