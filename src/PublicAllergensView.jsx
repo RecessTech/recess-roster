@@ -18,9 +18,9 @@ const ALLERGENS = [
   { key: 'soy', label: 'Soy', match: ['soy'] },
   { key: 'sesame', label: 'Sesame', match: ['sesame'] },
   { key: 'peanut', label: 'Peanut', match: ['peanut'] },
-  { key: 'treenuts', label: 'Tree nuts', match: ['almond', 'brazil', 'cashew', 'hazelnut', 'macadamia', 'pecan', 'pine nut', 'pistachio', 'walnut', 'tree nuts'] },
+  { key: 'treenuts', label: 'Tree nuts', match: ['almond', 'brazil nut', 'cashew', 'hazelnut', 'macadamia', 'pecan', 'pine nut', 'pistachio', 'walnut'] },
   { key: 'sulphites', label: 'Sulphites', match: ['sulphites'] },
-  { key: 'shellfish', label: 'Shellfish', match: ['crustacea', 'mollusc'] },
+  { key: 'shellfish', label: 'Shellfish', match: ['crustacean', 'mollusc'] },
   { key: 'lupin', label: 'Lupin', match: ['lupin'] },
 ];
 
@@ -33,6 +33,15 @@ const STATUS = {
 
 const norm = (s) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// The names the Food Standards Code (Standard 1.2.3, Schedule 9) requires, in
+// the order we always show them, so every item reads the same way. Tree nuts
+// are named individually; barley/oats/rye appear only when they contain gluten.
+const REQUIRED_ORDER = ['wheat', 'barley', 'oats', 'rye', 'gluten', 'fish', 'crustacean', 'mollusc', 'egg', 'milk', 'lupin', 'peanut', 'soy', 'sesame', 'almond', 'brazil nut', 'cashew', 'hazelnut', 'macadamia', 'pecan', 'pistachio', 'pine nut', 'walnut', 'sulphites'];
+const ordered = (tokens) => {
+  const rank = (t) => { const i = REQUIRED_ORDER.indexOf(t); return i === -1 ? 999 : i; };
+  return [...tokens].sort((a, b) => rank(a) - rank(b));
+};
 const hits = (tokens, a) => tokens.some((t) => a.match.includes(t));
 
 function Tag({ children, bg, fg }) {
@@ -82,12 +91,15 @@ function ItemDetail({ item, onBack, businessName, token }) {
             ) : (
               <>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Contains</div>
+                <p style={{ fontSize: 14, color: '#1E293B', margin: '0 0 8px' }}>
+                  <b>{item.contains.length ? `Contains ${ordered(item.contains).map((t, i) => (i ? t : cap(t))).join(', ')}` : 'No allergens listed'}</b>
+                </p>
                 <div style={{ marginBottom: 12 }}>
-                  {item.contains.length ? item.contains.map((t) => <Tag key={t} bg="#FEE2E2" fg={RED_DK}>{cap(t)}</Tag>) : <span style={{ fontSize: 13, color: '#64748B' }}>None listed</span>}
+                  {item.contains.length ? ordered(item.contains).map((t) => <Tag key={t} bg="#FEE2E2" fg={RED_DK}>{cap(t)}</Tag>) : <span style={{ fontSize: 13, color: '#64748B' }}>None listed</span>}
                 </div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>May be present</div>
                 <div style={{ marginBottom: 12 }}>
-                  {item.mayContain.length ? item.mayContain.map((t) => <Tag key={t} bg="#FEF3C7" fg="#92400E">{cap(t)}</Tag>) : <span style={{ fontSize: 13, color: '#64748B' }}>None listed</span>}
+                  {item.mayContain.length ? ordered(item.mayContain).map((t) => <Tag key={t} bg="#FEF3C7" fg="#92400E">{cap(t)}</Tag>) : <span style={{ fontSize: 13, color: '#64748B' }}>None listed</span>}
                 </div>
                 {item.status !== 'confirmed' && (
                   <p style={{ fontSize: 12.5, color: '#92400E', background: '#FFFBEB', borderRadius: 10, padding: '8px 10px', margin: '0 0 12px' }}>
@@ -279,8 +291,8 @@ export default function PublicAllergensView({ token }) {
                   <div style={{ fontSize: 12.5, color: '#64748B' }}>Allergens not recorded yet - check packaging or ask a manager.</div>
                 ) : (
                   <>
-                    <div>{it.contains.map((t) => <Tag key={t} bg="#FEE2E2" fg={RED_DK}>{cap(t)}</Tag>)}</div>
-                    {it.mayContain.length > 0 && <div style={{ fontSize: 11, color: '#92400E', marginTop: 2 }}>May be present: {it.mayContain.map(cap).join(', ')}</div>}
+                    <div>{ordered(it.contains).map((t) => <Tag key={t} bg="#FEE2E2" fg={RED_DK}>{cap(t)}</Tag>)}</div>
+                    {it.mayContain.length > 0 && <div style={{ fontSize: 11, color: '#92400E', marginTop: 2 }}>May be present: {ordered(it.mayContain).map(cap).join(', ')}</div>}
                   </>
                 )}
               </button>
@@ -297,7 +309,7 @@ export default function PublicAllergensView({ token }) {
           )}
         </div>
         <p style={{ textAlign: 'center', color: '#94A3B8', fontSize: 11, margin: '14px 16px 0' }}>
-          Our kitchen handles gluten, egg, milk, fish, sesame and tree nuts. For severe allergies, always check with a manager.
+          Allergen information is provided on request under the Food Standards Code. "May be present" is a voluntary precautionary statement: our kitchen handles gluten, egg, milk, fish, sesame and tree nuts, so cross-contact is possible. For severe allergies, always check with a manager.
         </p>
         <p style={{ textAlign: 'center', color: '#CBD5E1', fontSize: 11, marginTop: 8 }}>Powered by Recess Roster</p>
       </div>

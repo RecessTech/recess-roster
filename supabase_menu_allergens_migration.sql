@@ -27,7 +27,14 @@ CREATE TABLE IF NOT EXISTS menu_allergens (
   notes               TEXT NOT NULL DEFAULT '',
   source              TEXT NOT NULL DEFAULT 'manual',
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (production_item_id)
+  UNIQUE (production_item_id),
+  -- Only the names the Food Standards Code (Standard 1.2.3, Schedule 9) requires,
+  -- plus 'gluten' for the summary statement. Tree nuts are named individually
+  -- (never "tree nuts"); barley/oats/rye only when they contain gluten.
+  CONSTRAINT menu_allergens_names_chk CHECK (
+    contains    <@ ARRAY['wheat','gluten','barley','oats','rye','fish','crustacean','mollusc','egg','milk','lupin','peanut','soy','sesame','almond','brazil nut','cashew','hazelnut','macadamia','pecan','pistachio','pine nut','walnut','sulphites']::text[]
+    AND may_contain <@ ARRAY['wheat','gluten','barley','oats','rye','fish','crustacean','mollusc','egg','milk','lupin','peanut','soy','sesame','almond','brazil nut','cashew','hazelnut','macadamia','pecan','pistachio','pine nut','walnut','sulphites']::text[]
+  )
 );
 
 CREATE INDEX IF NOT EXISTS idx_menu_allergens_org_id ON menu_allergens(org_id);

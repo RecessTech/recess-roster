@@ -26,31 +26,31 @@ FROM (VALUES
     ARRAY['wheat','gluten','milk']::text[], ARRAY['sulphites','soy','sesame','pistachio','pine nut','cashew']::text[],
     'RECOMMENDED. No recipe on file. Birria is usually dried chillies, spices and vinegar (sulphites, soy from stock/seasoning). Confirm the birria recipe and any consomme dip.'),
   ('Tikka Salad', 'Tikka chicken, salad leaves, vegetables, dressing',
-    ARRAY['milk']::text[], ARRAY['gluten','soy','sesame','egg','mustard','almond','cashew']::text[],
+    ARRAY['milk']::text[], ARRAY['gluten','soy','sesame','egg','almond','cashew']::text[],
     'RECOMMENDED. No recipe on file. Tikka marinade is yoghurt-based (milk). Many tikka pastes contain cashew/almond, mustard and gluten - check the paste and dressing labels.'),
   ('Mango Chia Pudding', 'Chia seeds, coconut milk, frozen mango, maple syrup, salt, goji berries, muesli, coconut chips',
-    ARRAY['gluten']::text[], ARRAY['almond','cashew','hazelnut','sesame','milk','soy','wheat']::text[],
-    'RECOMMENDED. Built from the R-Recipe lines. Rubric column was blank. Muesli is the unknown: usually oats/wheat (gluten) and often nuts, seeds, milk powder - check muesli label. Coconut is not a declarable allergen in AU.'),
+    ARRAY['oats','gluten']::text[], ARRAY['almond','cashew','hazelnut','sesame','milk','soy','wheat']::text[],
+    'RECOMMENDED. Built from the R-Recipe lines. Rubric column was blank. Muesli is the unknown: usually oats (gluten), sometimes wheat and often nuts, seeds, milk powder - check muesli label. Coconut is not a declarable allergen in AU.'),
   ('Portuguese Tart', 'Pastry, egg custard',
     ARRAY['wheat','gluten','egg','milk']::text[], ARRAY['soy','sesame','pistachio','pine nut','cashew']::text[],
     'RECOMMENDED. Bought-in item with no spec. Standard custard tart: pastry (wheat), egg yolk and cream/milk custard. Pastry fat may include soy lecithin. Get the supplier spec.'),
   ('Butterboy Cookie - Snickerdoodle', 'Butter, sugars, eggs, plain flour, cinnamon, raising agents, salt',
-    ARRAY['wheat','gluten','egg','milk']::text[], ARRAY['tree nuts','peanut','soy','sesame']::text[],
+    ARRAY['wheat','gluten','egg','milk']::text[], ARRAY['almond','hazelnut','macadamia','peanut','soy','sesame']::text[],
     'RECOMMENDED. Based on Butterboy-style ingredient lists seen on third-party cafe listings (butter, sugars, eggs, plain flour); no official Butterboy spec found. Bakery likely handles nuts - ask Butterboy.'),
   ('Butterboy Cookie - Milk Choc Chip', 'Butter, sugars, eggs, plain flour, milk chocolate, raising agents, salt',
-    ARRAY['wheat','gluten','egg','milk']::text[], ARRAY['soy','tree nuts','peanut','sesame']::text[],
+    ARRAY['wheat','gluten','egg','milk']::text[], ARRAY['soy','almond','hazelnut','macadamia','peanut','sesame']::text[],
     'RECOMMENDED. As Snickerdoodle, plus milk chocolate (milk, usually soy lecithin). No official spec found.'),
   ('Butterboy Cookie - Salted Caramel', 'Butter, sugars, eggs, plain flour, caramel, raising agents, salt',
-    ARRAY['wheat','gluten','egg','milk']::text[], ARRAY['macadamia','tree nuts','soy','peanut','sesame']::text[],
+    ARRAY['wheat','gluten','egg','milk']::text[], ARRAY['macadamia','almond','hazelnut','soy','peanut','sesame']::text[],
     'RECOMMENDED. A similar salted-caramel cookie on a third-party cafe listing contained macadamias - confirm whether Butterboy''s does. Caramel adds milk.'),
   ('Butterboy Cookie - Nutella Choc Chip', 'Butter, sugars, eggs, plain flour, chocolate chips, hazelnut chocolate spread, raising agents, salt',
-    ARRAY['wheat','gluten','egg','milk','hazelnut','soy']::text[], ARRAY['tree nuts','peanut','sesame']::text[],
+    ARRAY['wheat','gluten','egg','milk','hazelnut','soy']::text[], ARRAY['almond','macadamia','peanut','sesame']::text[],
     'RECOMMENDED. Nutella is hazelnut + milk + soy lecithin. No official Butterboy spec found.'),
   ('Butterboy Cookie - Bueno', 'Butter, sugars, eggs, plain flour, Kinder Bueno pieces, raising agents, salt',
-    ARRAY['wheat','gluten','egg','milk','hazelnut','soy']::text[], ARRAY['tree nuts','peanut','sesame']::text[],
+    ARRAY['wheat','gluten','egg','milk','hazelnut','soy']::text[], ARRAY['almond','macadamia','peanut','sesame']::text[],
     'RECOMMENDED. Kinder Bueno contains hazelnut, milk, wheat and soy lecithin. No official Butterboy spec found.'),
   ('Butterboy Cookie - Monthly Special', '',
-    ARRAY['wheat','gluten','egg','milk']::text[], ARRAY['tree nuts','peanut','soy','sesame']::text[],
+    ARRAY['wheat','gluten','egg','milk']::text[], ARRAY['almond','hazelnut','macadamia','peanut','soy','sesame']::text[],
     'RECOMMENDED BASE ONLY. Flavour changes monthly - add that month''s inclusions (nuts, chocolate, etc.) each time.'),
   ('Killer Python', 'Glucose syrup, sugar, starch (wheat or corn), gelatine, food acid, flavours, colours',
     ARRAY['wheat','gluten']::text[], ARRAY['milk']::text[],
@@ -62,7 +62,7 @@ FROM (VALUES
     '{}'::text[], '{}'::text[],
     'RECOMMENDED. Retail whole-bean coffee - no allergens expected.'),
   ('TGTG Surprise Bag', 'Contents vary daily',
-    '{}'::text[], ARRAY['gluten','wheat','egg','milk','soy','sesame','fish','peanut','tree nuts']::text[],
+    '{}'::text[], ARRAY['gluten','wheat','egg','milk','soy','sesame','fish','peanut','almond','cashew','hazelnut','macadamia','pistachio','pine nut','walnut','crustacean','sulphites']::text[],
     'Contents vary every day so allergens cannot be listed. Tell customers to ask, and check the bag contents.'),
   ('Coke', '', '{}'::text[], '{}'::text[], 'RECOMMENDED. Soft drink - no declared allergens. Check pack.'),
   ('Coke No Sugar', '', '{}'::text[], '{}'::text[], 'RECOMMENDED. Soft drink - no declared allergens. Check pack.'),
@@ -94,8 +94,8 @@ FROM (VALUES
     '{}'::text[], ARRAY['gluten','soy','milk']::text[],
     'RECOMMENDED - NO RECIPE. Naturally allergen-free base; check stock, and whether ham/bacon or butter is used.'),
   ('Thai Pumpkin Soup', 'Pumpkin, coconut milk, Thai curry paste, stock',
-    '{}'::text[], ARRAY['crustacea','fish','soy','gluten','sesame']::text[],
-    'RECOMMENDED - NO RECIPE. Thai curry paste and fish sauce often contain shrimp paste (crustacea) and fish. Pumpkin is on the stock list. Check the paste label.')
+    '{}'::text[], ARRAY['crustacean','fish','soy','gluten','sesame']::text[],
+    'RECOMMENDED - NO RECIPE. Thai curry paste and fish sauce often contain shrimp paste (crustacean) and fish. Pumpkin is on the stock list. Check the paste label.')
 ) AS v(name, ingredients, contains, may_contain, notes)
 JOIN production_items p ON p.name = v.name AND p.active
 ON CONFLICT (production_item_id) DO NOTHING;
@@ -108,19 +108,18 @@ INSERT INTO menu_allergens (org_id, production_item_id, ingredients, contains, m
 SELECT p.org_id, p.id, '',
   CASE
     WHEN p.name ~* '^(espresso|short black|long black|iced long black|cold brew|english breakfast tea|green tea)' THEN '{}'::text[]
-    WHEN p.name ~* 'milo' THEN ARRAY['milk','gluten']::text[]
+    WHEN p.name ~* 'milo' THEN ARRAY['milk','barley','gluten']::text[]
     ELSE ARRAY['milk']::text[]
   END,
   CASE
     WHEN p.name ~* '^(espresso|short black|long black|iced long black|cold brew|english breakfast tea|green tea)' THEN '{}'::text[]
-    WHEN p.name ~* '(milo|mocha|chocolate|chai)' THEN ARRAY['soy','almond','gluten']::text[]
-    ELSE ARRAY['soy','almond','gluten']::text[]
+    ELSE ARRAY['soy','almond','oats','gluten']::text[]
   END,
   'draft',
   CASE
     WHEN p.name ~* '^(espresso|short black|long black|iced long black|cold brew|english breakfast tea|green tea)'
       THEN 'RECOMMENDED. Black coffee/tea - no allergens.'
-    ELSE 'RECOMMENDED. Assumes full-cream milk: contains milk. If the customer swaps milk: soy milk adds soy, almond milk adds almond, oat milk adds gluten (oats). Confirm the chai powder, chocolate powder and syrup labels (milk/soy are common).'
+    ELSE 'RECOMMENDED. Assumes full-cream milk: contains milk. If the customer swaps milk: soy milk adds soy, almond milk adds almond, oat milk adds oats (gluten). Confirm the chai powder, chocolate powder and syrup labels (milk/soy are common).'
   END,
   'recommended'
 FROM production_items p
@@ -158,11 +157,18 @@ WHERE p.id = m.production_item_id AND p.category = 'Bakery' AND p.name <> 'Almon
   AND NOT ('almond' = ANY(m.contains)) AND m.source = 'rubric';
 
 UPDATE menu_allergens m SET
-  contains = ARRAY(SELECT DISTINCT unnest(m.contains || ARRAY['gluten'])),
-  may_contain = ARRAY(SELECT DISTINCT unnest(m.may_contain || ARRAY['almond','cashew','hazelnut','sesame'])),
-  notes = trim(m.notes || ' RECOMMENDED: muesli added gluten (oats) and nut/seed may-be-present - rubric only listed milk.')
+  contains = ARRAY(SELECT DISTINCT unnest(m.contains || ARRAY['oats','gluten'])),
+  may_contain = ARRAY(SELECT DISTINCT unnest(m.may_contain || ARRAY['almond','cashew','hazelnut','sesame','wheat'])),
+  notes = trim(m.notes || ' RECOMMENDED: muesli added oats (gluten) and nut/seed may-be-present - rubric only listed milk.')
 FROM production_items p
 WHERE p.id = m.production_item_id AND p.name = 'Yoghurt Cup' AND NOT ('gluten' = ANY(m.contains));
+
+-- Vegemite is wheat + barley; barley must be declared by name when it contains gluten.
+UPDATE menu_allergens m SET
+  contains = ARRAY(SELECT DISTINCT unnest(m.contains || ARRAY['barley'])),
+  notes = trim(m.notes || ' RECOMMENDED: rubric ingredients show vegemite (wheat, barley) - barley added so the cereal is declared by name.')
+FROM production_items p
+WHERE p.id = m.production_item_id AND p.name = 'Toast' AND NOT ('barley' = ANY(m.contains));
 
 -- Tidy: never list an allergen as both "contains" and "may be present".
 UPDATE menu_allergens SET may_contain = ARRAY(SELECT x FROM unnest(may_contain) x WHERE NOT (x = ANY(contains)))

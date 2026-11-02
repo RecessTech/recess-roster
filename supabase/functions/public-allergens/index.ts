@@ -48,7 +48,7 @@ serve(async (req) => {
 
     const { data: allergens } = await supabase
       .from('menu_allergens')
-      .select('production_item_id, ingredients, contains, may_contain, status, notes')
+      .select('production_item_id, ingredients, contains, may_contain, status')
       .eq('org_id', org.id);
 
     const byItem = new Map((allergens || []).map((a) => [a.production_item_id, a]));
@@ -68,7 +68,6 @@ serve(async (req) => {
           contains: a?.contains || [],
           mayContain: a?.may_contain || [],
           ingredients: a?.ingredients || '',
-          notes: a?.notes || '',
         };
       });
 
