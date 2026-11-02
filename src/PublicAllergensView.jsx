@@ -31,6 +31,7 @@ const STATUS = {
   missing: { label: 'Not recorded', bg: '#F1F5F9', fg: '#64748B' },
 };
 
+const norm = (s) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const hits = (tokens, a) => tokens.some((t) => a.match.includes(t));
 
@@ -115,6 +116,7 @@ export default function PublicAllergensView({ token }) {
   const [error, setError] = useState(null);
   const [avoid, setAvoid] = useState([]); // allergen keys to avoid
   const [selectedId, setSelectedId] = useState(null);
+  const [query, setQuery] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -154,6 +156,17 @@ export default function PublicAllergensView({ token }) {
     });
     return res;
   }, [data, avoid]);
+
+  // Search: every typed word must appear in the item name (so "pesto chook",
+  // "chook pesto" and "pest" all find Pesto Chook). Punctuation is ignored.
+  const results = useMemo(() => {
+    const words = norm(query).split(' ').filter(Boolean);
+    if (!words.length) return null;
+    return (data?.items || []).filter((it) => {
+      const n = norm(it.name);
+      return words.every((w) => n.includes(w));
+    });
+  }, [data, query]);
 
   const selected = data?.items.find((i) => i.id === selectedId);
 
@@ -205,6 +218,14 @@ export default function PublicAllergensView({ token }) {
     );
   };
 
+  const active = ALLERGENS.filter((a) => avoid.includes(a.key));
+  const verdict = (it, a) => {
+    if (it.status === 'missing') return { text: 'not recorded', bg: '#F1F5F9', fg: '#64748B' };
+    if (hits(it.contains, a)) return { text: 'CONTAINS', bg: '#FEE2E2', fg: RED_DK };
+    if (hits(it.mayContain, a)) return { text: 'may be present', bg: '#FEF3C7', fg: '#92400E' };
+    return { text: it.status === 'confirmed' ? 'not listed' : 'not listed (unverified)', bg: '#DCFCE7', fg: '#166534' };
+  };
+
   const all = data.items.slice().sort((a, b) => a.category.localeCompare(b.category) || 0);
 
   return (
@@ -212,6 +233,18 @@ export default function PublicAllergensView({ token }) {
       <div style={{ maxWidth: 480, margin: '0 auto', padding: '14px 4px 24px' }}>
         <Header businessName={data.businessName} token={token} title="Allergens" sub="Tap allergens to avoid, or tap an item for details" />
         <div style={{ padding: '14px 12px 0' }}>
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search a menu item…"
+            aria-label="Search menu items"
+            autoComplete="off"
+            style={{ width: '100%', boxSizing: 'border-box', fontFamily: FONT, fontSize: 16, padding: '12px 14px', borderRadius: 12, border: '1.5px solid #CBD5E1', background: 'white', marginBottom: 10, outline: 'none' }}
+          />
+          <div style={{ fontSize: 11.5, color: '#94A3B8', margin: '0 2px 6px' }}>
+            {results ? 'Tap an allergen to check it against these items' : 'Or tap allergens to avoid'}
+          </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
             {ALLERGENS.map((a) => {
               const on = avoid.includes(a.key);
@@ -223,7 +256,36 @@ export default function PublicAllergensView({ token }) {
             })}
           </div>
 
-          {filtering ? (
+          {results ? (
+            results.length === 0 ? (
+              <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '28px 20px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
+                No menu item matches "{query}".
+              </div>
+            ) : results.map((it) => (
+              <button key={it.id} onClick={() => setSelectedId(it.id)} style={{ width: '100%', display: 'block', textAlign: 'left', background: 'white', border: 'none', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '14px', marginBottom: 10, cursor: 'pointer', fontFamily: FONT }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <span style={{ flex: 1, fontSize: 15, fontWeight: 700, color: '#1E293B' }}>{it.name}</span>
+                  <StatusBadge status={it.status} />
+                </div>
+                {active.length > 0 && (
+                  <div style={{ marginBottom: 6 }}>
+                    {active.map((a) => { const v = verdict(it, a); return (
+                      <div key={a.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderRadius: 8, background: v.bg, color: v.fg, fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
+                        <span>{a.label}</span><span>{v.text}</span>
+                      </div>); })}
+                  </div>
+                )}
+                {it.status === 'missing' ? (
+                  <div style={{ fontSize: 12.5, color: '#64748B' }}>Allergens not recorded yet - check packaging or ask a manager.</div>
+                ) : (
+                  <>
+                    <div>{it.contains.map((t) => <Tag key={t} bg="#FEE2E2" fg={RED_DK}>{cap(t)}</Tag>)}</div>
+                    {it.mayContain.length > 0 && <div style={{ fontSize: 11, color: '#92400E', marginTop: 2 }}>May be present: {it.mayContain.map(cap).join(', ')}</div>}
+                  </>
+                )}
+              </button>
+            ))
+          ) : filtering ? (
             <>
               <Section title="No listed match" hint="Not listed as containing or possibly containing what you picked. Cross-contact is still possible in a shared kitchen." items={groups.safe} tone="#166534" />
               <Section title="May be present" items={groups.may} tone="#92400E" />
