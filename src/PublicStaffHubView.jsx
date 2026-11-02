@@ -88,6 +88,15 @@ const LINKS = [
     tint: '#FDF8F3',
     path: '/barista/',
   },
+  {
+    key: 'allergens',
+    label: 'Allergens',
+    description: 'What\'s in each item',
+    icon: '⚠️',
+    color: '#DC2626',
+    tint: '#FEF2F2',
+    path: '/allergens/',
+  },
 ];
 
 function greeting() {
