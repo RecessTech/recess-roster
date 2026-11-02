@@ -12,6 +12,7 @@ import PublicMyRosterView from './PublicMyRosterView';
 import PublicCateringView from './PublicCateringView';
 import PublicBuildsView from './PublicBuildsView';
 import PublicBaristaView from './PublicBaristaView';
+import PublicAllergensView from './PublicAllergensView';
 import { ErrorBoundary } from './ErrorBoundary';
 
 // Resolve public routes before auth: /s/<token> (one staff member's shifts),
@@ -21,7 +22,8 @@ import { ErrorBoundary } from './ErrorBoundary';
 // flag a prep component as running low, tick it off once prepped),
 // /cater/<token> (the day's catering jobs, read-only), /builds/<token>
 // (sandwich & toastie build guides, read-only), /barista/<token> (Coffee
-// & Tea drinks guide, read-only), /checklists/<token> (Daily Checklists --
+// & Tea drinks guide, read-only), /allergens/<token> (menu allergen
+// lookup, read-only), /checklists/<token> (Daily Checklists --
 // work through today's opening/closing tasks per site and sign off), and
 // /hub/<token> (a landing page linking out to the other read-only pages)
 const publicMatch = window.location.pathname.match(/^\/s\/([^/]+)/);
@@ -50,6 +52,9 @@ const PUBLIC_BUILDS_TOKEN = publicBuildsMatch ? publicBuildsMatch[1] : null;
 
 const publicBaristaMatch = window.location.pathname.match(/^\/barista\/([^/]+)/);
 const PUBLIC_BARISTA_TOKEN = publicBaristaMatch ? publicBaristaMatch[1] : null;
+
+const publicAllergensMatch = window.location.pathname.match(/^\/allergens\/([^/]+)/);
+const PUBLIC_ALLERGENS_TOKEN = publicAllergensMatch ? publicAllergensMatch[1] : null;
 
 const publicMyRosterMatch = window.location.pathname.match(/^\/roster\/([^/]+)/);
 const PUBLIC_MY_ROSTER_TOKEN = publicMyRosterMatch ? publicMyRosterMatch[1] : null;
@@ -110,6 +115,9 @@ function App() {
   }
   if (PUBLIC_BARISTA_TOKEN) {
     return <PublicBaristaView token={PUBLIC_BARISTA_TOKEN} />;
+  }
+  if (PUBLIC_ALLERGENS_TOKEN) {
+    return <PublicAllergensView token={PUBLIC_ALLERGENS_TOKEN} />;
   }
   if (PUBLIC_MY_ROSTER_TOKEN) {
     return <PublicMyRosterView token={PUBLIC_MY_ROSTER_TOKEN} />;
