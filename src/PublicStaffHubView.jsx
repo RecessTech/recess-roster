@@ -19,11 +19,12 @@ const BAD = '#d0393b';
 const LOGO_URL = '/logo192.png';
 const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 
-const CARD_RADIUS = 14;
+const CARD_RADIUS = 18;
+const TILE_SHADOW = '0 1px 2px rgba(15,23,42,0.04), 0 10px 24px -14px rgba(15,23,42,0.18)';
 
-function Icon({ children, size = 22 }) {
+function Icon({ children, size = 24 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'block' }}>
       {children}
     </svg>
   );
@@ -57,7 +58,7 @@ function CoffeeIcon() {
 }
 function AlertTriangleIcon({ color }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color || 'currentColor'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={color || 'currentColor'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'block' }}>
       <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
       <line x1="12" y1="9" x2="12" y2="13" />
       <line x1="12" y1="17" x2="12.01" y2="17" />
@@ -244,17 +245,18 @@ export default function PublicStaffHubView({ token }) {
             what should dominate the screen, not this. */}
         <div style={{
           background: BRAND, backgroundImage: `linear-gradient(160deg, ${BRAND}, ${BRAND_DARK})`,
-          borderRadius: CARD_RADIUS, padding: '16px 18px 14px',
-          marginBottom: 10, flexShrink: 0,
+          borderRadius: CARD_RADIUS, padding: '20px 22px 18px',
+          boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 14px 28px -14px rgba(59,91,219,0.5)',
+          marginBottom: 14, flexShrink: 0,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-            <img src={LOGO_URL} alt="" width={36} height={36} style={{ display: 'block', borderRadius: 10, flexShrink: 0, objectFit: 'cover' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+            <img src={LOGO_URL} alt="" width={38} height={38} style={{ display: 'block', borderRadius: 11, flexShrink: 0, objectFit: 'cover' }} />
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.75)' }}>R-Shift &middot; Staff Hub</div>
-              <div style={{ fontSize: 19, fontWeight: 800, color: '#ffffff', marginTop: 1 }}>{data.businessName}</div>
+              <div style={{ fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.72)' }}>R-Shift &middot; Staff Hub</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#ffffff', marginTop: 2, letterSpacing: '-0.01em' }}>{data.businessName}</div>
             </div>
           </div>
-          <div style={{ color: 'rgba(255,255,255,0.82)', fontSize: 13, marginTop: 10 }}>
+          <div style={{ color: 'rgba(255,255,255,0.82)', fontSize: 13.5, marginTop: 12, fontWeight: 400 }}>
             {greeting()} <span style={{ opacity: 0.85 }}>&mdash; where are you headed?</span>
           </div>
         </div>
@@ -266,7 +268,7 @@ export default function PublicStaffHubView({ token }) {
             device -- tiles grow on a tall/wide screen, shrink on a short
             one, but the grid always occupies the full remaining page,
             never leaving dead space below it or needing a scroll. */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: `repeat(${rows}, 1fr)`, gap: 10, flex: 1, minHeight: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: `repeat(${rows}, 1fr)`, gap: 12, flex: 1, minHeight: 0 }}>
           {LINKS.map((link, idx) => {
             const href = `${link.path}${token}`;
             // An odd tile count leaves the last one alone in its row --
@@ -278,28 +280,28 @@ export default function PublicStaffHubView({ token }) {
                 key={link.key}
                 href={href}
                 style={{
-                  display: 'flex', flexDirection: isDangling ? 'row' : 'column', alignItems: 'center', justifyContent: 'center', gap: isDangling ? 12 : 8,
-                  background: 'white', border: `1px solid ${CARD_BORDER}`, borderRadius: CARD_RADIUS,
-                  textDecoration: 'none', minHeight: 0, padding: '8px',
+                  display: 'flex', flexDirection: isDangling ? 'row' : 'column', alignItems: 'center', justifyContent: 'center', gap: isDangling ? 14 : 10,
+                  background: 'white', borderRadius: CARD_RADIUS, boxShadow: TILE_SHADOW,
+                  textDecoration: 'none', minHeight: 0, padding: isDangling ? '14px 18px' : '16px 10px',
                   gridColumn: isDangling ? '1 / -1' : undefined,
                 }}
               >
                 <div style={{
-                  width: 46, height: 46, borderRadius: 13, background: link.tint, flexShrink: 0, color: link.color,
+                  width: 52, height: 52, borderRadius: 16, background: link.tint, flexShrink: 0, color: link.color,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   <TileIcon />
                 </div>
                 <div style={{ textAlign: isDangling ? 'left' : 'center' }}>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: TEXT_PRIMARY, lineHeight: 1.2 }}>{link.label}</div>
-                  <div style={{ fontSize: 11, color: TEXT_FAINT, marginTop: 2 }}>{link.description}</div>
+                  <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT_PRIMARY, lineHeight: 1.25, letterSpacing: '-0.01em' }}>{link.label}</div>
+                  <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 3 }}>{link.description}</div>
                 </div>
               </a>
             );
           })}
         </div>
 
-        <div style={{ textAlign: 'center', padding: '14px 4px 0', flexShrink: 0 }}>
+        <div style={{ textAlign: 'center', padding: '16px 4px 0', flexShrink: 0 }}>
           <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: 999, background: BRAND, marginRight: 6, verticalAlign: 'middle' }} />
           <span style={{ fontSize: 11, color: TEXT_FAINT, verticalAlign: 'middle' }}>R-Shift</span>
           <div style={{ fontSize: 10, color: TEXT_FAINT, marginTop: 3 }}>No login required</div>
