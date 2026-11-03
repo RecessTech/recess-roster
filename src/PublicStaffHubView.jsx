@@ -3,11 +3,11 @@ import { supabase } from './supabaseClient';
 
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
-// R-Shift's own brand system -- the same tokens as PublicStockCheckView and
-// every R-Shift email (send-schedule-email, send-order-status-email): blue
-// gradient header with the app logo, flat bordered cards (no shadow), and
-// line icons instead of emoji. This is the front door to every staff page,
-// so it sets the tone the rest should match as they get the same treatment.
+// R-Shift's own brand system -- the same blue tokens as PublicStockCheckView
+// and every R-Shift email (send-schedule-email, send-order-status-email):
+// blue gradient header with the app logo and soft-shadow cards. Tile icons
+// stay emoji (plain, legible at this size, and what the rest of the app's
+// internal screens already use) rather than line icons.
 const BRAND = '#3B5BDB';
 const BRAND_DARK = '#2D4EC9';
 const BODY_BG = '#F1F5F9';
@@ -15,56 +15,11 @@ const CARD_BORDER = '#E2E8F0';
 const TEXT_PRIMARY = '#1E293B';
 const TEXT_MUTED = '#64748B';
 const TEXT_FAINT = '#94A3B8';
-const BAD = '#d0393b';
 const LOGO_URL = '/logo192.png';
 const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 
 const CARD_RADIUS = 18;
 const TILE_SHADOW = '0 1px 2px rgba(15,23,42,0.04), 0 10px 24px -14px rgba(15,23,42,0.18)';
-
-function Icon({ children, size = 24 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'block' }}>
-      {children}
-    </svg>
-  );
-}
-function CalendarIcon() {
-  return <Icon><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></Icon>;
-}
-function ClipboardIcon() {
-  return <Icon><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" /></Icon>;
-}
-function RepeatIcon() {
-  return <Icon><polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></Icon>;
-}
-function BoxIcon() {
-  return <Icon><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></Icon>;
-}
-function FlagIcon() {
-  return <Icon><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" /></Icon>;
-}
-function CheckSquareIcon() {
-  return <Icon><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></Icon>;
-}
-function UsersIcon() {
-  return <Icon><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></Icon>;
-}
-function LayersIcon() {
-  return <Icon><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></Icon>;
-}
-function CoffeeIcon() {
-  return <Icon><path d="M18 8h1a4 4 0 0 1 0 8h-1" /><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" /><line x1="6" y1="1" x2="6" y2="4" /><line x1="10" y1="1" x2="10" y2="4" /><line x1="14" y1="1" x2="14" y2="4" /></Icon>;
-}
-function AlertTriangleIcon({ color }) {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={color || 'currentColor'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'block' }}>
-      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-      <line x1="12" y1="9" x2="12" y2="13" />
-      <line x1="12" y1="17" x2="12.01" y2="17" />
-    </svg>
-  );
-}
 
 // A single landing link for staff -- no data of its own, just a launcher
 // pointing at the other public pages (R-Prod, Transfer Hub, and Roster --
@@ -78,7 +33,7 @@ const LINKS = [
     key: 'roster',
     label: 'Roster',
     description: 'My shifts & time off',
-    Icon: CalendarIcon,
+    icon: '🗓️',
     color: '#3B5BDB',
     tint: '#EEF2FF',
     path: '/roster/',
@@ -87,7 +42,7 @@ const LINKS = [
     key: 'production',
     label: 'R-Prod',
     description: "Today's plan",
-    Icon: ClipboardIcon,
+    icon: '🧑‍🍳',
     color: '#15803D',
     tint: '#F0FDF4',
     path: '/prod/',
@@ -96,7 +51,7 @@ const LINKS = [
     key: 'transfer',
     label: 'Transfer Hub',
     description: 'Stock between sites',
-    Icon: RepeatIcon,
+    icon: '🔄',
     color: '#0F766E',
     tint: '#F0FDFA',
     path: '/transfers/',
@@ -105,7 +60,7 @@ const LINKS = [
     key: 'stock-check',
     label: 'Stock Check',
     description: 'EOD stock levels',
-    Icon: BoxIcon,
+    icon: '📦',
     color: BRAND,
     tint: '#EEF2FF',
     path: '/stock-check/',
@@ -114,7 +69,7 @@ const LINKS = [
     key: 'prep',
     label: 'Prep List',
     description: "What needs prepping",
-    Icon: FlagIcon,
+    icon: '🚩',
     color: '#B45309',
     tint: '#FFFBEB',
     path: '/prep/',
@@ -123,7 +78,7 @@ const LINKS = [
     key: 'checklists',
     label: 'Checklists',
     description: 'Opening & closing',
-    Icon: CheckSquareIcon,
+    icon: '📋',
     color: '#4F46E5',
     tint: '#EEF2FF',
     path: '/checklists/',
@@ -132,7 +87,7 @@ const LINKS = [
     key: 'catering',
     label: 'Catering',
     description: "Today's jobs",
-    Icon: UsersIcon,
+    icon: '🥪',
     color: '#BE185D',
     tint: '#FDF2F8',
     path: '/cater/',
@@ -141,7 +96,7 @@ const LINKS = [
     key: 'builds',
     label: 'Build Guides',
     description: 'How to assemble each item',
-    Icon: LayersIcon,
+    icon: '🧱',
     color: '#0891B2',
     tint: '#ECFEFF',
     path: '/builds/',
@@ -150,7 +105,7 @@ const LINKS = [
     key: 'barista',
     label: 'Drinks Guide',
     description: 'How to make each drink',
-    Icon: CoffeeIcon,
+    icon: '☕',
     color: '#92400E',
     tint: '#FDF8F3',
     path: '/barista/',
@@ -159,7 +114,7 @@ const LINKS = [
     key: 'allergens',
     label: 'Allergens',
     description: 'What\'s in each item',
-    Icon: AlertTriangleIcon,
+    icon: '⚠️',
     color: '#DC2626',
     tint: '#FEF2F2',
     path: '/allergens/',
@@ -218,7 +173,7 @@ export default function PublicStaffHubView({ token }) {
     return (
       <div style={{ height: '100dvh', background: BODY_BG, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: FONT }}>
         <div style={{ background: '#ffffff', border: `1px solid ${CARD_BORDER}`, borderRadius: CARD_RADIUS, padding: '32px 24px', maxWidth: 360, textAlign: 'center' }}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}><AlertTriangleIcon color={BAD} /></div>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
           <p style={{ color: TEXT_PRIMARY, fontWeight: 700, marginBottom: 6 }}>Couldn't load this page</p>
           <p style={{ color: TEXT_MUTED, fontSize: 13 }}>{error}</p>
         </div>
@@ -274,7 +229,6 @@ export default function PublicStaffHubView({ token }) {
             // An odd tile count leaves the last one alone in its row --
             // span it across both columns instead of leaving a dead gap.
             const isDangling = LINKS.length % 2 === 1 && idx === LINKS.length - 1;
-            const TileIcon = link.Icon;
             return (
               <a
                 key={link.key}
@@ -287,10 +241,10 @@ export default function PublicStaffHubView({ token }) {
                 }}
               >
                 <div style={{
-                  width: 52, height: 52, borderRadius: 16, background: link.tint, flexShrink: 0, color: link.color,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 52, height: 52, borderRadius: 16, background: link.tint, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, lineHeight: 1,
                 }}>
-                  <TileIcon />
+                  {link.icon}
                 </div>
                 <div style={{ textAlign: isDangling ? 'left' : 'center' }}>
                   <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT_PRIMARY, lineHeight: 1.25, letterSpacing: '-0.01em' }}>{link.label}</div>
