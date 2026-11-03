@@ -11,9 +11,9 @@ const CARD_SHADOW = '0 1px 2px rgba(15,23,42,0.04), 0 6px 20px -8px rgba(15,23,4
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
 const LEVELS = [
-  { key: 'ok',         label: 'OK',         color: '#15803D', tint: '#F0FDF4' },
-  { key: 'low',        label: 'Low',        color: '#BE185D', tint: '#FDF2F8' },
-  { key: 'order_soon', label: 'Order Soon', color: '#DC2626', tint: '#FEF2F2' },
+  { key: 'ok',         label: 'Stocked',     color: '#15803D', tint: '#F0FDF4' },
+  { key: 'low',        label: 'Running Low', color: '#BE185D', tint: '#FDF2F8' },
+  { key: 'order_soon', label: 'Urgent',      color: '#DC2626', tint: '#FEF2F2' },
 ];
 const LEVEL_LABEL = Object.fromEntries(LEVELS.map(l => [l.key, l.label]));
 
@@ -54,7 +54,7 @@ const pillButtonStyle = (active, tint) => ({
 });
 
 // Staff-facing, no login: a quick EOD walk through an admin-curated SKU
-// group (see R-Stock -> Groups), tapping each item OK/Low/Order Soon, then
+// group (see R-Stock -> Groups), tapping each item Stocked/Running Low/Urgent, then
 // one batch Submit. Writes to the same staff_flag_level signal Transfer
 // Hub's old Flag Low Stock used to -- see supabase/functions/public-stock-check.
 
@@ -459,9 +459,9 @@ function ChecklistStep({ group, items, levels, onSetLevel, existingFlagByItem, c
 
 function DoneStep({ summary, onRunAnother }) {
   const parts = [];
-  if (summary?.orderSoon > 0) parts.push(`${summary.orderSoon} Order Soon`);
-  if (summary?.low > 0) parts.push(`${summary.low} Low`);
-  if (summary?.ok > 0) parts.push(`${summary.ok} OK`);
+  if (summary?.orderSoon > 0) parts.push(`${summary.orderSoon} Urgent`);
+  if (summary?.low > 0) parts.push(`${summary.low} Running Low`);
+  if (summary?.ok > 0) parts.push(`${summary.ok} Stocked`);
 
   return (
     <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '36px 20px', textAlign: 'center' }}>

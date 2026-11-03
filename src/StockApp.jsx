@@ -892,7 +892,7 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                         {row.staff_flag_level && (
                           <button
                             onClick={() => onClearFlag(row.id)}
-                            title={`Flagged ${row.staff_flag_level === 'order_soon' ? 'order soon' : 'low'} by ${row.staff_flagged_by_name || 'a staff member'}${row.staff_flagged_at ? ' on ' + new Date(row.staff_flagged_at).toLocaleDateString('en-AU') : ''} -- click to clear`}
+                            title={`Marked ${row.staff_flag_level === 'order_soon' ? 'urgent' : 'running low'} by ${row.staff_flagged_by_name || 'a staff member'}${row.staff_flagged_at ? ' on ' + new Date(row.staff_flagged_at).toLocaleDateString('en-AU') : ''} -- click to clear`}
                             className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap transition-colors ${
                               row.staff_flag_level === 'order_soon'
                                 ? 'bg-rose-200 text-rose-800 hover:bg-rose-300'
@@ -900,7 +900,7 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                             }`}
                           >
                             <Flag size={9} className="flex-shrink-0" />
-                            {row.staff_flag_level === 'order_soon' ? 'Order soon' : 'Flagged low'}
+                            {row.staff_flag_level === 'order_soon' ? 'Urgent' : 'Running Low'}
                             <X size={9} className="flex-shrink-0" />
                           </button>
                         )}
@@ -969,7 +969,7 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
           <div className="w-7 h-7 rounded-full bg-rose-100 flex items-center justify-center flex-shrink-0">
             <Flag size={14} className="text-rose-700" />
           </div>
-          <span className="text-sm font-medium text-rose-800">{staffFlaggedOrderSoon} item{staffFlaggedOrderSoon !== 1 ? 's' : ''} flagged order soon by staff -- review below</span>
+          <span className="text-sm font-medium text-rose-800">{staffFlaggedOrderSoon} item{staffFlaggedOrderSoon !== 1 ? 's' : ''} marked urgent by staff -- review below</span>
         </div>
       )}
       {staffFlaggedLow > 0 && (
@@ -977,7 +977,7 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
           <div className="w-7 h-7 rounded-full bg-pink-100 flex items-center justify-center flex-shrink-0">
             <Flag size={14} className="text-pink-600" />
           </div>
-          <span className="text-sm font-medium text-pink-700">{staffFlaggedLow} item{staffFlaggedLow !== 1 ? 's' : ''} flagged low by staff -- review below</span>
+          <span className="text-sm font-medium text-pink-700">{staffFlaggedLow} item{staffFlaggedLow !== 1 ? 's' : ''} flagged as running low by staff -- review below</span>
         </div>
       )}
 
