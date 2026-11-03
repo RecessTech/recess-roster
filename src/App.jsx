@@ -5,6 +5,7 @@ import PublicScheduleView from './PublicScheduleView';
 import PublicRosterView from './PublicRosterView';
 import PublicProductionView from './PublicProductionView';
 import PublicTransferHubView from './PublicTransferHubView';
+import PublicStockCheckView from './PublicStockCheckView';
 import PublicPrepListView from './PublicPrepListView';
 import PublicChecklistsView from './PublicChecklistsView';
 import PublicStaffHubView from './PublicStaffHubView';
@@ -18,7 +19,9 @@ import { ErrorBoundary } from './ErrorBoundary';
 // Resolve public routes before auth: /s/<token> (one staff member's shifts),
 // /r/<token> (the whole roster, read-only), /prod/<token> (the daily
 // production plan, read-only), /transfers/<token> (Transfer Hub's
-// open-requests dashboard, read-only), /prep/<token> (the Prep List --
+// open-requests dashboard, read-only), /stock-check/<token> (the mobile EOD
+// stock check -- tap through an admin-curated SKU group, OK/Low/Order Soon,
+// one batch submit), /prep/<token> (the Prep List --
 // flag a prep component as running low, tick it off once prepped),
 // /cater/<token> (the day's catering jobs, read-only), /builds/<token>
 // (sandwich & toastie build guides, read-only), /barista/<token> (Coffee
@@ -37,6 +40,9 @@ const PUBLIC_PRODUCTION_TOKEN = publicProductionMatch ? publicProductionMatch[1]
 
 const publicTransferMatch = window.location.pathname.match(/^\/transfers\/([^/]+)/);
 const PUBLIC_TRANSFER_TOKEN = publicTransferMatch ? publicTransferMatch[1] : null;
+
+const publicStockCheckMatch = window.location.pathname.match(/^\/stock-check\/([^/]+)/);
+const PUBLIC_STOCK_CHECK_TOKEN = publicStockCheckMatch ? publicStockCheckMatch[1] : null;
 
 const publicPrepListMatch = window.location.pathname.match(/^\/prep\/([^/]+)/);
 const PUBLIC_PREP_LIST_TOKEN = publicPrepListMatch ? publicPrepListMatch[1] : null;
@@ -100,6 +106,9 @@ function App() {
   }
   if (PUBLIC_TRANSFER_TOKEN) {
     return <PublicTransferHubView token={PUBLIC_TRANSFER_TOKEN} />;
+  }
+  if (PUBLIC_STOCK_CHECK_TOKEN) {
+    return <PublicStockCheckView token={PUBLIC_STOCK_CHECK_TOKEN} />;
   }
   if (PUBLIC_PREP_LIST_TOKEN) {
     return <PublicPrepListView token={PUBLIC_PREP_LIST_TOKEN} />;

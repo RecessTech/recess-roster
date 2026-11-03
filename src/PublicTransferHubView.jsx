@@ -4,7 +4,6 @@ import { supabase } from './supabaseClient';
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
 const TEAL = '#0F766E';
 const TEAL_DK = '#0B5A54';
-const PINK = '#BE185D';
 const NAME_STORAGE_KEY = 'transferHub_yourName';
 const UNIT_OPTIONS = ['Sleeve', 'Units', 'Cans', 'Tins', 'Bunch(s)', 'Dozen', 'kg', 'g'];
 const PRIORITY_RANK = { high: 0, low: 1 };
@@ -60,10 +59,11 @@ const pillButtonStyle = (active, tint) => ({
   transition: 'background 0.15s, color 0.15s',
 });
 
-// Staff-facing, no login: check what's needed, request something, flag a
-// SKU as low, or mark a request fulfilled. See
-// supabase/functions/public-transfer-hub -- writes carry no real identity,
-// just whatever name someone types in below.
+// Staff-facing, no login: check what's needed, request something, or mark
+// a request fulfilled. See supabase/functions/public-transfer-hub --
+// writes carry no real identity, just whatever name someone types in
+// below. "Flag Low Stock" used to live here too; it's now the mobile
+// Stock Check page's job instead.
 
 export default function PublicTransferHubView({ token }) {
   const [data, setData] = useState(null);
@@ -71,7 +71,7 @@ export default function PublicTransferHubView({ token }) {
   const [error, setError] = useState(null);
   const [name, setName] = useState(loadStoredName);
 
-  const [activePanel, setActivePanel] = useState(null); // null | 'request' | 'flag'
+  const [activePanel, setActivePanel] = useState(null); // null | 'request'
   const [formLocationId, setFormLocationId] = useState(null);
   const [formSubject, setFormSubject] = useState('');
   const [formQuantity, setFormQuantity] = useState('');
@@ -80,12 +80,6 @@ export default function PublicTransferHubView({ token }) {
   const [formNote, setFormNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
-
-  const [flagLocationId, setFlagLocationId] = useState(null);
-  const [flagSubject, setFlagSubject] = useState('');
-  const [flagSubmitting, setFlagSubmitting] = useState(false);
-  const [flagError, setFlagError] = useState(null);
-  const [flagSuccess, setFlagSuccess] = useState(null);
 
   const load = useCallback(async (extra) => {
     setError(null);
@@ -109,10 +103,6 @@ export default function PublicTransferHubView({ token }) {
   useEffect(() => {
     if (!formLocationId && data?.locations?.[0]) setFormLocationId(data.locations[0].id);
   }, [data, formLocationId]);
-
-  useEffect(() => {
-    if (!flagLocationId && data?.locations?.[0]) setFlagLocationId(data.locations[0].id);
-  }, [data, flagLocationId]);
 
   function handleNameChange(v) {
     setName(v);
@@ -143,19 +133,9 @@ export default function PublicTransferHubView({ token }) {
   const activeItems = useMemo(() => (data?.items || []).filter(i => i.active !== false), [data]);
   const activeComponents = useMemo(() => (data?.components || []).filter(c => c.active !== false), [data]);
 
-  // Only a SKU actually carried at the chosen site can be flagged -- that's
-  // the stock_item_sites row the flag lives on, and only that row shows up
-  // in the admin's Stocktake for the site in question.
-  const flaggableItems = useMemo(() => {
-    if (!flagLocationId) return [];
-    const carriedIds = new Set((data?.carries || []).filter(c => c.location_id === flagLocationId).map(c => c.item_id));
-    return activeItems.filter(i => carriedIds.has(i.id));
-  }, [activeItems, data, flagLocationId]);
-
   function openPanel(panel) {
     setActivePanel(prev => (prev === panel ? null : panel));
     setFormError(null);
-    setFlagError(null);
   }
 
   async function handleSubmit(e) {
@@ -202,29 +182,6 @@ export default function PublicTransferHubView({ token }) {
 
   async function handleDelete(requestId) {
     return load({ action: 'cancel', requestId, name });
-  }
-
-  async function handleFlagSubmit(e) {
-    e.preventDefault();
-    setFlagError(null);
-    if (!flagLocationId || !flagSubject) {
-      setFlagError('Pick a site and a SKU.');
-      return;
-    }
-    const [, id] = flagSubject.split(':');
-    const item = flaggableItems.find(i => i.id === id);
-    setFlagSubmitting(true);
-    try {
-      await load({ action: 'flag_low', itemId: id, locationId: flagLocationId, name });
-      setFlagSubject('');
-      setActivePanel(null);
-      setFlagSuccess(`Flagged ${item?.name || 'that SKU'} as low — an admin will review it.`);
-      setTimeout(() => setFlagSuccess(null), 5000);
-    } catch (e) {
-      setFlagError(e.message || 'Could not flag that SKU.');
-    } finally {
-      setFlagSubmitting(false);
-    }
   }
 
   if (loading) {
@@ -298,42 +255,21 @@ export default function PublicTransferHubView({ token }) {
           </div>
         </div>
 
-        {flagSuccess && (
-          <div style={{
-            background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 12, padding: '11px 14px',
-            marginBottom: 12, fontSize: 12.5, color: '#065F46', fontWeight: 600, display: 'flex', gap: 7,
-          }}>
-            <span>✓</span> {flagSuccess}
-          </div>
-        )}
-
-        {/* Actions -- New Request and Flag Low Stock share one card as a
-            compact two-up toolbar; tapping either expands its form in
-            place, closing the other so only one is open at a time. */}
+        {/* New Request -- a single full-width opener, same convention as
+            the other public checklist-style pages (one action, not a
+            toolbar) now that Flag Low Stock has moved to Stock Check. */}
         <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, marginBottom: 12, overflow: 'hidden' }}>
           {activePanel === null && (
-            <div style={{ display: 'flex', gap: 1, background: '#EEF1F4' }}>
-              <button
-                onClick={() => openPanel('request')}
-                style={{
-                  flex: 1, padding: '16px 10px', background: 'white', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                }}
-              >
-                <span style={{ fontSize: 19, color: TEAL, lineHeight: 1 }}>＋</span>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#1E293B' }}>New Request</span>
-              </button>
-              <button
-                onClick={() => openPanel('flag')}
-                style={{
-                  flex: 1, padding: '16px 10px', background: 'white', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                }}
-              >
-                <span style={{ fontSize: 16, lineHeight: 1 }}>🚩</span>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#1E293B' }}>Flag Low Stock</span>
-              </button>
-            </div>
+            <button
+              onClick={() => openPanel('request')}
+              style={{
+                width: '100%', padding: '16px 10px', background: 'white', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}
+            >
+              <span style={{ fontSize: 17, color: TEAL, lineHeight: 1 }}>＋</span>
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: '#1E293B' }}>New Request</span>
+            </button>
           )}
 
           {activePanel === 'request' && (
@@ -402,59 +338,6 @@ export default function PublicTransferHubView({ token }) {
                 }}
               >
                 {submitting ? 'Sending…' : 'Send Request'}
-              </button>
-            </form>
-          )}
-
-          {activePanel === 'flag' && (
-            <form onSubmit={handleFlagSubmit} style={{ padding: 18 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 15, fontWeight: 800, color: '#1E293B' }}>🚩 What's running low?</span>
-                <button type="button" onClick={() => setActivePanel(null)} style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-              </div>
-
-              <p style={{ fontSize: 12, color: '#94A3B8', margin: '0 0 14px', lineHeight: 1.4 }}>
-                This just flags it for review — it doesn't change anything in R-Stock, an admin makes the final call.
-              </p>
-
-              <div style={{ marginBottom: 12 }}>
-                <label style={labelStyle}>Which site</label>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {data.locations.map(loc => (
-                    <button
-                      type="button"
-                      key={loc.id}
-                      onClick={() => { setFlagLocationId(loc.id); setFlagSubject(''); }}
-                      style={pillButtonStyle(flagLocationId === loc.id, PINK)}
-                    >
-                      {loc.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>SKU</label>
-                <SubjectPicker items={flaggableItems} components={[]} value={flagSubject} onChange={setFlagSubject} placeholder="Search SKUs carried at this site…" accent={PINK} />
-              </div>
-
-              <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Your name</label>
-                <input value={name} onChange={e => handleNameChange(e.target.value)} placeholder="So the review makes sense later" style={inputStyle} />
-              </div>
-
-              {flagError && <div style={{ fontSize: 12, color: '#DC2626', marginBottom: 10, fontWeight: 500 }}>{flagError}</div>}
-
-              <button
-                type="submit"
-                disabled={flagSubmitting}
-                style={{
-                  width: '100%', padding: '14px', borderRadius: 11, border: 'none', cursor: flagSubmitting ? 'default' : 'pointer',
-                  background: PINK, color: 'white', fontSize: 15, fontWeight: 800, fontFamily: 'inherit', opacity: flagSubmitting ? 0.6 : 1,
-                  boxShadow: flagSubmitting ? 'none' : '0 4px 12px -4px rgba(190,24,93,0.45)',
-                }}
-              >
-                {flagSubmitting ? 'Flagging…' : 'Flag as Low'}
               </button>
             </form>
           )}

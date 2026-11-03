@@ -44,6 +44,15 @@ const LINKS = [
     path: '/transfers/',
   },
   {
+    key: 'stock-check',
+    label: 'Stock Check',
+    description: 'EOD stock levels',
+    icon: '📦',
+    color: '#C2410C',
+    tint: '#FFF7ED',
+    path: '/stock-check/',
+  },
+  {
     key: 'prep',
     label: 'Prep List',
     description: "What needs prepping",
