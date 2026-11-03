@@ -4,33 +4,41 @@ import { supabase } from './supabaseClient';
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
 const NAME_STORAGE_KEY = 'stockCheck_yourName';
 
-// Tactile Clipboard: a literal paper-checklist metaphor (kraft paper, ruled
-// lines, square checkboxes, a stamped submit button) instead of the
-// gradient-header/pill-badge template the rest of the staff pages use --
-// this is the pilot for a broader design-language rethink, scoped to just
-// this one feature for now.
-const PAPER = '#F2EADA';
-const PAPER_LIGHT = '#FBF6EC';
-const INK = '#2A2A28';
-const INK_MUTED = '#6B6456';
-const INK_FAINT = '#A89F8C';
-const RED = '#C1442D';
-const AMBER = '#D9A441';
-const BORDER_LIGHT = '#C9C0AC';
-const DASH = '#BDB3A0';
-
-const DISPLAY_FONT = "'Archivo Black', sans-serif";
-const BODY_FONT = "'DM Sans', sans-serif";
+// R-Shift's own brand system -- the same tokens used across every R-Shift
+// email (send-schedule-email, send-order-status-email): blue gradient
+// header with the app logo, a white card with a closing tinted accent
+// strip, and the same status palette the order-status email already uses
+// for good/warn/bad. Rooted in that real source rather than inventing a
+// new look, so this reads as one consistent product instead of each
+// screen (or each staff page) picking its own aesthetic.
+const BRAND = '#3B5BDB';
+const BRAND_DARK = '#2D4EC9';
+const BODY_BG = '#F1F5F9';
+const CARD_BORDER = '#E2E8F0';
+const ROW_BORDER = '#F1F5F9';
+const TEXT_PRIMARY = '#1E293B';
+const TEXT_SECONDARY = '#334155';
+const TEXT_MUTED = '#64748B';
+const TEXT_FAINT = '#94A3B8';
+const LABEL_BG = '#F8FAFC';
+const ACCENT_BG = '#EEF2FF';
+const ACCENT_BORDER = '#C7D2FE';
+const ACCENT_TEXT = '#3730A3';
+const GOOD = '#0f9d4e';
+const GOOD_BG = '#EAF7EF';
+const WARN = '#B45309';
+const WARN_BG = '#FFFBEB';
+const BAD = '#d0393b';
+const BAD_BG = '#FDECEC';
+const LOGO_URL = '/logo192.png';
+const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 
 const LEVELS = [
-  { key: 'ok',         label: 'Stocked',     fill: INK },
-  { key: 'low',        label: 'Running Low', fill: AMBER },
-  { key: 'order_soon', label: 'Urgent',      fill: RED },
+  { key: 'ok',         label: 'Stocked',     color: GOOD, bg: GOOD_BG },
+  { key: 'low',        label: 'Running Low', color: WARN, bg: WARN_BG },
+  { key: 'order_soon', label: 'Urgent',      color: BAD,  bg: BAD_BG },
 ];
 const LEVEL_LABEL = Object.fromEntries(LEVELS.map(l => [l.key, l.label]));
-// Amber reads better with dark text on it than light -- the other two fills
-// are dark/saturated enough that paper-colored text is the contrast winner.
-const LEVEL_TEXT_ON_FILL = { ok: PAPER, low: INK, order_soon: PAPER };
 
 function timeAgo(iso) {
   if (!iso) return '';
@@ -55,23 +63,28 @@ function storeName(name) {
 // iOS Safari auto-zooms the whole page on focus for any text input/select
 // under 16px -- 16px avoids it without disabling pinch-zoom.
 const inputStyle = {
-  width: '100%', fontSize: 16, padding: '12px 14px', fontFamily: BODY_FONT,
-  border: `2px solid ${INK}`, color: INK, background: PAPER_LIGHT, boxSizing: 'border-box',
+  width: '100%', fontSize: 16, padding: '11px 14px', fontFamily: FONT,
+  borderRadius: 10, border: `1px solid ${CARD_BORDER}`, color: TEXT_PRIMARY, background: LABEL_BG, boxSizing: 'border-box',
 };
-const labelStyle = {
-  fontSize: 11, fontWeight: 700, color: INK_MUTED, textTransform: 'uppercase',
-  letterSpacing: '0.08em', marginBottom: 8, display: 'block', fontFamily: BODY_FONT,
+const eyebrowStyle = {
+  fontSize: 10, fontWeight: 700, color: TEXT_FAINT, textTransform: 'uppercase',
+  letterSpacing: '0.07em', marginBottom: 8, display: 'block',
 };
+const primaryButtonStyle = (disabled) => ({
+  width: '100%', padding: '13px 20px', borderRadius: 11, border: 'none', cursor: disabled ? 'default' : 'pointer',
+  background: BRAND, color: '#ffffff', fontSize: 15, fontWeight: 700, fontFamily: FONT,
+  opacity: disabled ? 0.55 : 1, boxShadow: disabled ? 'none' : '0 4px 12px -4px rgba(59,91,219,0.45)',
+});
 
 function HomeIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
       <path d="M3 11l9-8 9 8" />
       <path d="M5 10v10h14V10" />
     </svg>
   );
 }
-function CheckIcon({ size = 14, color = 'currentColor' }) {
+function CheckIcon({ size = 13, color = 'currentColor' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="3" aria-hidden="true">
       <path d="M5 13l4 4L19 7" />
@@ -80,41 +93,11 @@ function CheckIcon({ size = 14, color = 'currentColor' }) {
 }
 function BoxIcon() {
   return (
-    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth="1.6" aria-hidden="true">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={TEXT_MUTED} strokeWidth="1.6" aria-hidden="true">
       <path d="M3 8l9-5 9 5-9 5-9-5z" />
       <path d="M3 8v8l9 5 9-5V8" />
       <path d="M12 13v8" />
     </svg>
-  );
-}
-function WarningIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={RED} strokeWidth="1.8" aria-hidden="true">
-      <path d="M12 4l9 16H3L12 4z" />
-      <path d="M12 10v4" />
-      <path d="M12 17h.01" />
-    </svg>
-  );
-}
-
-// A stamped, offset-shadow button -- the house style for every primary
-// action on this page (Start Check, Submit Check, Run Another Check).
-function StampButton({ children, onClick, disabled, type = 'button' }) {
-  return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        width: '100%', fontFamily: DISPLAY_FONT, fontSize: 14, letterSpacing: '0.02em',
-        textTransform: 'uppercase', color: INK, background: PAPER_LIGHT,
-        border: `2.5px solid ${INK}`, boxShadow: disabled ? 'none' : `4px 4px 0 ${INK}`,
-        padding: '14px 20px', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.55 : 1,
-        transform: disabled ? 'translate(4px, 4px)' : 'none',
-      }}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -260,18 +243,16 @@ export default function PublicStockCheckView({ token }) {
     setSubmitError(null);
   }
 
-  const fontImport = "@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=DM+Sans:wght@400;500;700&display=swap');";
-
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: PAPER, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <style>{`${fontImport} @keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div style={{ minHeight: '100vh', background: BODY_BG, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT }}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         <div style={{ textAlign: 'center' }}>
           <div style={{
-            width: 32, height: 32, border: `3px solid ${BORDER_LIGHT}`, borderTopColor: RED,
+            width: 32, height: 32, border: `3px solid ${CARD_BORDER}`, borderTopColor: BRAND,
             borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite'
           }} />
-          <p style={{ color: INK_MUTED, fontSize: 14, fontFamily: BODY_FONT }}>Loading Stock Check…</p>
+          <p style={{ color: TEXT_MUTED, fontSize: 14 }}>Loading Stock Check…</p>
         </div>
       </div>
     );
@@ -279,12 +260,10 @@ export default function PublicStockCheckView({ token }) {
 
   if (error && !data) {
     return (
-      <div style={{ minHeight: '100vh', background: PAPER, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <style>{fontImport}</style>
-        <div style={{ background: PAPER_LIGHT, border: `2px solid ${INK}`, padding: '32px 24px', maxWidth: 340, textAlign: 'center' }}>
-          <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}><WarningIcon /></div>
-          <p style={{ color: INK, fontFamily: DISPLAY_FONT, fontSize: 14, marginBottom: 8, textTransform: 'uppercase' }}>Couldn't load Stock Check</p>
-          <p style={{ color: INK_MUTED, fontSize: 13, fontFamily: BODY_FONT }}>{error}</p>
+      <div style={{ minHeight: '100vh', background: BODY_BG, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: FONT }}>
+        <div style={{ background: '#ffffff', border: `1px solid ${CARD_BORDER}`, borderRadius: 14, padding: '32px 24px', maxWidth: 340, textAlign: 'center' }}>
+          <p style={{ color: TEXT_PRIMARY, fontWeight: 700, fontSize: 15, marginBottom: 8 }}>Couldn't load Stock Check</p>
+          <p style={{ color: TEXT_MUTED, fontSize: 13 }}>{error}</p>
         </div>
       </div>
     );
@@ -298,35 +277,55 @@ export default function PublicStockCheckView({ token }) {
     ? 'Checklist complete'
     : 'No login required';
 
-  const statusText = step === 'checklist'
-    ? `${checkedCount}/${checklistItems.length} CHECKED`
+  const headerPill = step === 'checklist'
+    ? `${checkedCount}/${checklistItems.length}`
     : step === 'done'
-    ? 'SUBMITTED'
-    : `${data.groups.length} LIST${data.groups.length !== 1 ? 'S' : ''}`;
+    ? 'Done'
+    : `${data.groups.length} list${data.groups.length !== 1 ? 's' : ''}`;
 
   return (
-    <div style={{ minHeight: '100vh', ...{ background: PAPER, backgroundImage: 'repeating-linear-gradient(to bottom, transparent 0, transparent 34px, rgba(42,42,40,0.07) 35px)' }, fontFamily: BODY_FONT, touchAction: 'manipulation' }}>
-      <style>{`${fontImport} @keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      <div style={{ maxWidth: 460, margin: '0 auto', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', background: BODY_BG, padding: '20px 14px 32px', fontFamily: FONT, touchAction: 'manipulation' }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div style={{ maxWidth: 460, margin: '0 auto' }}>
 
-        {/* Header */}
-        <div style={{ padding: '26px 20px 16px', borderBottom: `3px double ${INK}`, display: 'flex', flexDirection: 'column', gap: 10, flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: INK_MUTED }}>{data.businessName}</div>
-            <a href={`/hub/${token}`} aria-label="Back to Staff Hub" style={{ color: INK, textDecoration: 'none', display: 'flex' }}>
-              <HomeIcon />
-            </a>
-          </div>
-          <h1 style={{ margin: 0, fontFamily: DISPLAY_FONT, fontSize: 24, textTransform: 'uppercase', letterSpacing: '0.01em', color: INK }}>
-            Stock Check
-          </h1>
+        {/* Brand header -- same gradient, logo badge and eyebrow label as
+            the R-Shift emails, so this reads as the same product. */}
+        <div style={{
+          background: BRAND, backgroundImage: `linear-gradient(160deg, ${BRAND}, ${BRAND_DARK})`,
+          borderRadius: '14px 14px 0 0', padding: '20px 22px',
+        }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: INK_MUTED, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: RED, whiteSpace: 'nowrap' }}>{statusText}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+              <img src={LOGO_URL} alt="" width={36} height={36} style={{ display: 'block', borderRadius: 10, flexShrink: 0, objectFit: 'cover' }} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.75)' }}>R-Shift &middot; Stock Check</div>
+                <div style={{ fontSize: 19, fontWeight: 800, color: '#ffffff', marginTop: 1 }}>Stock Check</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <span style={{
+                fontSize: 11.5, fontWeight: 700, color: '#ffffff', background: 'rgba(255,255,255,0.2)',
+                padding: '4px 10px', borderRadius: 999, whiteSpace: 'nowrap',
+              }}>
+                {headerPill}
+              </span>
+              <a
+                href={`/hub/${token}`}
+                aria-label="Back to Staff Hub"
+                style={{
+                  width: 28, height: 28, borderRadius: 999, background: 'rgba(255,255,255,0.2)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', textDecoration: 'none', flexShrink: 0,
+                }}
+              >
+                <HomeIcon />
+              </a>
+            </div>
           </div>
+          <div style={{ color: 'rgba(255,255,255,0.82)', fontSize: 13, marginTop: 10 }}>{subtitle}</div>
         </div>
 
-        <div style={{ padding: '18px 20px 28px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+        {/* Body card */}
+        <div style={{ background: '#ffffff', borderLeft: `1px solid ${CARD_BORDER}`, borderRight: `1px solid ${CARD_BORDER}`, borderBottom: `1px solid ${CARD_BORDER}`, borderRadius: '0 0 14px 14px', padding: '18px 18px 20px' }}>
 
           {step === 'setup' && (
             <SetupStep
@@ -362,9 +361,10 @@ export default function PublicStockCheckView({ token }) {
 
         </div>
 
-        <p style={{ textAlign: 'center', color: INK_FAINT, fontSize: 11, padding: '0 20px 24px', marginTop: 'auto' }}>
-          Powered by Recess Roster
-        </p>
+        <div style={{ textAlign: 'center', padding: '16px 4px 0' }}>
+          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: 999, background: BRAND, marginRight: 6, verticalAlign: 'middle' }} />
+          <span style={{ fontSize: 11, color: TEXT_FAINT, verticalAlign: 'middle' }}>R-Shift</span>
+        </div>
       </div>
     </div>
   );
@@ -373,19 +373,19 @@ export default function PublicStockCheckView({ token }) {
 function SetupStep({ data, selectedGroupId, onSelectGroup, selectedLocationId, onSelectLocation, name, onNameChange, onStart }) {
   if (data.groups.length === 0) {
     return (
-      <div style={{ border: `2px solid ${INK}`, background: PAPER_LIGHT, padding: '36px 20px', textAlign: 'center' }}>
+      <div style={{ padding: '28px 10px', textAlign: 'center' }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}><BoxIcon /></div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: INK }}>No checklists set up yet</div>
-        <div style={{ fontSize: 12.5, color: INK_MUTED, marginTop: 4 }}>Ask an admin to create one in R-Stock &rarr; Groups.</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: TEXT_PRIMARY }}>No checklists set up yet</div>
+        <div style={{ fontSize: 12.5, color: TEXT_FAINT, marginTop: 4 }}>Ask an admin to create one in R-Stock &rarr; Groups.</div>
       </div>
     );
   }
 
   return (
     <div>
-      <label style={labelStyle}>Which checklist?</label>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-        {data.groups.map(g => {
+      <label style={eyebrowStyle}>Which checklist?</label>
+      <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 18, border: `1px solid ${CARD_BORDER}`, borderRadius: 10, overflow: 'hidden' }}>
+        {data.groups.map((g, idx) => {
           const active = selectedGroupId === g.id;
           return (
             <button
@@ -394,19 +394,20 @@ function SetupStep({ data, selectedGroupId, onSelectGroup, selectedLocationId, o
               onClick={() => onSelectGroup(g.id)}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-                padding: '14px 16px', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
-                border: `2px solid ${INK}`, background: active ? PAPER_LIGHT : 'transparent',
+                padding: '13px 14px', cursor: 'pointer', fontFamily: FONT, textAlign: 'left', border: 'none',
+                borderTop: idx === 0 ? 'none' : `1px solid ${ROW_BORDER}`,
+                background: active ? ACCENT_BG : '#ffffff',
               }}
             >
               <span style={{ minWidth: 0 }}>
-                <span style={{ display: 'block', fontSize: 15, fontWeight: 700, color: INK }}>{g.name}</span>
-                <span style={{ display: 'block', fontSize: 11.5, color: INK_MUTED, marginTop: 2 }}>{g.items.length} SKU{g.items.length !== 1 ? 's' : ''}</span>
+                <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, color: TEXT_PRIMARY }}>{g.name}</span>
+                <span style={{ display: 'block', fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>{g.items.length} SKU{g.items.length !== 1 ? 's' : ''}</span>
               </span>
               <span style={{
-                width: 26, height: 26, flexShrink: 0, border: `2px solid ${INK}`,
-                background: active ? INK : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 24, height: 24, flexShrink: 0, borderRadius: 999,
+                background: active ? BRAND : '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                {active && <CheckIcon size={14} color={PAPER} />}
+                {active && <CheckIcon size={12} color="#ffffff" />}
               </span>
             </button>
           );
@@ -416,7 +417,7 @@ function SetupStep({ data, selectedGroupId, onSelectGroup, selectedLocationId, o
       {selectedGroupId && (
         <>
           <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>Which site</label>
+            <label style={eyebrowStyle}>Which site</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {data.locations.map(loc => {
                 const active = selectedLocationId === loc.id;
@@ -426,8 +427,9 @@ function SetupStep({ data, selectedGroupId, onSelectGroup, selectedLocationId, o
                     type="button"
                     onClick={() => onSelectLocation(loc.id)}
                     style={{
-                      flex: '1 0 auto', padding: '11px 14px', minHeight: 44, fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700,
-                      border: `2px solid ${INK}`, background: active ? INK : 'transparent', color: active ? PAPER : INK, cursor: 'pointer',
+                      flex: '1 0 auto', padding: '10px 14px', minHeight: 44, fontFamily: FONT, fontSize: 13.5, fontWeight: 700,
+                      borderRadius: 10, border: `1px solid ${active ? BRAND : CARD_BORDER}`,
+                      background: active ? BRAND : '#ffffff', color: active ? '#ffffff' : TEXT_SECONDARY, cursor: 'pointer',
                     }}
                   >
                     {loc.name}
@@ -438,11 +440,13 @@ function SetupStep({ data, selectedGroupId, onSelectGroup, selectedLocationId, o
           </div>
 
           <div style={{ marginBottom: 20 }}>
-            <label style={labelStyle}>Your name</label>
+            <label style={eyebrowStyle}>Your name</label>
             <input value={name} onChange={e => onNameChange(e.target.value)} placeholder="So this check has a name on it" style={inputStyle} />
           </div>
 
-          <StampButton onClick={onStart} disabled={!selectedLocationId}>Start Check</StampButton>
+          <button type="button" onClick={onStart} disabled={!selectedLocationId} style={primaryButtonStyle(!selectedLocationId)}>
+            Start Check
+          </button>
         </>
       )}
     </div>
@@ -452,40 +456,36 @@ function SetupStep({ data, selectedGroupId, onSelectGroup, selectedLocationId, o
 function ChecklistStep({ items, levels, onSetLevel, existingFlagByItem, checkedCount, onChangeChecklist, onSubmit, submitting, submitError, confirmIncomplete }) {
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
         <button
           type="button"
           onClick={onChangeChecklist}
-          style={{ background: 'none', border: 'none', color: INK_MUTED, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 0' }}
+          style={{ background: 'none', border: 'none', color: TEXT_MUTED, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: FONT, padding: '4px 0' }}
         >
           &larr; Change checklist
         </button>
       </div>
 
       {items.length === 0 ? (
-        <div style={{ border: `2px solid ${INK}`, background: PAPER_LIGHT, padding: '36px 20px', textAlign: 'center' }}>
-          <div style={{ fontSize: 13.5, color: INK_MUTED }}>None of this checklist's SKUs are carried at this site.</div>
+        <div style={{ padding: '28px 10px', textAlign: 'center' }}>
+          <div style={{ fontSize: 13.5, color: TEXT_MUTED }}>None of this checklist's SKUs are carried at this site.</div>
         </div>
       ) : (
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 14 }}>
           {items.map((item, idx) => {
             const existing = !levels[item.id] ? existingFlagByItem.get(item.id) : null;
             return (
-              <div key={item.id} style={{ borderTop: idx === 0 ? 'none' : `1px dashed ${DASH}`, padding: '14px 0' }}>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginBottom: 10 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: INK_FAINT, width: 20, flexShrink: 0 }}>{String(idx + 1).padStart(2, '0')}</span>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: INK }}>{item.name}</div>
-                    <div style={{ fontSize: 11.5, color: INK_MUTED, marginTop: 1 }}>
-                      {item.sku} &middot; {item.uom}
-                      {existing && ` · previously ${LEVEL_LABEL[existing.staff_flag_level].toLowerCase()} (${timeAgo(existing.staff_flagged_at)})`}
-                    </div>
+              <div key={item.id} style={{ borderTop: idx === 0 ? 'none' : `1px solid ${ROW_BORDER}`, padding: '13px 0' }}>
+                <div style={{ marginBottom: 9 }}>
+                  <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT_PRIMARY }}>{item.name}</div>
+                  <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 1 }}>
+                    {item.sku} &middot; {item.uom}
+                    {existing && ` · previously ${LEVEL_LABEL[existing.staff_flag_level].toLowerCase()} (${timeAgo(existing.staff_flagged_at)})`}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 6, paddingLeft: 30 }}>
+                <div style={{ display: 'flex', gap: 6 }}>
                   {LEVELS.map(l => {
                     const active = levels[item.id] === l.key;
-                    const textColor = active ? LEVEL_TEXT_ON_FILL[l.key] : INK;
                     return (
                       <button
                         key={l.key}
@@ -493,12 +493,13 @@ function ChecklistStep({ items, levels, onSetLevel, existingFlagByItem, checkedC
                         onClick={() => onSetLevel(item.id, l.key)}
                         style={{
                           flex: 1, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                          border: `2px solid ${INK}`, background: active ? l.fill : 'transparent',
-                          color: textColor, fontSize: 11, fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase',
-                          fontFamily: BODY_FONT, cursor: 'pointer', padding: '0 4px',
+                          borderRadius: 7, border: 'none', borderLeft: active ? `4px solid ${l.color}` : `1px solid ${CARD_BORDER}`,
+                          background: active ? l.bg : '#ffffff',
+                          color: active ? l.color : TEXT_SECONDARY, fontSize: 11.5, fontWeight: 700,
+                          fontFamily: FONT, cursor: 'pointer', padding: '0 4px',
                         }}
                       >
-                        {active && <CheckIcon size={11} color={textColor} />}
+                        {active && <CheckIcon size={11} color={l.color} />}
                         {l.label}
                       </button>
                     );
@@ -510,17 +511,27 @@ function ChecklistStep({ items, levels, onSetLevel, existingFlagByItem, checkedC
         </div>
       )}
 
+      {items.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: ACCENT_BG, border: `1px solid ${ACCENT_BORDER}`, borderRadius: 10, padding: '11px 16px', marginBottom: 16,
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: ACCENT_TEXT }}>Checked</span>
+          <span style={{ fontSize: 17, fontWeight: 800, color: BRAND }}>{checkedCount}/{items.length}</span>
+        </div>
+      )}
+
       {confirmIncomplete && (
-        <div style={{ fontSize: 12.5, color: RED, fontWeight: 700, marginBottom: 10, textAlign: 'center' }}>
+        <div style={{ fontSize: 12.5, color: WARN, fontWeight: 600, marginBottom: 10, textAlign: 'center' }}>
           {items.length - checkedCount} item{items.length - checkedCount !== 1 ? 's' : ''} not checked &mdash; tap Submit again to send anyway.
         </div>
       )}
-      {submitError && <div style={{ fontSize: 12.5, color: RED, fontWeight: 500, marginBottom: 10, textAlign: 'center' }}>{submitError}</div>}
+      {submitError && <div style={{ fontSize: 12.5, color: BAD, fontWeight: 500, marginBottom: 10, textAlign: 'center' }}>{submitError}</div>}
 
       {items.length > 0 && (
-        <StampButton onClick={onSubmit} disabled={submitting}>
+        <button type="button" onClick={onSubmit} disabled={submitting} style={primaryButtonStyle(submitting)}>
           {submitting ? 'Submitting…' : `Submit Check (${checkedCount}/${items.length})`}
-        </StampButton>
+        </button>
       )}
     </>
   );
@@ -533,18 +544,20 @@ function DoneStep({ summary, onRunAnother }) {
   if (summary?.ok > 0) parts.push(`${summary.ok} Stocked`);
 
   return (
-    <div style={{ border: `2px solid ${INK}`, background: PAPER_LIGHT, padding: '40px 24px', textAlign: 'center' }}>
+    <div style={{ padding: '22px 6px 6px', textAlign: 'center' }}>
       <div style={{
-        width: 64, height: 64, border: `3px solid ${INK}`, margin: '0 auto 16px',
+        width: 48, height: 48, borderRadius: 999, background: GOOD, margin: '0 auto 14px',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <CheckIcon size={28} color={INK} />
+        <CheckIcon size={22} color="#ffffff" />
       </div>
-      <div style={{ fontFamily: DISPLAY_FONT, fontSize: 17, color: INK, marginBottom: 8, textTransform: 'uppercase' }}>Check Submitted</div>
-      <div style={{ fontSize: 13.5, color: INK_MUTED, marginBottom: 24 }}>
+      <div style={{ fontSize: 17, fontWeight: 800, color: GOOD, marginBottom: 6 }}>Check submitted</div>
+      <div style={{ fontSize: 13, color: TEXT_MUTED, marginBottom: 22 }}>
         {parts.length > 0 ? parts.join(' · ') : 'All good — nothing flagged'}
       </div>
-      <StampButton onClick={onRunAnother}>Run Another Check</StampButton>
+      <button type="button" onClick={onRunAnother} style={primaryButtonStyle(false)}>
+        Run Another Check
+      </button>
     </div>
   );
 }
