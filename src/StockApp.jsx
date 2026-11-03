@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
-  ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ChevronUp, ShoppingCart, History, Box, ArrowLeftRight, Search,
+  ClipboardList, Truck, AlertTriangle, ChevronDown, ChevronUp, ShoppingCart, History, Box, ArrowLeftRight, Search,
   TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Tag, User, Settings, GripVertical, ArrowUpDown, Check, Flag, Bot,
   AlertCircle, Clock, CheckCircle2, Layers,
 } from 'lucide-react';
@@ -326,6 +326,23 @@ function CategoryFilterMultiSelect({ value, onChange, categories }) {
 // whether the current tab's supplier groups are narrowed down to just
 // the ones assigned (via SupplierAssignmentsModal) to the logged-in
 // user. Disabled with a hint when they have no assignments yet.
+// A single, dedicated way to cut straight to what staff have flagged --
+// previously the only way to find them was to scroll the whole grouped
+// list looking for the (differently-coloured) flag badge on each row.
+function FlaggedOnlyToggle({ active, onToggle, count }) {
+  if (count === 0 && !active) return null;
+  return (
+    <button
+      onClick={onToggle}
+      title="Show only items staff have flagged as running low or urgent"
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${active ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'}`}
+    >
+      <Flag size={13} />
+      Flagged{count > 0 ? ` (${count})` : ''}
+    </button>
+  );
+}
+
 function MySuppliersToggle({ active, onToggle, hasAssignments, onManage }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -765,6 +782,7 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
   const [groupBy, setGroupBy] = useState('supplier');
   const [categoryFilters, setCategoryFilters] = useState([]);
   const [myOnly, setMyOnly] = useState(false);
+  const [flaggedOnly, setFlaggedOnly] = useState(false);
   const toggleGroup = key => setCollapsed(c => ({ ...c, [key]: !c[key] }));
 
   const availableCategories = useMemo(
@@ -787,8 +805,9 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
       .filter(r => !pinnedCategory || r.item.category === pinnedCategory)
       .filter(r => categoryFilters.length === 0 || categoryFilters.includes(r.item.category))
       .filter(r => !myOnly || mySuppliers.includes(r.supplier))
+      .filter(r => !flaggedOnly || r.staff_flag_level)
       .filter(r => !q || r.item.name.toLowerCase().includes(q) || (r.item.sku || '').toLowerCase().includes(q));
-  }, [sites, selectedLocationId, itemById, pinnedCategory, categoryFilters, myOnly, mySuppliers, search]);
+  }, [sites, selectedLocationId, itemById, pinnedCategory, categoryFilters, myOnly, flaggedOnly, mySuppliers, search]);
 
   const grouped = useMemo(() => {
     const groups = {};
@@ -880,23 +899,20 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                   )}
                   <tr className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors">
                     <td className="px-3 py-2">
-                      <div className="min-w-0">
-                        <span className="text-[15px] font-semibold text-gray-900 truncate block">{row.item.name}</span>
-                      </div>
-                      <div className="text-xs text-gray-400 truncate mb-1">{row.item.sku} · {row.item.uom}</div>
-                      <div className="flex items-center gap-1 flex-wrap">
-                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${LAST_ORDERED_TONE_CLASSES[tone].bg} ${LAST_ORDERED_TONE_CLASSES[tone].text}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone].dot}`} />
-                          {info.label}
-                        </span>
+                      <div className="min-w-0 flex items-center gap-1.5">
+                        <span className="text-[15px] font-semibold text-gray-900 truncate flex-1 min-w-0">{row.item.name}</span>
+                        {/* The one badge on the row that staff put there themselves --
+                            kept as the sole bold, coloured tag so it's what the eye
+                            catches first. Same hue at two intensities communicates
+                            severity without adding another competing colour. */}
                         {row.staff_flag_level && (
                           <button
                             onClick={() => onClearFlag(row.id)}
                             title={`Marked ${row.staff_flag_level === 'order_soon' ? 'urgent' : 'running low'} by ${row.staff_flagged_by_name || 'a staff member'}${row.staff_flagged_at ? ' on ' + new Date(row.staff_flagged_at).toLocaleDateString('en-AU') : ''} -- click to clear`}
-                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap transition-colors ${
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${
                               row.staff_flag_level === 'order_soon'
-                                ? 'bg-rose-200 text-rose-800 hover:bg-rose-300'
-                                : 'bg-pink-100 text-pink-700 hover:bg-pink-200'
+                                ? 'bg-rose-600 text-white hover:bg-rose-700'
+                                : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
                             }`}
                           >
                             <Flag size={9} className="flex-shrink-0" />
@@ -904,6 +920,14 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                             <X size={9} className="flex-shrink-0" />
                           </button>
                         )}
+                      </div>
+                      {/* Last-ordered recency is background context, not an alert --
+                          a plain muted line with just a tone dot reads as secondary
+                          instead of competing with the flag badge above. */}
+                      <div className="text-xs text-gray-400 truncate mb-1">{row.item.sku} · {row.item.uom}</div>
+                      <div className="inline-flex items-center gap-1.5 text-[10.5px] text-gray-400">
+                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone].dot}`} />
+                        {info.label}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-center">
@@ -944,40 +968,47 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
           )}
           <GroupBySwitcher value={groupBy} onChange={setGroupBy} />
           <MySuppliersToggle active={myOnly} onToggle={() => setMyOnly(o => !o)} hasAssignments={mySuppliers.length > 0} onManage={onManageSuppliers} />
+          <FlaggedOnlyToggle active={flaggedOnly} onToggle={() => setFlaggedOnly(o => !o)} count={staffFlaggedOrderSoon + staffFlaggedLow} />
           <SearchInput value={search} onChange={setSearch} placeholder="Search items or SKU…" />
         </div>
       </div>
 
-      {noStock > 0 && (
-        <div className="flex items-center gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-          <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-            <XCircle size={14} className="text-red-600" />
-          </div>
-          <span className="text-sm font-medium text-red-700">{noStock} item{noStock !== 1 ? 's' : ''} with no stock</span>
-        </div>
-      )}
-      {lowStock > 0 && (
-        <div className="flex items-center gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-          <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-            <AlertTriangle size={14} className="text-amber-600" />
-          </div>
-          <span className="text-sm font-medium text-amber-700">{lowStock} item{lowStock !== 1 ? 's' : ''} running low</span>
-        </div>
-      )}
-      {staffFlaggedOrderSoon > 0 && (
-        <div className="flex items-center gap-2.5 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
-          <div className="w-7 h-7 rounded-full bg-rose-100 flex items-center justify-center flex-shrink-0">
-            <Flag size={14} className="text-rose-700" />
-          </div>
-          <span className="text-sm font-medium text-rose-800">{staffFlaggedOrderSoon} item{staffFlaggedOrderSoon !== 1 ? 's' : ''} marked urgent by staff -- review below</span>
-        </div>
-      )}
-      {staffFlaggedLow > 0 && (
-        <div className="flex items-center gap-2.5 bg-pink-50 border border-pink-200 rounded-xl px-4 py-3">
-          <div className="w-7 h-7 rounded-full bg-pink-100 flex items-center justify-center flex-shrink-0">
-            <Flag size={14} className="text-pink-600" />
-          </div>
-          <span className="text-sm font-medium text-pink-700">{staffFlaggedLow} item{staffFlaggedLow !== 1 ? 's' : ''} flagged as running low by staff -- review below</span>
+      {/* One calm summary line instead of four stacked, differently-
+          coloured alert boxes -- each count keeps a tiny tone dot so the
+          at-a-glance read is still there, just without four competing
+          banners fighting for attention above the list. */}
+      {(noStock > 0 || lowStock > 0 || staffFlaggedOrderSoon > 0 || staffFlaggedLow > 0) && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {noStock > 0 && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-100 text-xs text-gray-600">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+              <span className="font-semibold text-gray-900">{noStock}</span> no stock
+            </span>
+          )}
+          {lowStock > 0 && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-100 text-xs text-gray-600">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+              <span className="font-semibold text-gray-900">{lowStock}</span> low stock
+            </span>
+          )}
+          {staffFlaggedOrderSoon > 0 && (
+            <button
+              onClick={() => setFlaggedOnly(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-100 text-xs text-gray-600 hover:bg-rose-50 hover:border-rose-200 transition-colors"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-600 flex-shrink-0" />
+              <span className="font-semibold text-gray-900">{staffFlaggedOrderSoon}</span> urgent flag{staffFlaggedOrderSoon !== 1 ? 's' : ''}
+            </button>
+          )}
+          {staffFlaggedLow > 0 && (
+            <button
+              onClick={() => setFlaggedOnly(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-100 text-xs text-gray-600 hover:bg-rose-50 hover:border-rose-200 transition-colors"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-300 flex-shrink-0" />
+              <span className="font-semibold text-gray-900">{staffFlaggedLow}</span> low flag{staffFlaggedLow !== 1 ? 's' : ''}
+            </button>
+          )}
         </div>
       )}
 
