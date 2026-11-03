@@ -85,7 +85,7 @@ serve(async (req) => {
     // can show "already flagged" context. Always returned, including
     // after a submit, so the client's `data` stays a consistent shape --
     // it unconditionally re-reads data.groups/data.siteRows every render.
-    const [{ data: locations }, { data: groups }, { data: siteRows }] = await Promise.all([
+    const [{ data: locations }, { data: groups }, { data: siteRows }, { data: allItems }] = await Promise.all([
       supabase.from('locations').select('id, name').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
       supabase.from('sku_groups')
         .select('id, name, sort_order, sku_group_items(item_id, sort_order, stock_items(id, name, sku, uom, active))')
@@ -93,6 +93,11 @@ serve(async (req) => {
         .eq('active', true)
         .order('sort_order', { ascending: true }),
       supabase.from('stock_item_sites').select('item_id, location_id, staff_flag_level, staff_flagged_at, staff_flagged_by_name').eq('org_id', org.id),
+      // Every active SKU, not just the ones curated into a group -- lets
+      // staff search for and flag any item carried at their site, not only
+      // what an admin has already put on a list. Small payload (a couple
+      // hundred rows of id/name/sku/uom), so one flat list is simplest.
+      supabase.from('stock_items').select('id, name, sku, uom').eq('org_id', org.id).eq('active', true).order('name'),
     ]);
 
     const { data: settings } = await supabase
@@ -115,6 +120,7 @@ serve(async (req) => {
       locations: locations || [],
       groups: cleanGroups,
       siteRows: siteRows || [],
+      items: allItems || [],
       ...(submitResult ? { success: true, ...submitResult } : {}),
     });
 
