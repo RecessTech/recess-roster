@@ -40,6 +40,11 @@ const LEVELS = [
 ];
 const LEVEL_LABEL = Object.fromEntries(LEVELS.map(l => [l.key, l.label]));
 
+// A pseudo-group id for "flag anything" sessions that don't start from an
+// admin-curated list at all -- selecting it jumps straight to an empty
+// checklist that's built entirely out of searched-and-added items.
+const CUSTOM_GROUP_ID = '__custom__';
+
 function timeAgo(iso) {
   if (!iso) return '';
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -91,12 +96,25 @@ function CheckIcon({ size = 13, color = 'currentColor' }) {
     </svg>
   );
 }
-function BoxIcon() {
+function SearchIcon() {
   return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={TEXT_MUTED} strokeWidth="1.6" aria-hidden="true">
-      <path d="M3 8l9-5 9 5-9 5-9-5z" />
-      <path d="M3 8v8l9 5 9-5V8" />
-      <path d="M12 13v8" />
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={TEXT_FAINT} strokeWidth="2.2" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.35-4.35" />
+    </svg>
+  );
+}
+function PlusIcon({ color = 'currentColor' }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.6" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+function XIcon({ color = 'currentColor' }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.6" aria-hidden="true">
+      <path d="M18 6L6 18M6 6l12 12" />
     </svg>
   );
 }
@@ -120,6 +138,11 @@ export default function PublicStockCheckView({ token }) {
   const [submitError, setSubmitError] = useState(null);
   const [confirmIncomplete, setConfirmIncomplete] = useState(false);
   const [doneSummary, setDoneSummary] = useState(null);
+  // Items added by search rather than picked up from the chosen list --
+  // lets staff flag any SKU carried at the site, not just what's on a
+  // curated list (or, via CUSTOM_GROUP_ID, flag things with no list at all).
+  const [extraItems, setExtraItems] = useState([]);
+  const [itemSearch, setItemSearch] = useState('');
 
   const load = useCallback(async (extra) => {
     setError(null);
@@ -149,10 +172,10 @@ export default function PublicStockCheckView({ token }) {
     storeName(v);
   }
 
-  const selectedGroup = useMemo(
-    () => data?.groups.find(g => g.id === selectedGroupId) || null,
-    [data, selectedGroupId]
-  );
+  const selectedGroup = useMemo(() => {
+    if (selectedGroupId === CUSTOM_GROUP_ID) return { id: CUSTOM_GROUP_ID, name: 'Other Items', items: [] };
+    return data?.groups.find(g => g.id === selectedGroupId) || null;
+  }, [data, selectedGroupId]);
 
   // A group's SKUs might not all be carried at every site -- only show
   // ones that actually have a stock_item_sites row at the chosen site.
@@ -161,10 +184,47 @@ export default function PublicStockCheckView({ token }) {
     return new Set(data.siteRows.filter(r => r.location_id === selectedLocationId).map(r => r.item_id));
   }, [data, selectedLocationId]);
 
-  const checklistItems = useMemo(() => {
+  const listItems = useMemo(() => {
     if (!selectedGroup) return [];
     return selectedGroup.items.filter(i => carriedIds.has(i.id));
   }, [selectedGroup, carriedIds]);
+
+  // The checklist is the chosen list's items plus anything staff has
+  // searched for and added on top -- extraItems is never cleared just
+  // because it overlaps the list (de-duped here instead).
+  const checklistItems = useMemo(() => {
+    const listIds = new Set(listItems.map(i => i.id));
+    return [...listItems, ...extraItems.filter(i => !listIds.has(i.id))];
+  }, [listItems, extraItems]);
+
+  const extraItemIds = useMemo(() => new Set(extraItems.map(i => i.id)), [extraItems]);
+
+  // Search pool for "flag another item": every active SKU carried at the
+  // chosen site, minus whatever's already on the checklist.
+  const searchResults = useMemo(() => {
+    const q = itemSearch.trim().toLowerCase();
+    if (!q || !data) return [];
+    const onChecklist = new Set(checklistItems.map(i => i.id));
+    return (data.items || [])
+      .filter(i => carriedIds.has(i.id) && !onChecklist.has(i.id))
+      .filter(i => i.name.toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [itemSearch, data, carriedIds, checklistItems]);
+
+  function addExtraItem(item) {
+    setExtraItems(prev => (prev.some(i => i.id === item.id) ? prev : [...prev, item]));
+    setItemSearch('');
+  }
+
+  function removeExtraItem(itemId) {
+    setExtraItems(prev => prev.filter(i => i.id !== itemId));
+    setLevels(prev => {
+      if (!(itemId in prev)) return prev;
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+  }
 
   // Last-known flag per item at this site, for context only -- staff still
   // has to make an explicit tap, this doesn't pre-fill anything.
@@ -185,6 +245,8 @@ export default function PublicStockCheckView({ token }) {
   function startCheck() {
     if (!selectedGroupId || !selectedLocationId) return;
     setLevels({});
+    setExtraItems([]);
+    setItemSearch('');
     setSubmitError(null);
     setConfirmIncomplete(false);
     setStep('checklist');
@@ -199,6 +261,8 @@ export default function PublicStockCheckView({ token }) {
     setStep('setup');
     setSelectedGroupId(null);
     setLevels({});
+    setExtraItems([]);
+    setItemSearch('');
     setSubmitError(null);
     setConfirmIncomplete(false);
   }
@@ -239,6 +303,8 @@ export default function PublicStockCheckView({ token }) {
     setStep('setup');
     setSelectedGroupId(null);
     setLevels({});
+    setExtraItems([]);
+    setItemSearch('');
     setDoneSummary(null);
     setSubmitError(null);
   }
@@ -346,6 +412,12 @@ export default function PublicStockCheckView({ token }) {
               levels={levels}
               onSetLevel={setLevel}
               existingFlagByItem={existingFlagByItem}
+              extraItemIds={extraItemIds}
+              onRemoveExtra={removeExtraItem}
+              itemSearch={itemSearch}
+              onItemSearchChange={setItemSearch}
+              searchResults={searchResults}
+              onAddExtra={addExtraItem}
               checkedCount={checkedCount}
               onChangeChecklist={changeChecklist}
               onSubmit={handleSubmit}
@@ -371,20 +443,12 @@ export default function PublicStockCheckView({ token }) {
 }
 
 function SetupStep({ data, selectedGroupId, onSelectGroup, selectedLocationId, onSelectLocation, name, onNameChange, onStart }) {
-  if (data.groups.length === 0) {
-    return (
-      <div style={{ padding: '28px 10px', textAlign: 'center' }}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}><BoxIcon /></div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: TEXT_PRIMARY }}>No checklists set up yet</div>
-        <div style={{ fontSize: 12.5, color: TEXT_FAINT, marginTop: 4 }}>Ask an admin to create one in R-Stock &rarr; Groups.</div>
-      </div>
-    );
-  }
+  const hasGroups = data.groups.length > 0;
 
   return (
     <div>
       <label style={eyebrowStyle}>Which checklist?</label>
-      <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 18, border: `1px solid ${CARD_BORDER}`, borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', marginBottom: hasGroups ? 18 : 8, border: `1px solid ${CARD_BORDER}`, borderRadius: 10, overflow: 'hidden' }}>
         {data.groups.map((g, idx) => {
           const active = selectedGroupId === g.id;
           return (
@@ -412,7 +476,42 @@ function SetupStep({ data, selectedGroupId, onSelectGroup, selectedLocationId, o
             </button>
           );
         })}
+
+        {/* Always available, even with no curated lists -- jumps straight
+            to an empty checklist built out of searched-and-added items. */}
+        {(() => {
+          const active = selectedGroupId === CUSTOM_GROUP_ID;
+          return (
+            <button
+              type="button"
+              onClick={() => onSelectGroup(CUSTOM_GROUP_ID)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                padding: '13px 14px', cursor: 'pointer', fontFamily: FONT, textAlign: 'left', border: 'none',
+                borderTop: hasGroups ? `1px solid ${ROW_BORDER}` : 'none',
+                background: active ? ACCENT_BG : '#ffffff',
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                <span style={{
+                  width: 24, height: 24, flexShrink: 0, borderRadius: 999, background: active ? BRAND : '#F1F5F9',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <PlusIcon color={active ? '#ffffff' : TEXT_MUTED} />
+                </span>
+                <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, color: TEXT_PRIMARY }}>Other Items</span>
+              </span>
+              <span style={{ fontSize: 11.5, color: TEXT_FAINT, flexShrink: 0 }}>Search &amp; flag</span>
+            </button>
+          );
+        })()}
       </div>
+
+      {!hasGroups && (
+        <div style={{ fontSize: 12, color: TEXT_FAINT, marginBottom: 16 }}>
+          No checklists set up yet -- ask an admin to create one in R-Stock &rarr; Groups, or flag items individually above.
+        </div>
+      )}
 
       {selectedGroupId && (
         <>
@@ -453,7 +552,11 @@ function SetupStep({ data, selectedGroupId, onSelectGroup, selectedLocationId, o
   );
 }
 
-function ChecklistStep({ items, levels, onSetLevel, existingFlagByItem, checkedCount, onChangeChecklist, onSubmit, submitting, submitError, confirmIncomplete }) {
+function ChecklistStep({
+  items, levels, onSetLevel, existingFlagByItem, extraItemIds, onRemoveExtra,
+  itemSearch, onItemSearchChange, searchResults, onAddExtra,
+  checkedCount, onChangeChecklist, onSubmit, submitting, submitError, confirmIncomplete,
+}) {
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
@@ -467,21 +570,37 @@ function ChecklistStep({ items, levels, onSetLevel, existingFlagByItem, checkedC
       </div>
 
       {items.length === 0 ? (
-        <div style={{ padding: '28px 10px', textAlign: 'center' }}>
-          <div style={{ fontSize: 13.5, color: TEXT_MUTED }}>None of this checklist's SKUs are carried at this site.</div>
+        <div style={{ padding: '18px 10px 22px', textAlign: 'center' }}>
+          <div style={{ fontSize: 13.5, color: TEXT_MUTED }}>No items yet &mdash; search below to flag one.</div>
         </div>
       ) : (
         <div style={{ marginBottom: 14 }}>
           {items.map((item, idx) => {
             const existing = !levels[item.id] ? existingFlagByItem.get(item.id) : null;
+            const isExtra = extraItemIds.has(item.id);
             return (
               <div key={item.id} style={{ borderTop: idx === 0 ? 'none' : `1px solid ${ROW_BORDER}`, padding: '13px 0' }}>
-                <div style={{ marginBottom: 9 }}>
-                  <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT_PRIMARY }}>{item.name}</div>
-                  <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 1 }}>
-                    {item.sku} &middot; {item.uom}
-                    {existing && ` · previously ${LEVEL_LABEL[existing.staff_flag_level].toLowerCase()} (${timeAgo(existing.staff_flagged_at)})`}
+                <div style={{ marginBottom: 9, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT_PRIMARY }}>{item.name}</div>
+                    <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 1 }}>
+                      {item.sku} &middot; {item.uom}
+                      {existing && ` · previously ${LEVEL_LABEL[existing.staff_flag_level].toLowerCase()} (${timeAgo(existing.staff_flagged_at)})`}
+                    </div>
                   </div>
+                  {isExtra && (
+                    <button
+                      type="button"
+                      onClick={() => onRemoveExtra(item.id)}
+                      aria-label={`Remove ${item.name}`}
+                      style={{
+                        flexShrink: 0, width: 24, height: 24, borderRadius: 999, border: 'none', background: LABEL_BG,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: TEXT_FAINT,
+                      }}
+                    >
+                      <XIcon />
+                    </button>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {LEVELS.map(l => {
@@ -510,6 +629,50 @@ function ChecklistStep({ items, levels, onSetLevel, existingFlagByItem, checkedC
           })}
         </div>
       )}
+
+      {/* Search & add -- always available, whether this checklist came
+          from a curated list or is being built entirely from scratch. */}
+      <div style={{ marginBottom: items.length > 0 ? 14 : 4 }}>
+        <label style={eyebrowStyle}>Flag another item</label>
+        <div style={{ position: 'relative' }}>
+          <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', display: 'flex', pointerEvents: 'none' }}>
+            <SearchIcon />
+          </span>
+          <input
+            value={itemSearch}
+            onChange={e => onItemSearchChange(e.target.value)}
+            placeholder="Search by name or SKU"
+            style={{ ...inputStyle, paddingLeft: 34 }}
+          />
+        </div>
+        {searchResults.length > 0 && (
+          <div style={{ marginTop: 8, border: `1px solid ${CARD_BORDER}`, borderRadius: 10, overflow: 'hidden' }}>
+            {searchResults.map((item, idx) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onAddExtra(item)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, width: '100%',
+                  padding: '11px 13px', cursor: 'pointer', fontFamily: FONT, textAlign: 'left', border: 'none',
+                  borderTop: idx === 0 ? 'none' : `1px solid ${ROW_BORDER}`, background: '#ffffff',
+                }}
+              >
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: TEXT_PRIMARY }}>{item.name}</span>
+                  <span style={{ display: 'block', fontSize: 11, color: TEXT_FAINT, marginTop: 1 }}>{item.sku} &middot; {item.uom}</span>
+                </span>
+                <span style={{
+                  width: 22, height: 22, flexShrink: 0, borderRadius: 999, background: ACCENT_BG,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <PlusIcon color={BRAND} />
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       {items.length > 0 && (
         <div style={{

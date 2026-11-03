@@ -183,26 +183,19 @@ export default function PublicStaffHubView({ token }) {
 
   if (!data) return null;
 
-  // Rows needed for a 2-column grid -- computed from however many tiles
-  // there actually are, so the grid keeps filling the screen edge-to-edge
-  // (via 1fr rows, not a fixed tile height) as tiles get added later,
-  // rather than needing another manual resize pass each time.
-  const rows = Math.ceil(LINKS.length / 2);
-
   return (
-    <div style={{ height: '100dvh', background: BODY_BG, display: 'flex', flexDirection: 'column', padding: '14px 14px', fontFamily: FONT, boxSizing: 'border-box' }}>
+    <div style={{ minHeight: '100dvh', background: BODY_BG, padding: '20px 14px 28px', fontFamily: FONT, boxSizing: 'border-box' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } } html, body { overscroll-behavior-y: none; }`}</style>
-      <div style={{ maxWidth: 480, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <div style={{ maxWidth: 480, width: '100%', margin: '0 auto' }}>
 
         {/* Brand header -- same gradient, logo badge and eyebrow label as
             the R-Shift emails and Stock Check, so this reads as the same
-            product. Fixed height (flexShrink: 0): the tile grid below is
-            what should dominate the screen, not this. */}
+            product. */}
         <div style={{
           background: BRAND, backgroundImage: `linear-gradient(160deg, ${BRAND}, ${BRAND_DARK})`,
           borderRadius: CARD_RADIUS, padding: '20px 22px 18px',
           boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 14px 28px -14px rgba(59,91,219,0.5)',
-          marginBottom: 14, flexShrink: 0,
+          marginBottom: 16,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
             <img src={LOGO_URL} alt="" width={38} height={38} style={{ display: 'block', borderRadius: 11, flexShrink: 0, objectFit: 'cover' }} />
@@ -216,14 +209,13 @@ export default function PublicStaffHubView({ token }) {
           </div>
         </div>
 
-        {/* App tiles -- a 2-column grid whose rows are all 1fr, so the
-            grid as a whole stretches to fill exactly whatever vertical
-            space is left (flex: 1) instead of sizing itself off a fixed
-            tile height. That's what makes this fill the screen on any
-            device -- tiles grow on a tall/wide screen, shrink on a short
-            one, but the grid always occupies the full remaining page,
-            never leaving dead space below it or needing a scroll. */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: `repeat(${rows}, 1fr)`, gap: 12, flex: 1, minHeight: 0 }}>
+        {/* App tiles -- sized to their own content (icon + label +
+            description + padding), not stretched to fill the viewport.
+            Forcing every row to 1fr left a lot of dead air inside each
+            card on a tall phone; a natural-height grid with a gap reads
+            tighter and more deliberate, and the page simply scrolls if
+            it runs past the fold. */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           {LINKS.map((link, idx) => {
             const href = `${link.path}${token}`;
             // An odd tile count leaves the last one alone in its row --
@@ -234,15 +226,15 @@ export default function PublicStaffHubView({ token }) {
                 key={link.key}
                 href={href}
                 style={{
-                  display: 'flex', flexDirection: isDangling ? 'row' : 'column', alignItems: 'center', justifyContent: 'center', gap: isDangling ? 14 : 10,
+                  display: 'flex', flexDirection: isDangling ? 'row' : 'column', alignItems: 'center', justifyContent: isDangling ? 'flex-start' : 'center', gap: isDangling ? 14 : 10,
                   background: 'white', borderRadius: CARD_RADIUS, boxShadow: TILE_SHADOW,
-                  textDecoration: 'none', minHeight: 0, padding: isDangling ? '14px 18px' : '16px 10px',
+                  textDecoration: 'none', padding: isDangling ? '16px 18px' : '20px 10px',
                   gridColumn: isDangling ? '1 / -1' : undefined,
                 }}
               >
                 <div style={{
-                  width: 52, height: 52, borderRadius: 16, background: link.tint, flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, lineHeight: 1,
+                  width: 48, height: 48, borderRadius: 15, background: link.tint, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, lineHeight: 1,
                 }}>
                   {link.icon}
                 </div>
@@ -255,7 +247,7 @@ export default function PublicStaffHubView({ token }) {
           })}
         </div>
 
-        <div style={{ textAlign: 'center', padding: '16px 4px 0', flexShrink: 0 }}>
+        <div style={{ textAlign: 'center', padding: '20px 4px 0' }}>
           <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: 999, background: BRAND, marginRight: 6, verticalAlign: 'middle' }} />
           <span style={{ fontSize: 11, color: TEXT_FAINT, verticalAlign: 'middle' }}>R-Shift</span>
           <div style={{ fontSize: 10, color: TEXT_FAINT, marginTop: 3 }}>No login required</div>
