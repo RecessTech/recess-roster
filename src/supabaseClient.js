@@ -1139,12 +1139,12 @@ export const db = {
     return data;
   },
 
-  // Dismisses a staff-raised "running low" flag once an admin has reviewed
+  // Dismisses a staff-raised flag (either tier) once an admin has reviewed
   // it -- doesn't touch current_status, that's a separate, deliberate call.
   async clearStockItemFlag(siteRowId) {
     const { data, error } = await supabase
       .from('stock_item_sites')
-      .update({ staff_flagged_low: false, staff_flagged_at: null, staff_flagged_by_name: null, updated_at: new Date().toISOString() })
+      .update({ staff_flag_level: null, staff_flagged_at: null, staff_flagged_by_name: null, updated_at: new Date().toISOString() })
       .eq('id', siteRowId)
       .select()
       .single();
@@ -1191,6 +1191,64 @@ export const db = {
       .single();
     if (error) throw error;
     return data;
+  },
+
+  // ── Stock: SKU Groups ────────────────────────────────────────────────────────
+  // Admin-curated, named checklists for the mobile Stock Check page (e.g.
+  // "Bus Stop", "FOH") -- independent of stock_items.category, which is a
+  // broad supplier/accounting code, not a role-based checklist.
+
+  async getSkuGroupsWithItems(orgId) {
+    const { data, error } = await supabase
+      .from('sku_groups')
+      .select('*, sku_group_items(id, item_id, sort_order)')
+      .eq('org_id', orgId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data || []).map(g => ({
+      ...g,
+      items: (g.sku_group_items || []).sort((a, b) => a.sort_order - b.sort_order),
+      sku_group_items: undefined,
+    }));
+  },
+
+  async createSkuGroup(orgId, name) {
+    const { data, error } = await supabase
+      .from('sku_groups')
+      .insert([{ org_id: orgId, name }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateSkuGroup(groupId, updates) {
+    const { data, error } = await supabase
+      .from('sku_groups')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', groupId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteSkuGroup(groupId) {
+    const { error } = await supabase.from('sku_groups').delete().eq('id', groupId);
+    if (error) throw error;
+  },
+
+  // Full replace -- simpler than tracking individual add/remove/reorder
+  // calls from an admin UI that just manages one ordered list at a time.
+  async setSkuGroupItems(groupId, orderedItemIds) {
+    const { error: deleteError } = await supabase.from('sku_group_items').delete().eq('group_id', groupId);
+    if (deleteError) throw deleteError;
+    if (orderedItemIds.length === 0) return [];
+    const rows = orderedItemIds.map((itemId, i) => ({ group_id: groupId, item_id: itemId, sort_order: i }));
+    const { data, error } = await supabase.from('sku_group_items').insert(rows).select();
+    if (error) throw error;
+    return data || [];
   },
 
   // ── Stock: Order history ────────────────────────────────────────────────────
