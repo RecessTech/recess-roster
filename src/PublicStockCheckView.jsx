@@ -2,20 +2,35 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from './supabaseClient';
 
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
-const ORANGE = '#C2410C';
-const ORANGE_DK = '#9A3412';
 const NAME_STORAGE_KEY = 'stockCheck_yourName';
 
-const CARD_RADIUS = 16;
-const CARD_SHADOW = '0 1px 2px rgba(15,23,42,0.04), 0 6px 20px -8px rgba(15,23,42,0.10)';
-const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+// Tactile Clipboard: a literal paper-checklist metaphor (kraft paper, ruled
+// lines, square checkboxes, a stamped submit button) instead of the
+// gradient-header/pill-badge template the rest of the staff pages use --
+// this is the pilot for a broader design-language rethink, scoped to just
+// this one feature for now.
+const PAPER = '#F2EADA';
+const PAPER_LIGHT = '#FBF6EC';
+const INK = '#2A2A28';
+const INK_MUTED = '#6B6456';
+const INK_FAINT = '#A89F8C';
+const RED = '#C1442D';
+const AMBER = '#D9A441';
+const BORDER_LIGHT = '#C9C0AC';
+const DASH = '#BDB3A0';
+
+const DISPLAY_FONT = "'Archivo Black', sans-serif";
+const BODY_FONT = "'DM Sans', sans-serif";
 
 const LEVELS = [
-  { key: 'ok',         label: 'Stocked',     color: '#15803D', tint: '#F0FDF4' },
-  { key: 'low',        label: 'Running Low', color: '#BE185D', tint: '#FDF2F8' },
-  { key: 'order_soon', label: 'Urgent',      color: '#DC2626', tint: '#FEF2F2' },
+  { key: 'ok',         label: 'Stocked',     fill: INK },
+  { key: 'low',        label: 'Running Low', fill: AMBER },
+  { key: 'order_soon', label: 'Urgent',      fill: RED },
 ];
 const LEVEL_LABEL = Object.fromEntries(LEVELS.map(l => [l.key, l.label]));
+// Amber reads better with dark text on it than light -- the other two fills
+// are dark/saturated enough that paper-colored text is the contrast winner.
+const LEVEL_TEXT_ON_FILL = { ok: PAPER, low: INK, order_soon: PAPER };
 
 function timeAgo(iso) {
   if (!iso) return '';
@@ -40,18 +55,68 @@ function storeName(name) {
 // iOS Safari auto-zooms the whole page on focus for any text input/select
 // under 16px -- 16px avoids it without disabling pinch-zoom.
 const inputStyle = {
-  width: '100%', fontSize: 16, padding: '11px 12px', borderRadius: 10,
-  border: '1px solid #E5E9EF', color: '#1E293B', fontFamily: 'inherit', boxSizing: 'border-box',
-  background: '#FAFBFC',
+  width: '100%', fontSize: 16, padding: '12px 14px', fontFamily: BODY_FONT,
+  border: `2px solid ${INK}`, color: INK, background: PAPER_LIGHT, boxSizing: 'border-box',
 };
-const labelStyle = { fontSize: 10.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'block' };
-const pillButtonStyle = (active, tint) => ({
-  padding: '8px 15px', borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-  border: active ? 'none' : '1px solid #E5E9EF',
-  background: active ? tint : 'white',
-  color: active ? 'white' : '#475569',
-  transition: 'background 0.15s, color 0.15s',
-});
+const labelStyle = {
+  fontSize: 11, fontWeight: 700, color: INK_MUTED, textTransform: 'uppercase',
+  letterSpacing: '0.08em', marginBottom: 8, display: 'block', fontFamily: BODY_FONT,
+};
+
+function HomeIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+      <path d="M3 11l9-8 9 8" />
+      <path d="M5 10v10h14V10" />
+    </svg>
+  );
+}
+function CheckIcon({ size = 14, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="3" aria-hidden="true">
+      <path d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+function BoxIcon() {
+  return (
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth="1.6" aria-hidden="true">
+      <path d="M3 8l9-5 9 5-9 5-9-5z" />
+      <path d="M3 8v8l9 5 9-5V8" />
+      <path d="M12 13v8" />
+    </svg>
+  );
+}
+function WarningIcon() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={RED} strokeWidth="1.8" aria-hidden="true">
+      <path d="M12 4l9 16H3L12 4z" />
+      <path d="M12 10v4" />
+      <path d="M12 17h.01" />
+    </svg>
+  );
+}
+
+// A stamped, offset-shadow button -- the house style for every primary
+// action on this page (Start Check, Submit Check, Run Another Check).
+function StampButton({ children, onClick, disabled, type = 'button' }) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: '100%', fontFamily: DISPLAY_FONT, fontSize: 14, letterSpacing: '0.02em',
+        textTransform: 'uppercase', color: INK, background: PAPER_LIGHT,
+        border: `2.5px solid ${INK}`, boxShadow: disabled ? 'none' : `4px 4px 0 ${INK}`,
+        padding: '14px 20px', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.55 : 1,
+        transform: disabled ? 'translate(4px, 4px)' : 'none',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
 // Staff-facing, no login: a quick EOD walk through an admin-curated SKU
 // group (see R-Stock -> Groups), tapping each item Stocked/Running Low/Urgent, then
@@ -195,28 +260,31 @@ export default function PublicStockCheckView({ token }) {
     setSubmitError(null);
   }
 
+  const fontImport = "@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=DM+Sans:wght@400;500;700&display=swap');";
+
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: '#F4F6F8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ minHeight: '100vh', background: PAPER, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <style>{`${fontImport} @keyframes spin { to { transform: rotate(360deg); } }`}</style>
         <div style={{ textAlign: 'center' }}>
           <div style={{
-            width: 36, height: 36, border: '3px solid #E2E8F0', borderTopColor: ORANGE,
+            width: 32, height: 32, border: `3px solid ${BORDER_LIGHT}`, borderTopColor: RED,
             borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite'
           }} />
-          <p style={{ color: '#64748B', fontSize: 14, fontFamily: FONT }}>Loading Stock Check…</p>
+          <p style={{ color: INK_MUTED, fontSize: 14, fontFamily: BODY_FONT }}>Loading Stock Check…</p>
         </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
   if (error && !data) {
     return (
-      <div style={{ minHeight: '100vh', background: '#F4F6F8', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div style={{ background: 'white', borderRadius: 16, padding: '32px 24px', maxWidth: 360, textAlign: 'center', boxShadow: CARD_SHADOW }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
-          <p style={{ color: '#1E293B', fontWeight: 700, marginBottom: 6, fontFamily: FONT }}>Couldn't load Stock Check</p>
-          <p style={{ color: '#64748B', fontSize: 13, fontFamily: FONT }}>{error}</p>
+      <div style={{ minHeight: '100vh', background: PAPER, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <style>{fontImport}</style>
+        <div style={{ background: PAPER_LIGHT, border: `2px solid ${INK}`, padding: '32px 24px', maxWidth: 340, textAlign: 'center' }}>
+          <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}><WarningIcon /></div>
+          <p style={{ color: INK, fontFamily: DISPLAY_FONT, fontSize: 14, marginBottom: 8, textTransform: 'uppercase' }}>Couldn't load Stock Check</p>
+          <p style={{ color: INK_MUTED, fontSize: 13, fontFamily: BODY_FONT }}>{error}</p>
         </div>
       </div>
     );
@@ -224,88 +292,77 @@ export default function PublicStockCheckView({ token }) {
 
   if (!data) return null;
 
-  const statusPill = step === 'checklist'
-    ? `${checkedCount}/${checklistItems.length} checked`
+  const subtitle = step === 'checklist'
+    ? `${selectedGroup?.name || ''} · ${data.locations.find(l => l.id === selectedLocationId)?.name || ''}`
     : step === 'done'
-    ? 'Submitted'
-    : `${data.groups.length} checklist${data.groups.length !== 1 ? 's' : ''} available`;
+    ? 'Checklist complete'
+    : 'No login required';
+
+  const statusText = step === 'checklist'
+    ? `${checkedCount}/${checklistItems.length} CHECKED`
+    : step === 'done'
+    ? 'SUBMITTED'
+    : `${data.groups.length} LIST${data.groups.length !== 1 ? 'S' : ''}`;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F4F6F8', padding: '16px 12px 32px', fontFamily: FONT, touchAction: 'manipulation' }}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      <div style={{ maxWidth: 460, margin: '0 auto' }}>
+    <div style={{ minHeight: '100vh', ...{ background: PAPER, backgroundImage: 'repeating-linear-gradient(to bottom, transparent 0, transparent 34px, rgba(42,42,40,0.07) 35px)' }, fontFamily: BODY_FONT, touchAction: 'manipulation' }}>
+      <style>{`${fontImport} @keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div style={{ maxWidth: 460, margin: '0 auto', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
 
         {/* Header */}
-        <div style={{
-          background: `linear-gradient(135deg, ${ORANGE}, #EA580C)`, borderRadius: CARD_RADIUS,
-          padding: '20px 20px 18px', boxShadow: '0 10px 24px -10px rgba(194,65,12,0.5)', marginBottom: 12,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>
-                {data.businessName}
-              </div>
-              <div style={{ color: 'white', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.15 }}>
-                Stock Check
-              </div>
-            </div>
-            <a
-              href={`/hub/${token}`}
-              title="Back to Staff Hub"
-              style={{
-                width: 36, height: 36, borderRadius: 999, background: 'rgba(255,255,255,0.16)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none',
-                fontSize: 16, flexShrink: 0,
-              }}
-            >
-              🏠
+        <div style={{ padding: '26px 20px 16px', borderBottom: `3px double ${INK}`, display: 'flex', flexDirection: 'column', gap: 10, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: INK_MUTED }}>{data.businessName}</div>
+            <a href={`/hub/${token}`} aria-label="Back to Staff Hub" style={{ color: INK, textDecoration: 'none', display: 'flex' }}>
+              <HomeIcon />
             </a>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
-            <span style={{
-              background: 'white', color: ORANGE_DK,
-              fontSize: 12.5, fontWeight: 800, padding: '5px 12px', borderRadius: 999,
-            }}>
-              {statusPill}
-            </span>
-            <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11.5, fontWeight: 500 }}>No login required</span>
+          <h1 style={{ margin: 0, fontFamily: DISPLAY_FONT, fontSize: 24, textTransform: 'uppercase', letterSpacing: '0.01em', color: INK }}>
+            Stock Check
+          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: INK_MUTED, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: RED, whiteSpace: 'nowrap' }}>{statusText}</span>
           </div>
         </div>
 
-        {step === 'setup' && (
-          <SetupStep
-            data={data}
-            selectedGroupId={selectedGroupId}
-            onSelectGroup={setSelectedGroupId}
-            selectedLocationId={selectedLocationId}
-            onSelectLocation={setSelectedLocationId}
-            name={name}
-            onNameChange={handleNameChange}
-            onStart={startCheck}
-          />
-        )}
+        <div style={{ padding: '18px 20px 28px', flex: 1, display: 'flex', flexDirection: 'column' }}>
 
-        {step === 'checklist' && (
-          <ChecklistStep
-            group={selectedGroup}
-            items={checklistItems}
-            levels={levels}
-            onSetLevel={setLevel}
-            existingFlagByItem={existingFlagByItem}
-            checkedCount={checkedCount}
-            onChangeChecklist={changeChecklist}
-            onSubmit={handleSubmit}
-            submitting={submitting}
-            submitError={submitError}
-            confirmIncomplete={confirmIncomplete}
-          />
-        )}
+          {step === 'setup' && (
+            <SetupStep
+              data={data}
+              selectedGroupId={selectedGroupId}
+              onSelectGroup={setSelectedGroupId}
+              selectedLocationId={selectedLocationId}
+              onSelectLocation={setSelectedLocationId}
+              name={name}
+              onNameChange={handleNameChange}
+              onStart={startCheck}
+            />
+          )}
 
-        {step === 'done' && (
-          <DoneStep summary={doneSummary} onRunAnother={runAnother} />
-        )}
+          {step === 'checklist' && (
+            <ChecklistStep
+              items={checklistItems}
+              levels={levels}
+              onSetLevel={setLevel}
+              existingFlagByItem={existingFlagByItem}
+              checkedCount={checkedCount}
+              onChangeChecklist={changeChecklist}
+              onSubmit={handleSubmit}
+              submitting={submitting}
+              submitError={submitError}
+              confirmIncomplete={confirmIncomplete}
+            />
+          )}
 
-        <p style={{ textAlign: 'center', color: '#B5BEC9', fontSize: 11, marginTop: 22, marginBottom: 0 }}>
+          {step === 'done' && (
+            <DoneStep summary={doneSummary} onRunAnother={runAnother} />
+          )}
+
+        </div>
+
+        <p style={{ textAlign: 'center', color: INK_FAINT, fontSize: 11, padding: '0 20px 24px', marginTop: 'auto' }}>
           Powered by Recess Roster
         </p>
       </div>
@@ -316,115 +373,136 @@ export default function PublicStockCheckView({ token }) {
 function SetupStep({ data, selectedGroupId, onSelectGroup, selectedLocationId, onSelectLocation, name, onNameChange, onStart }) {
   if (data.groups.length === 0) {
     return (
-      <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '36px 20px', textAlign: 'center' }}>
-        <div style={{ fontSize: 30, marginBottom: 8 }}>📦</div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#334155' }}>No checklists set up yet</div>
-        <div style={{ fontSize: 12.5, color: '#94A3B8', marginTop: 3 }}>Ask an admin to create one in R-Stock → Groups.</div>
+      <div style={{ border: `2px solid ${INK}`, background: PAPER_LIGHT, padding: '36px 20px', textAlign: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}><BoxIcon /></div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: INK }}>No checklists set up yet</div>
+        <div style={{ fontSize: 12.5, color: INK_MUTED, marginTop: 4 }}>Ask an admin to create one in R-Stock &rarr; Groups.</div>
       </div>
     );
   }
 
   return (
-    <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: 18 }}>
-      <div style={{ marginBottom: 14 }}>
-        <label style={labelStyle}>Which checklist?</label>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {data.groups.map(g => (
+    <div>
+      <label style={labelStyle}>Which checklist?</label>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+        {data.groups.map(g => {
+          const active = selectedGroupId === g.id;
+          return (
             <button
               key={g.id}
               type="button"
               onClick={() => onSelectGroup(g.id)}
               style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-                padding: '13px 14px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
-                border: selectedGroupId === g.id ? `1.5px solid ${ORANGE}` : '1px solid #E5E9EF',
-                background: selectedGroupId === g.id ? '#FFF7ED' : 'white',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                padding: '14px 16px', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                border: `2px solid ${INK}`, background: active ? PAPER_LIGHT : 'transparent',
               }}
             >
-              <span style={{ fontSize: 14.5, fontWeight: 700, color: '#1E293B' }}>{g.name}</span>
-              <span style={{ fontSize: 12, color: '#94A3B8', flexShrink: 0 }}>{g.items.length} SKU{g.items.length !== 1 ? 's' : ''}</span>
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 15, fontWeight: 700, color: INK }}>{g.name}</span>
+                <span style={{ display: 'block', fontSize: 11.5, color: INK_MUTED, marginTop: 2 }}>{g.items.length} SKU{g.items.length !== 1 ? 's' : ''}</span>
+              </span>
+              <span style={{
+                width: 26, height: 26, flexShrink: 0, border: `2px solid ${INK}`,
+                background: active ? INK : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {active && <CheckIcon size={14} color={PAPER} />}
+              </span>
             </button>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
       {selectedGroupId && (
         <>
-          <div style={{ marginBottom: 12 }}>
+          <div style={{ marginBottom: 16 }}>
             <label style={labelStyle}>Which site</label>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {data.locations.map(loc => (
-                <button type="button" key={loc.id} onClick={() => onSelectLocation(loc.id)} style={pillButtonStyle(selectedLocationId === loc.id, ORANGE)}>
-                  {loc.name}
-                </button>
-              ))}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {data.locations.map(loc => {
+                const active = selectedLocationId === loc.id;
+                return (
+                  <button
+                    key={loc.id}
+                    type="button"
+                    onClick={() => onSelectLocation(loc.id)}
+                    style={{
+                      flex: '1 0 auto', padding: '11px 14px', minHeight: 44, fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700,
+                      border: `2px solid ${INK}`, background: active ? INK : 'transparent', color: active ? PAPER : INK, cursor: 'pointer',
+                    }}
+                  >
+                    {loc.name}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 20 }}>
             <label style={labelStyle}>Your name</label>
             <input value={name} onChange={e => onNameChange(e.target.value)} placeholder="So this check has a name on it" style={inputStyle} />
           </div>
 
-          <button
-            type="button"
-            onClick={onStart}
-            disabled={!selectedLocationId}
-            style={{
-              width: '100%', padding: '14px', borderRadius: 11, border: 'none', cursor: 'pointer',
-              background: ORANGE, color: 'white', fontSize: 15, fontWeight: 800, fontFamily: 'inherit',
-              opacity: selectedLocationId ? 1 : 0.5,
-              boxShadow: '0 4px 12px -4px rgba(194,65,12,0.5)',
-            }}
-          >
-            Start Check
-          </button>
+          <StampButton onClick={onStart} disabled={!selectedLocationId}>Start Check</StampButton>
         </>
       )}
     </div>
   );
 }
 
-function ChecklistStep({ group, items, levels, onSetLevel, existingFlagByItem, checkedCount, onChangeChecklist, onSubmit, submitting, submitError, confirmIncomplete }) {
+function ChecklistStep({ items, levels, onSetLevel, existingFlagByItem, checkedCount, onChangeChecklist, onSubmit, submitting, submitError, confirmIncomplete }) {
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, paddingLeft: 2 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: '#334155' }}>{group?.name}</span>
-        <button type="button" onClick={onChangeChecklist} style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-          ← Change checklist
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <button
+          type="button"
+          onClick={onChangeChecklist}
+          style={{ background: 'none', border: 'none', color: INK_MUTED, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 0' }}
+        >
+          &larr; Change checklist
         </button>
       </div>
 
       {items.length === 0 ? (
-        <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '36px 20px', textAlign: 'center' }}>
-          <div style={{ fontSize: 13.5, color: '#64748B' }}>None of this checklist's SKUs are carried at this site.</div>
+        <div style={{ border: `2px solid ${INK}`, background: PAPER_LIGHT, padding: '36px 20px', textAlign: 'center' }}>
+          <div style={{ fontSize: 13.5, color: INK_MUTED }}>None of this checklist's SKUs are carried at this site.</div>
         </div>
       ) : (
-        <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, overflow: 'hidden', marginBottom: 12 }}>
+        <div style={{ marginBottom: 16 }}>
           {items.map((item, idx) => {
             const existing = !levels[item.id] ? existingFlagByItem.get(item.id) : null;
             return (
-              <div key={item.id} style={{ padding: '13px 16px', borderBottom: idx === items.length - 1 ? 'none' : '1px solid #F1F5F9' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 9 }}>
+              <div key={item.id} style={{ borderTop: idx === 0 ? 'none' : `1px dashed ${DASH}`, padding: '14px 0' }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: INK_FAINT, width: 20, flexShrink: 0 }}>{String(idx + 1).padStart(2, '0')}</span>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#1E293B' }}>{item.name}</div>
-                    <div style={{ fontSize: 11.5, color: '#94A3B8', marginTop: 1 }}>
-                      {item.sku} · {item.uom}
+                    <div style={{ fontSize: 15, fontWeight: 700, color: INK }}>{item.name}</div>
+                    <div style={{ fontSize: 11.5, color: INK_MUTED, marginTop: 1 }}>
+                      {item.sku} &middot; {item.uom}
                       {existing && ` · previously ${LEVEL_LABEL[existing.staff_flag_level].toLowerCase()} (${timeAgo(existing.staff_flagged_at)})`}
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {LEVELS.map(l => (
-                    <button
-                      key={l.key}
-                      type="button"
-                      onClick={() => onSetLevel(item.id, l.key)}
-                      style={{ ...pillButtonStyle(levels[item.id] === l.key, l.color), flex: 1, padding: '8px 6px', textAlign: 'center' }}
-                    >
-                      {l.label}
-                    </button>
-                  ))}
+                <div style={{ display: 'flex', gap: 6, paddingLeft: 30 }}>
+                  {LEVELS.map(l => {
+                    const active = levels[item.id] === l.key;
+                    const textColor = active ? LEVEL_TEXT_ON_FILL[l.key] : INK;
+                    return (
+                      <button
+                        key={l.key}
+                        type="button"
+                        onClick={() => onSetLevel(item.id, l.key)}
+                        style={{
+                          flex: 1, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                          border: `2px solid ${INK}`, background: active ? l.fill : 'transparent',
+                          color: textColor, fontSize: 11, fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase',
+                          fontFamily: BODY_FONT, cursor: 'pointer', padding: '0 4px',
+                        }}
+                      >
+                        {active && <CheckIcon size={11} color={textColor} />}
+                        {l.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -433,25 +511,16 @@ function ChecklistStep({ group, items, levels, onSetLevel, existingFlagByItem, c
       )}
 
       {confirmIncomplete && (
-        <div style={{ fontSize: 12, color: '#B45309', fontWeight: 600, marginBottom: 8, textAlign: 'center' }}>
-          {items.length - checkedCount} item{items.length - checkedCount !== 1 ? 's' : ''} not checked — tap Submit again to send anyway.
+        <div style={{ fontSize: 12.5, color: RED, fontWeight: 700, marginBottom: 10, textAlign: 'center' }}>
+          {items.length - checkedCount} item{items.length - checkedCount !== 1 ? 's' : ''} not checked &mdash; tap Submit again to send anyway.
         </div>
       )}
-      {submitError && <div style={{ fontSize: 12, color: '#DC2626', fontWeight: 500, marginBottom: 8, textAlign: 'center' }}>{submitError}</div>}
+      {submitError && <div style={{ fontSize: 12.5, color: RED, fontWeight: 500, marginBottom: 10, textAlign: 'center' }}>{submitError}</div>}
 
       {items.length > 0 && (
-        <button
-          type="button"
-          onClick={onSubmit}
-          disabled={submitting}
-          style={{
-            width: '100%', padding: '14px', borderRadius: 11, border: 'none', cursor: submitting ? 'default' : 'pointer',
-            background: ORANGE, color: 'white', fontSize: 15, fontWeight: 800, fontFamily: 'inherit', opacity: submitting ? 0.6 : 1,
-            boxShadow: submitting ? 'none' : '0 4px 12px -4px rgba(194,65,12,0.5)',
-          }}
-        >
+        <StampButton onClick={onSubmit} disabled={submitting}>
           {submitting ? 'Submitting…' : `Submit Check (${checkedCount}/${items.length})`}
-        </button>
+        </StampButton>
       )}
     </>
   );
@@ -464,22 +533,18 @@ function DoneStep({ summary, onRunAnother }) {
   if (summary?.ok > 0) parts.push(`${summary.ok} Stocked`);
 
   return (
-    <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '36px 20px', textAlign: 'center' }}>
-      <div style={{ fontSize: 34, marginBottom: 10 }}>✅</div>
-      <div style={{ fontSize: 16, fontWeight: 800, color: '#1E293B', marginBottom: 6 }}>Check submitted</div>
-      <div style={{ fontSize: 13, color: '#64748B', marginBottom: 20 }}>
+    <div style={{ border: `2px solid ${INK}`, background: PAPER_LIGHT, padding: '40px 24px', textAlign: 'center' }}>
+      <div style={{
+        width: 64, height: 64, border: `3px solid ${INK}`, margin: '0 auto 16px',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <CheckIcon size={28} color={INK} />
+      </div>
+      <div style={{ fontFamily: DISPLAY_FONT, fontSize: 17, color: INK, marginBottom: 8, textTransform: 'uppercase' }}>Check Submitted</div>
+      <div style={{ fontSize: 13.5, color: INK_MUTED, marginBottom: 24 }}>
         {parts.length > 0 ? parts.join(' · ') : 'All good — nothing flagged'}
       </div>
-      <button
-        type="button"
-        onClick={onRunAnother}
-        style={{
-          width: '100%', padding: '13px', borderRadius: 11, border: 'none', cursor: 'pointer',
-          background: ORANGE, color: 'white', fontSize: 14.5, fontWeight: 800, fontFamily: 'inherit',
-        }}
-      >
-        Run Another Check
-      </button>
+      <StampButton onClick={onRunAnother}>Run Another Check</StampButton>
     </div>
   );
 }
