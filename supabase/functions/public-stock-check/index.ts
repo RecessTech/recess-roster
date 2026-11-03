@@ -39,6 +39,8 @@ serve(async (req) => {
       return jsonResponse({ error: 'Invalid or expired link.' });
     }
 
+    let submitResult: { updated: number; skipped: number } | null = null;
+
     if (action === 'submit') {
       const { locationId, name, entries } = body;
 
@@ -73,14 +75,16 @@ serve(async (req) => {
         updated++;
       }
 
-      return jsonResponse({ success: true, updated, skipped });
+      submitResult = { updated, skipped };
     }
 
-    // Default: load the checklist config -- businessName, sites, and every
-    // active group with its ordered SKU list, plus which (item, location)
-    // pairs are actually carried where (a group's SKU might not be
-    // carried at every site) and each one's current flag, if any, so the
-    // checklist can show "already flagged" context.
+    // Load the checklist config -- businessName, sites, and every active
+    // group with its ordered SKU list, plus which (item, location) pairs
+    // are actually carried where (a group's SKU might not be carried at
+    // every site) and each one's current flag, if any, so the checklist
+    // can show "already flagged" context. Always returned, including
+    // after a submit, so the client's `data` stays a consistent shape --
+    // it unconditionally re-reads data.groups/data.siteRows every render.
     const [{ data: locations }, { data: groups }, { data: siteRows }] = await Promise.all([
       supabase.from('locations').select('id, name').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
       supabase.from('sku_groups')
@@ -111,6 +115,7 @@ serve(async (req) => {
       locations: locations || [],
       groups: cleanGroups,
       siteRows: siteRows || [],
+      ...(submitResult ? { success: true, ...submitResult } : {}),
     });
 
   } catch (err) {
