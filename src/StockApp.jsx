@@ -828,7 +828,8 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
 
   const noStock  = siteRows.filter(r => r.current_status === 'no_stock').length;
   const lowStock = siteRows.filter(r => r.current_status === 'low_stock').length;
-  const staffFlagged = siteRows.filter(r => r.staff_flagged_low).length;
+  const staffFlaggedLow = siteRows.filter(r => r.staff_flag_level === 'low').length;
+  const staffFlaggedOrderSoon = siteRows.filter(r => r.staff_flag_level === 'order_soon').length;
 
   if (locations.length === 0) {
     return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
@@ -888,14 +889,18 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                           <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone].dot}`} />
                           {info.label}
                         </span>
-                        {row.staff_flagged_low && (
+                        {row.staff_flag_level && (
                           <button
                             onClick={() => onClearFlag(row.id)}
-                            title={`Flagged low by ${row.staff_flagged_by_name || 'a staff member'}${row.staff_flagged_at ? ' on ' + new Date(row.staff_flagged_at).toLocaleDateString('en-AU') : ''} -- click to clear`}
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap bg-pink-100 text-pink-700 hover:bg-pink-200 transition-colors"
+                            title={`Flagged ${row.staff_flag_level === 'order_soon' ? 'order soon' : 'low'} by ${row.staff_flagged_by_name || 'a staff member'}${row.staff_flagged_at ? ' on ' + new Date(row.staff_flagged_at).toLocaleDateString('en-AU') : ''} -- click to clear`}
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap transition-colors ${
+                              row.staff_flag_level === 'order_soon'
+                                ? 'bg-rose-200 text-rose-800 hover:bg-rose-300'
+                                : 'bg-pink-100 text-pink-700 hover:bg-pink-200'
+                            }`}
                           >
                             <Flag size={9} className="flex-shrink-0" />
-                            Flagged low
+                            {row.staff_flag_level === 'order_soon' ? 'Order soon' : 'Flagged low'}
                             <X size={9} className="flex-shrink-0" />
                           </button>
                         )}
@@ -959,12 +964,20 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
           <span className="text-sm font-medium text-amber-700">{lowStock} item{lowStock !== 1 ? 's' : ''} running low</span>
         </div>
       )}
-      {staffFlagged > 0 && (
+      {staffFlaggedOrderSoon > 0 && (
+        <div className="flex items-center gap-2.5 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
+          <div className="w-7 h-7 rounded-full bg-rose-100 flex items-center justify-center flex-shrink-0">
+            <Flag size={14} className="text-rose-700" />
+          </div>
+          <span className="text-sm font-medium text-rose-800">{staffFlaggedOrderSoon} item{staffFlaggedOrderSoon !== 1 ? 's' : ''} flagged order soon by staff -- review below</span>
+        </div>
+      )}
+      {staffFlaggedLow > 0 && (
         <div className="flex items-center gap-2.5 bg-pink-50 border border-pink-200 rounded-xl px-4 py-3">
           <div className="w-7 h-7 rounded-full bg-pink-100 flex items-center justify-center flex-shrink-0">
             <Flag size={14} className="text-pink-600" />
           </div>
-          <span className="text-sm font-medium text-pink-700">{staffFlagged} item{staffFlagged !== 1 ? 's' : ''} flagged low by staff -- review below</span>
+          <span className="text-sm font-medium text-pink-700">{staffFlaggedLow} item{staffFlaggedLow !== 1 ? 's' : ''} flagged low by staff -- review below</span>
         </div>
       )}
 
@@ -3082,7 +3095,7 @@ export default function StockApp({ user, org }) {
   }
 
   async function handleClearFlag(siteRowId) {
-    setSites(prev => prev.map(s => s.id === siteRowId ? { ...s, staff_flagged_low: false, staff_flagged_at: null, staff_flagged_by_name: null } : s));
+    setSites(prev => prev.map(s => s.id === siteRowId ? { ...s, staff_flag_level: null, staff_flagged_at: null, staff_flagged_by_name: null } : s));
     try {
       await db.clearStockItemFlag(siteRowId);
     } catch (err) {

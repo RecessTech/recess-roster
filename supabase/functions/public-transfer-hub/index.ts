@@ -104,7 +104,7 @@ serve(async (req) => {
       if (!siteRow) return jsonResponse({ error: "That SKU isn't carried at that site." }, 400);
 
       const { error: flagError } = await supabase.from('stock_item_sites').update({
-        staff_flagged_low: true,
+        staff_flag_level: 'low',
         staff_flagged_at: new Date().toISOString(),
         staff_flagged_by_name: (name || '').trim() || null,
         updated_at: new Date().toISOString(),
