@@ -2,17 +2,17 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from './supabaseClient';
 
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
-const BLUE = '#3B5BDB';
-const RED = '#DC2626';
-const AMBER = '#D97706';
-const AMBER_INK = '#B45309';
-const INK = '#1E293B';
-const MUTED = '#64748B';
-const FAINT = '#94A3B8';
-const HAIRLINE = '#EEF1F5';
-const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-const CARD_RADIUS = 16;
-const CARD_SHADOW = '0 1px 2px rgba(15,23,42,0.04), 0 6px 20px -8px rgba(15,23,42,0.10)';
+export const BLUE = '#3B5BDB';
+export const RED = '#DC2626';
+export const AMBER = '#D97706';
+export const AMBER_INK = '#B45309';
+export const INK = '#1E293B';
+export const MUTED = '#64748B';
+export const FAINT = '#94A3B8';
+export const HAIRLINE = '#EEF1F5';
+export const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+export const CARD_RADIUS = 16;
+export const CARD_SHADOW = '0 1px 2px rgba(15,23,42,0.04), 0 6px 20px -8px rgba(15,23,42,0.10)';
 const MAX_RANGE_DAYS = 62; // keep in step with the staff-roster edge function
 
 // A staff member's own roster, behind a personal 4-digit PIN (see
@@ -40,13 +40,13 @@ function clearStoredPin(token) {
 
 const utc = (dateKey) => new Date(`${dateKey}T00:00:00Z`);
 
-function addDays(dateKey, n) {
+export function addDays(dateKey, n) {
   const d = utc(dateKey);
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 }
 
-function daysBetween(fromKey, toKey) {
+export function daysBetween(fromKey, toKey) {
   return Math.round((utc(toKey) - utc(fromKey)) / 86400000);
 }
 
@@ -61,7 +61,7 @@ function weekLabel(weekStart) {
     : `${fmtDate(weekStart, { day: 'numeric', month: 'short' })} – ${fmtDate(end, { day: 'numeric', month: 'short' })}`;
 }
 
-function fmtTime(hhmm) {
+export function fmtTime(hhmm) {
   const [h, m] = hhmm.split(':').map(Number);
   const suffix = h >= 12 ? 'pm' : 'am';
   const h12 = h % 12 === 0 ? 12 : h % 12;
@@ -80,7 +80,7 @@ const TIME_OPTIONS = Array.from({ length: 37 }, (_, i) => {
 });
 
 // "until 2pm" / "from 2pm" / "9am – 2pm": the window someone CAN work.
-function fmtWindow(from, to) {
+export function fmtWindow(from, to) {
   if (from && to) return `${fmtTime(from)} – ${fmtTime(to)}`;
   if (to) return `until ${fmtTime(to)}`;
   if (from) return `from ${fmtTime(from)}`;
@@ -114,7 +114,7 @@ const GLOBAL_CSS = `
 `;
 
 // A full-height column that never scrolls the page; children decide what flexes.
-function Page({ children, center }) {
+export function Page({ children, center }) {
   return (
     <div style={{ height: '100dvh', background: '#F4F6F8', fontFamily: FONT, boxSizing: 'border-box', overflow: 'hidden' }}>
       <style>{GLOBAL_CSS}</style>
@@ -129,7 +129,7 @@ function Page({ children, center }) {
   );
 }
 
-function Spinner({ label }) {
+export function Spinner({ label }) {
   return (
     <Page center>
       <div style={{ textAlign: 'center' }}>
@@ -147,7 +147,7 @@ const primaryBtn = (color) => ({
 
 // ── PIN entry ───────────────────────────────────────────────────────────────
 
-function PinPad({ token, busy, error, locked, onSubmit }) {
+export function PinPad({ token, busy, error, locked, onSubmit, title = 'My Roster', subtitle = 'Enter your 4-digit PIN', icon = '🗓️', hint = "Don't have a PIN? Ask your manager." }) {
   const [digits, setDigits] = useState('');
   const [shakeKey, setShakeKey] = useState(0);
 
@@ -173,9 +173,9 @@ function PinPad({ token, busy, error, locked, onSubmit }) {
   return (
     <Page center>
       <div style={{ textAlign: 'center', marginBottom: 'clamp(14px, 3dvh, 28px)' }}>
-        <div style={{ width: 52, height: 52, borderRadius: 16, margin: '0 auto 10px', background: `linear-gradient(135deg, ${BLUE}, #4C6EF5)`, boxShadow: '0 10px 22px -10px rgba(59,91,219,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>🗓️</div>
-        <div style={{ fontSize: 20, fontWeight: 800, color: INK }}>My Roster</div>
-        <div style={{ fontSize: 13, color: MUTED, marginTop: 2 }}>Enter your 4-digit PIN</div>
+        <div style={{ width: 52, height: 52, borderRadius: 16, margin: '0 auto 10px', background: `linear-gradient(135deg, ${BLUE}, #4C6EF5)`, boxShadow: '0 10px 22px -10px rgba(59,91,219,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>{icon}</div>
+        <div style={{ fontSize: 20, fontWeight: 800, color: INK }}>{title}</div>
+        <div style={{ fontSize: 13, color: MUTED, marginTop: 2 }}>{subtitle}</div>
       </div>
 
       <div key={shakeKey} style={{ display: 'flex', justifyContent: 'center', gap: 16, marginBottom: 10, animation: error ? 'shake 0.35s' : 'none' }}>
@@ -190,7 +190,7 @@ function PinPad({ token, busy, error, locked, onSubmit }) {
       </div>
 
       <div style={{ height: 36, textAlign: 'center', fontSize: 12.5, lineHeight: 1.35, color: locked || error ? RED : FAINT, fontWeight: 500, marginBottom: 6, padding: '0 8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {busy ? 'Checking…' : error || "Don't have a PIN? Ask your manager."}
+        {busy ? 'Checking…' : error || hint}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, opacity: locked ? 0.4 : 1, maxWidth: 340, width: '100%', margin: '0 auto' }}>
