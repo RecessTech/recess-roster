@@ -39,6 +39,15 @@ const LINKS = [
     path: '/roster/',
   },
   {
+    key: 'day-roster',
+    label: 'Day Roster',
+    description: "Everyone's shifts, any day",
+    icon: '👥',
+    color: '#0369A1',
+    tint: '#F0F9FF',
+    path: '/dayroster/',
+  },
+  {
     key: 'production',
     label: 'R-Prod',
     description: "Today's plan",

@@ -10,6 +10,7 @@ import PublicPrepListView from './PublicPrepListView';
 import PublicChecklistsView from './PublicChecklistsView';
 import PublicStaffHubView from './PublicStaffHubView';
 import PublicMyRosterView from './PublicMyRosterView';
+import PublicDayRosterView from './PublicDayRosterView';
 import PublicCateringView from './PublicCateringView';
 import PublicBuildsView from './PublicBuildsView';
 import PublicBaristaView from './PublicBaristaView';
@@ -64,6 +65,9 @@ const PUBLIC_ALLERGENS_TOKEN = publicAllergensMatch ? publicAllergensMatch[1] : 
 
 const publicMyRosterMatch = window.location.pathname.match(/^\/roster\/([^/]+)/);
 const PUBLIC_MY_ROSTER_TOKEN = publicMyRosterMatch ? publicMyRosterMatch[1] : null;
+
+const publicDayRosterMatch = window.location.pathname.match(/^\/dayroster\/([^/]+)/);
+const PUBLIC_DAY_ROSTER_TOKEN = publicDayRosterMatch ? publicDayRosterMatch[1] : null;
 
 const publicHubMatch = window.location.pathname.match(/^\/hub\/([^/]+)/);
 const PUBLIC_HUB_TOKEN = publicHubMatch ? publicHubMatch[1] : null;
@@ -127,6 +131,9 @@ function App() {
   }
   if (PUBLIC_ALLERGENS_TOKEN) {
     return <PublicAllergensView token={PUBLIC_ALLERGENS_TOKEN} />;
+  }
+  if (PUBLIC_DAY_ROSTER_TOKEN) {
+    return <PublicDayRosterView token={PUBLIC_DAY_ROSTER_TOKEN} />;
   }
   if (PUBLIC_MY_ROSTER_TOKEN) {
     return <PublicMyRosterView token={PUBLIC_MY_ROSTER_TOKEN} />;
