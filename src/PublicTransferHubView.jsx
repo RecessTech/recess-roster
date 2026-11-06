@@ -19,6 +19,39 @@ const CARD_RADIUS = 16;
 const CARD_SHADOW = '0 1px 2px rgba(15,23,42,0.04), 0 6px 20px -8px rgba(15,23,42,0.10)';
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
+// Maps a stock_items category code onto a human label -- same mapping as
+// CateringApp's stockCategoryLabel, duplicated here since this view ships
+// standalone (no shared import graph with the rest of the app).
+const CATEGORY_LABELS = {
+  PTN: 'Protein', PHF: 'Produce & Fresh Herbs', DRY: 'Dry Goods & Grocery',
+  DAI: 'Dairy', BEV: 'Beverage', FZN: 'Frozen', PCK: 'Packaging', SNK: 'Snacks', CLN: 'Cleaning',
+};
+function categoryLabel(code) {
+  return CATEGORY_LABELS[code] || code || 'Uncategorized';
+}
+
+// Groups a long checklist into labelled category sections instead of one
+// undifferentiated wall of items -- sorts by category (stable within each
+// category, so admin-curated ordering survives) and marks the first row
+// of each cluster so the caller can render a divider there.
+function withCategoryDividers(items) {
+  const sorted = items
+    .map((item, i) => ({ item, i }))
+    .sort((a, b) => {
+      const ca = a.item.category || '';
+      const cb = b.item.category || '';
+      return ca === cb ? a.i - b.i : ca.localeCompare(cb);
+    })
+    .map(x => x.item);
+  let prevCategory = null;
+  return sorted.map((item, idx) => {
+    const cat = item.category || '';
+    const isNewCategory = idx === 0 || cat !== prevCategory;
+    prevCategory = cat;
+    return { item, isNewCategory, category: cat };
+  });
+}
+
 function timeAgo(iso) {
   if (!iso) return '';
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -89,6 +122,7 @@ export default function PublicTransferHubView({ token }) {
   const [sodGroupId, setSodGroupId] = useState(null);
   const [sodLocationId, setSodLocationId] = useState(null);
   const [sodQuantities, setSodQuantities] = useState({});
+  const [sodUnits, setSodUnits] = useState({});
   const [sodSubmitting, setSodSubmitting] = useState(false);
   const [sodError, setSodError] = useState(null);
 
@@ -165,12 +199,17 @@ export default function PublicTransferHubView({ token }) {
   function startSod() {
     if (!sodGroupId || !sodLocationId) return;
     setSodQuantities({});
+    setSodUnits(Object.fromEntries(sodItems.map(i => [i.id, 'Units'])));
     setSodError(null);
     setSodStep('checklist');
   }
 
   function setSodQty(itemId, qty) {
     setSodQuantities(prev => ({ ...prev, [itemId]: qty }));
+  }
+
+  function setSodUnit(itemId, unit) {
+    setSodUnits(prev => ({ ...prev, [itemId]: unit }));
   }
 
   function backToSodSetup() {
@@ -183,13 +222,14 @@ export default function PublicTransferHubView({ token }) {
     setSodStep('setup');
     setSodGroupId(null);
     setSodQuantities({});
+    setSodUnits({});
     setSodError(null);
   }
 
   async function submitSod() {
     const entries = sodItems
       .filter(i => Number(sodQuantities[i.id]) > 0)
-      .map(i => ({ itemId: i.id, quantity: Number(sodQuantities[i.id]), quantityUnit: i.uom }));
+      .map(i => ({ itemId: i.id, quantity: Number(sodQuantities[i.id]), quantityUnit: sodUnits[i.id] || 'Units' }));
 
     if (entries.length === 0) {
       setSodError('Add at least one item before submitting.');
@@ -510,20 +550,40 @@ export default function PublicTransferHubView({ token }) {
                   </div>
 
                   <div style={{ marginBottom: 14 }}>
-                    {sodItems.map((item, idx) => (
-                      <div
-                        key={item.id}
-                        style={{
-                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-                          padding: '11px 0', borderTop: idx === 0 ? 'none' : '1px solid #F1F5F9',
-                        }}
-                      >
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 13.5, fontWeight: 700, color: '#1E293B' }}>{item.name}</div>
-                          <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 1 }}>{item.sku ? `${item.sku} · ` : ''}{item.uom}</div>
+                    {withCategoryDividers(sodItems).map(({ item, isNewCategory, category }, idx) => (
+                      <React.Fragment key={item.id}>
+                        {isNewCategory && (
+                          <div style={{ padding: idx === 0 ? '0 0 6px' : '16px 0 6px' }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                              {categoryLabel(category)}
+                            </span>
+                          </div>
+                        )}
+                        <div
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                            padding: '11px 0', borderTop: (idx === 0 || isNewCategory) ? 'none' : '1px solid #F1F5F9',
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 13.5, fontWeight: 700, color: '#1E293B' }}>{item.name}</div>
+                            <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 1 }}>{item.sku ? `${item.sku} · ` : ''}{item.uom}</div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            <select
+                              value={sodUnits[item.id] || 'Units'}
+                              onChange={e => setSodUnit(item.id, e.target.value)}
+                              style={{
+                                fontSize: 16, fontWeight: 600, color: '#475569', borderRadius: 8, border: '1px solid #E5E9EF',
+                                background: '#FAFBFC', padding: '4px 2px', fontFamily: 'inherit', maxWidth: 72,
+                              }}
+                            >
+                              {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                            <QtyStepper value={sodQuantities[item.id] || 0} onChange={v => setSodQty(item.id, v)} accent={TEAL} />
+                          </div>
                         </div>
-                        <QtyStepper value={sodQuantities[item.id] || 0} onChange={v => setSodQty(item.id, v)} accent={TEAL} />
-                      </div>
+                      </React.Fragment>
                     ))}
                   </div>
 

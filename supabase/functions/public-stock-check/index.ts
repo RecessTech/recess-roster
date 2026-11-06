@@ -88,7 +88,7 @@ serve(async (req) => {
     const [{ data: locations }, { data: groups }, { data: siteRows }, { data: allItems }] = await Promise.all([
       supabase.from('locations').select('id, name').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
       supabase.from('sku_groups')
-        .select('id, name, sort_order, sku_group_items(item_id, sort_order, stock_items(id, name, sku, uom, active))')
+        .select('id, name, sort_order, sku_group_items(item_id, sort_order, stock_items(id, name, sku, uom, active, category))')
         .eq('org_id', org.id)
         .eq('active', true)
         .order('sort_order', { ascending: true }),
@@ -112,7 +112,7 @@ serve(async (req) => {
       items: (g.sku_group_items || [])
         .filter((gi: any) => gi.stock_items && gi.stock_items.active)
         .sort((a: any, b: any) => a.sort_order - b.sort_order)
-        .map((gi: any) => ({ id: gi.stock_items.id, name: gi.stock_items.name, sku: gi.stock_items.sku, uom: gi.stock_items.uom })),
+        .map((gi: any) => ({ id: gi.stock_items.id, name: gi.stock_items.name, sku: gi.stock_items.sku, uom: gi.stock_items.uom, category: gi.stock_items.category })),
     })).filter((g: any) => g.items.length > 0);
 
     return jsonResponse({
