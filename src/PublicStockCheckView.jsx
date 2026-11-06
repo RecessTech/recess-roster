@@ -218,7 +218,9 @@ export default function PublicStockCheckView({ token }) {
 
   const listItems = useMemo(() => {
     if (!selectedGroup) return [];
-    return selectedGroup.items.filter(i => carriedIds.has(i.id));
+    // Stock SKUs only show if actually carried at the chosen site; a
+    // prepared component has no such per-site catalog, so it always shows.
+    return selectedGroup.items.filter(i => i.kind === 'component' || carriedIds.has(i.id));
   }, [selectedGroup, carriedIds]);
 
   // The checklist is the chosen list's items plus anything staff has
@@ -267,6 +269,9 @@ export default function PublicStockCheckView({ token }) {
     for (const r of data.siteRows) {
       if (r.location_id === selectedLocationId && r.staff_flag_level) map.set(r.item_id, r);
     }
+    for (const r of (data.componentSiteRows || [])) {
+      if (r.location_id === selectedLocationId && r.staff_flag_level) map.set(r.component_id, r);
+    }
     return map;
   }, [data, selectedLocationId]);
 
@@ -300,7 +305,10 @@ export default function PublicStockCheckView({ token }) {
   }
 
   async function handleSubmit() {
-    const entries = checklistItems.map(i => ({ itemId: i.id, level: levels[i.id] || 'ok' }));
+    const entries = checklistItems.map(i => ({
+      ...(i.kind === 'component' ? { componentId: i.id } : { itemId: i.id }),
+      level: levels[i.id] || 'ok',
+    }));
     if (entries.length === 0) return;
 
     setSubmitting(true);
@@ -485,7 +493,7 @@ function SetupStep({ data, selectedGroupId, onSelectGroup, selectedLocationId, o
             >
               <span style={{ minWidth: 0 }}>
                 <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, color: TEXT_PRIMARY }}>{g.name}</span>
-                <span style={{ display: 'block', fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>{g.items.length} SKU{g.items.length !== 1 ? 's' : ''}</span>
+                <span style={{ display: 'block', fontSize: 12, color: TEXT_FAINT, marginTop: 2 }}>{g.items.length} item{g.items.length !== 1 ? 's' : ''}</span>
               </span>
               <span style={{
                 width: 24, height: 24, flexShrink: 0, borderRadius: 999,
@@ -612,7 +620,7 @@ function ChecklistStep({
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT_PRIMARY }}>{item.name}</div>
                       <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 1 }}>
-                        {item.sku} &middot; {item.uom}
+                        {(item.kind === 'component' ? 'Component' : item.sku) ? `${item.kind === 'component' ? 'Component' : item.sku} · ` : ''}{item.uom}
                         {existing && ` · previously ${LEVEL_LABEL[existing.staff_flag_level].toLowerCase()} (${timeAgo(existing.staff_flagged_at)})`}
                       </div>
                     </div>

@@ -229,7 +229,11 @@ export default function PublicTransferHubView({ token }) {
   async function submitSod() {
     const entries = sodItems
       .filter(i => Number(sodQuantities[i.id]) > 0)
-      .map(i => ({ itemId: i.id, quantity: Number(sodQuantities[i.id]), quantityUnit: sodUnits[i.id] || 'Units' }));
+      .map(i => ({
+        ...(i.kind === 'component' ? { componentId: i.id } : { itemId: i.id }),
+        quantity: Number(sodQuantities[i.id]),
+        quantityUnit: sodUnits[i.id] || 'Units',
+      }));
 
     if (entries.length === 0) {
       setSodError('Add at least one item before submitting.');
@@ -508,7 +512,7 @@ export default function PublicTransferHubView({ token }) {
                             >
                               <span style={{ minWidth: 0 }}>
                                 <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: '#1E293B' }}>{g.name}</span>
-                                <span style={{ display: 'block', fontSize: 11.5, color: '#94A3B8', marginTop: 1 }}>{g.items.length} SKU{g.items.length !== 1 ? 's' : ''}</span>
+                                <span style={{ display: 'block', fontSize: 11.5, color: '#94A3B8', marginTop: 1 }}>{g.items.length} item{g.items.length !== 1 ? 's' : ''}</span>
                               </span>
                               <span style={{
                                 width: 22, height: 22, flexShrink: 0, borderRadius: 999,
@@ -566,7 +570,7 @@ export default function PublicTransferHubView({ token }) {
                         >
                           <div style={{ marginBottom: 9 }}>
                             <div style={{ fontSize: 13.5, fontWeight: 700, color: '#1E293B' }}>{item.name}</div>
-                            <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 1 }}>{item.sku ? `${item.sku} · ` : ''}{item.uom}</div>
+                            <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 1 }}>{(item.kind === 'component' ? 'Component' : item.sku) ? `${item.kind === 'component' ? 'Component' : item.sku} · ` : ''}{item.uom}</div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
                             <select

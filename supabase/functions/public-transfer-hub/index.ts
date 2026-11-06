@@ -130,13 +130,13 @@ serve(async (req) => {
       let skipped = 0;
       const candidateRows: any[] = [];
       for (const entry of entries) {
-        const { itemId, quantity, quantityUnit } = entry || {};
+        const { itemId, componentId, quantity, quantityUnit } = entry || {};
         const qty = Number(quantity);
-        if (!itemId || !Number.isFinite(qty) || qty <= 0) { skipped++; continue; }
+        if ((!itemId && !componentId) || !Number.isFinite(qty) || qty <= 0) { skipped++; continue; }
         candidateRows.push({
           org_id: org.id,
-          stock_item_id: itemId,
-          component_id: null,
+          stock_item_id: itemId || null,
+          component_id: componentId || null,
           requesting_location_id: locationId,
           quantity: qty,
           quantity_unit: (quantityUnit || '').trim() || null,
@@ -148,12 +148,22 @@ serve(async (req) => {
 
       let created = 0;
       if (candidateRows.length > 0) {
-        // One bulk membership check instead of a query per row -- this is
-        // a whole SKU group's worth of entries (a couple dozen), not a
-        // single item.
-        const { data: validItems } = await supabase.from('stock_items').select('id').eq('org_id', org.id).in('id', candidateRows.map(r => r.stock_item_id));
-        const validIds = new Set((validItems || []).map((i: any) => i.id));
-        const toInsert = candidateRows.filter(r => validIds.has(r.stock_item_id));
+        // One bulk membership check per kind instead of a query per row --
+        // this is a whole SKU group's worth of entries (a couple dozen),
+        // not a single item.
+        const itemIds = candidateRows.filter(r => r.stock_item_id).map(r => r.stock_item_id);
+        const componentIds = candidateRows.filter(r => r.component_id).map(r => r.component_id);
+        const [{ data: validItems }, { data: validComponents }] = await Promise.all([
+          itemIds.length > 0
+            ? supabase.from('stock_items').select('id').eq('org_id', org.id).in('id', itemIds)
+            : Promise.resolve({ data: [] }),
+          componentIds.length > 0
+            ? supabase.from('recipe_components').select('id').eq('org_id', org.id).in('id', componentIds)
+            : Promise.resolve({ data: [] }),
+        ]);
+        const validItemIds = new Set((validItems || []).map((i: any) => i.id));
+        const validComponentIds = new Set((validComponents || []).map((c: any) => c.id));
+        const toInsert = candidateRows.filter(r => r.stock_item_id ? validItemIds.has(r.stock_item_id) : validComponentIds.has(r.component_id));
         skipped += candidateRows.length - toInsert.length;
 
         if (toInsert.length > 0) {
@@ -208,7 +218,7 @@ serve(async (req) => {
       // Start of Day Check walks one of these instead of making staff pick
       // items one at a time out of the full catalog.
       supabase.from('sku_groups')
-        .select('id, name, sort_order, sku_group_items(item_id, sort_order, stock_items(id, name, sku, uom, active, category))')
+        .select('id, name, sort_order, sku_group_items(item_id, component_id, sort_order, stock_items(id, name, sku, uom, active, category), recipe_components(id, name, uom, active, category))')
         .eq('org_id', org.id)
         .eq('active', true)
         .order('sort_order', { ascending: true }),
@@ -218,9 +228,11 @@ serve(async (req) => {
       id: g.id,
       name: g.name,
       items: (g.sku_group_items || [])
-        .filter((gi: any) => gi.stock_items && gi.stock_items.active)
+        .filter((gi: any) => (gi.stock_items && gi.stock_items.active) || (gi.recipe_components && gi.recipe_components.active))
         .sort((a: any, b: any) => a.sort_order - b.sort_order)
-        .map((gi: any) => ({ id: gi.stock_items.id, name: gi.stock_items.name, sku: gi.stock_items.sku, uom: gi.stock_items.uom, category: gi.stock_items.category })),
+        .map((gi: any) => gi.stock_items
+          ? { id: gi.stock_items.id, kind: 'item', name: gi.stock_items.name, sku: gi.stock_items.sku, uom: gi.stock_items.uom, category: gi.stock_items.category }
+          : { id: gi.recipe_components.id, kind: 'component', name: gi.recipe_components.name, sku: null, uom: gi.recipe_components.uom, category: gi.recipe_components.category }),
     })).filter((g: any) => g.items.length > 0);
 
     return jsonResponse({
