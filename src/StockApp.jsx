@@ -2932,12 +2932,13 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
 // "Bus Stop", "FOH") -- independent of category, since category is a broad
 // supplier/accounting code, not a role-based checklist.
 
-function GroupsTab({ groups, items, orgId, onRefresh }) {
+function GroupsTab({ groups, items, components, orgId, onRefresh }) {
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const [editingGroup, setEditingGroup] = useState(null);
   const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+  const componentById = useMemo(() => new Map(components.map(c => [c.id, c])), [components]);
 
   async function add() {
     if (!name.trim()) { toast.error('Name is required'); return; }
@@ -3011,12 +3012,12 @@ function GroupsTab({ groups, items, orgId, onRefresh }) {
                 </div>
                 <div className="min-w-0">
                   <div className={`text-sm font-medium truncate ${group.active ? 'text-gray-900' : 'text-gray-400 line-through'}`}>{group.name}</div>
-                  <div className="text-xs text-gray-400">{group.items.length} SKU{group.items.length !== 1 ? 's' : ''}</div>
+                  <div className="text-xs text-gray-400">{group.items.length} item{group.items.length !== 1 ? 's' : ''}</div>
                 </div>
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
                 <button onClick={() => setEditingGroup(group)} className="px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
-                  Edit SKUs
+                  Edit Items
                 </button>
                 <button onClick={() => rename(group)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors" title="Rename">
                   <Edit2 size={13} />
@@ -3061,6 +3062,8 @@ function GroupsTab({ groups, items, orgId, onRefresh }) {
           group={editingGroup}
           items={items}
           itemById={itemById}
+          components={components}
+          componentById={componentById}
           onClose={() => setEditingGroup(null)}
           onSaved={() => { setEditingGroup(null); onRefresh(); }}
         />
@@ -3073,29 +3076,40 @@ function GroupsTab({ groups, items, orgId, onRefresh }) {
 // picker above, the current ordered list (with up/down reorder and
 // remove) below. Nothing is written until Save, consistent with keeping
 // edits explicit rather than saving on every tap.
-function GroupItemsModal({ group, items, itemById, onClose, onSaved }) {
-  const [orderedIds, setOrderedIds] = useState(() => group.items.map(gi => gi.item_id));
+function GroupItemsModal({ group, items, itemById, components, componentById, onClose, onSaved }) {
+  // A ref is { kind: 'item' | 'component', id } -- a group can mix stock
+  // SKUs with prepared recipe_components (e.g. BOH's Caesar Dressing).
+  const [orderedRefs, setOrderedRefs] = useState(() => group.items.map(gi => (
+    gi.component_id ? { kind: 'component', id: gi.component_id } : { kind: 'item', id: gi.item_id }
+  )));
   const [query, setQuery] = useState('');
   const [saving, setSaving] = useState(false);
 
   const activeItems = useMemo(() => items.filter(i => i.active), [items]);
-  const selectedSet = useMemo(() => new Set(orderedIds), [orderedIds]);
+  const activeComponents = useMemo(() => components.filter(c => c.active), [components]);
+  const selectedSet = useMemo(() => new Set(orderedRefs.map(r => `${r.kind}:${r.id}`)), [orderedRefs]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const pool = activeItems.filter(i => !selectedSet.has(i.id));
+    const itemPool = activeItems
+      .filter(i => !selectedSet.has(`item:${i.id}`))
+      .map(i => ({ kind: 'item', id: i.id, name: i.name, sku: i.sku }));
+    const componentPool = activeComponents
+      .filter(c => !selectedSet.has(`component:${c.id}`))
+      .map(c => ({ kind: 'component', id: c.id, name: c.name, sku: null }));
+    const pool = [...itemPool, ...componentPool];
     if (!q) return pool.slice(0, 30);
     return pool.filter(i => i.name.toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q)).slice(0, 30);
-  }, [activeItems, selectedSet, query]);
+  }, [activeItems, activeComponents, selectedSet, query]);
 
-  function addItem(id) {
-    setOrderedIds(prev => [...prev, id]);
+  function addRef(kind, id) {
+    setOrderedRefs(prev => [...prev, { kind, id }]);
   }
-  function removeItem(id) {
-    setOrderedIds(prev => prev.filter(x => x !== id));
+  function removeRef(kind, id) {
+    setOrderedRefs(prev => prev.filter(r => !(r.kind === kind && r.id === id)));
   }
   function move(index, dir) {
-    setOrderedIds(prev => {
+    setOrderedRefs(prev => {
       const next = [...prev];
       const target = index + dir;
       if (target < 0 || target >= next.length) return prev;
@@ -3107,7 +3121,7 @@ function GroupItemsModal({ group, items, itemById, onClose, onSaved }) {
   async function save() {
     setSaving(true);
     try {
-      await db.setSkuGroupItems(group.id, orderedIds);
+      await db.setSkuGroupItems(group.id, orderedRefs);
       toast.success('Group updated');
       onSaved();
     } catch (err) {
@@ -3122,7 +3136,7 @@ function GroupItemsModal({ group, items, itemById, onClose, onSaved }) {
     <Modal title={`Edit "${group.name}"`} onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-4">
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Add a SKU</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Add a SKU or component</label>
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
@@ -3138,13 +3152,13 @@ function GroupItemsModal({ group, items, itemById, onClose, onSaved }) {
                 <div className="px-3 py-2 text-xs text-gray-400">No matches</div>
               ) : results.map(i => (
                 <button
-                  key={i.id}
+                  key={`${i.kind}:${i.id}`}
                   type="button"
-                  onClick={() => { addItem(i.id); setQuery(''); }}
+                  onClick={() => { addRef(i.kind, i.id); setQuery(''); }}
                   className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between gap-2"
                 >
                   <span className="font-medium text-gray-900 truncate">{i.name}</span>
-                  <span className="text-xs text-gray-400 shrink-0">{i.sku}</span>
+                  <span className="text-xs text-gray-400 shrink-0">{i.kind === 'component' ? 'Component' : i.sku}</span>
                 </button>
               ))}
             </div>
@@ -3153,29 +3167,29 @@ function GroupItemsModal({ group, items, itemById, onClose, onSaved }) {
 
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1.5">
-            {orderedIds.length} SKU{orderedIds.length !== 1 ? 's' : ''} in this group
+            {orderedRefs.length} item{orderedRefs.length !== 1 ? 's' : ''} in this group
           </label>
-          {orderedIds.length === 0 ? (
-            <p className="text-xs text-gray-400 py-3">Search above to add SKUs.</p>
+          {orderedRefs.length === 0 ? (
+            <p className="text-xs text-gray-400 py-3">Search above to add SKUs or components.</p>
           ) : (
             <div className="border border-gray-100 rounded-lg divide-y divide-gray-50 max-h-72 overflow-y-auto">
-              {orderedIds.map((id, idx) => {
-                const item = itemById.get(id);
-                if (!item) return null;
+              {orderedRefs.map((ref, idx) => {
+                const subject = ref.kind === 'component' ? componentById.get(ref.id) : itemById.get(ref.id);
+                if (!subject) return null;
                 return (
-                  <div key={id} className="flex items-center justify-between gap-2 px-3 py-2">
+                  <div key={`${ref.kind}:${ref.id}`} className="flex items-center justify-between gap-2 px-3 py-2">
                     <div className="min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">{item.name}</div>
-                      <div className="text-xs text-gray-400">{item.sku} · {item.uom}</div>
+                      <div className="text-sm font-medium text-gray-900 truncate">{subject.name}</div>
+                      <div className="text-xs text-gray-400">{ref.kind === 'component' ? 'Component' : subject.sku} · {subject.uom}</div>
                     </div>
                     <div className="flex items-center gap-0.5 flex-shrink-0">
                       <button onClick={() => move(idx, -1)} disabled={idx === 0} className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:hover:text-gray-400 transition-colors">
                         <ChevronUp size={14} />
                       </button>
-                      <button onClick={() => move(idx, 1)} disabled={idx === orderedIds.length - 1} className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:hover:text-gray-400 transition-colors">
+                      <button onClick={() => move(idx, 1)} disabled={idx === orderedRefs.length - 1} className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:hover:text-gray-400 transition-colors">
                         <ChevronDown size={14} />
                       </button>
-                      <button onClick={() => removeItem(id)} className="p-1 text-gray-400 hover:text-red-500 transition-colors">
+                      <button onClick={() => removeRef(ref.kind, ref.id)} className="p-1 text-gray-400 hover:text-red-500 transition-colors">
                         <X size={14} />
                       </button>
                     </div>
@@ -3327,6 +3341,7 @@ export default function StockApp({ user, org }) {
   const [loading, setLoading] = useState(true);
   const [selectedLocationId, setSelectedLocationId] = useState(null);
   const [skuGroups, setSkuGroups] = useState([]);
+  const [recipeComponents, setRecipeComponents] = useState([]);
 
   useEffect(() => { loadData(); }, [org?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3334,7 +3349,7 @@ export default function StockApp({ user, org }) {
     if (!org?.id) return;
     setLoading(true);
     try {
-      const [locs, stockItems, itemSites, history, confirmations, assignments, metadata, members, groups] = await Promise.all([
+      const [locs, stockItems, itemSites, history, confirmations, assignments, metadata, members, groups, components] = await Promise.all([
         db.getLocations(org.id),
         db.getStockItems(org.id),
         db.getStockItemSites(org.id),
@@ -3344,6 +3359,7 @@ export default function StockApp({ user, org }) {
         db.getSupplierMetadata(org.id),
         db.getOrgMembersWithEmail(org.id),
         db.getSkuGroupsWithItems(org.id),
+        db.getRecipeComponents(org.id),
       ]);
       setLocations(locs);
       setItems(stockItems);
@@ -3354,6 +3370,7 @@ export default function StockApp({ user, org }) {
       setSupplierMetadata(metadata);
       setOrgMembers(members);
       setSkuGroups(groups);
+      setRecipeComponents(components);
       setSelectedLocationId(prev => prev && locs.some(l => l.id === prev) ? prev : (locs.find(l => l.active)?.id || locs[0]?.id || null));
     } catch (err) {
       toast.error('Failed to load stock data: ' + (err.message || 'unknown error'));
@@ -3593,6 +3610,7 @@ export default function StockApp({ user, org }) {
         <GroupsTab
           groups={skuGroups}
           items={items}
+          components={recipeComponents}
           orgId={org.id}
           onRefresh={loadData}
         />

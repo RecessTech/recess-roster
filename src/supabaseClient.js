@@ -1201,7 +1201,7 @@ export const db = {
   async getSkuGroupsWithItems(orgId) {
     const { data, error } = await supabase
       .from('sku_groups')
-      .select('*, sku_group_items(id, item_id, sort_order)')
+      .select('*, sku_group_items(id, item_id, component_id, sort_order)')
       .eq('org_id', orgId)
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true });
@@ -1241,11 +1241,18 @@ export const db = {
 
   // Full replace -- simpler than tracking individual add/remove/reorder
   // calls from an admin UI that just manages one ordered list at a time.
-  async setSkuGroupItems(groupId, orderedItemIds) {
+  // orderedRefs is [{ kind: 'item' | 'component', id }], mirroring how a
+  // group can mix stock SKUs with prepared recipe_components.
+  async setSkuGroupItems(groupId, orderedRefs) {
     const { error: deleteError } = await supabase.from('sku_group_items').delete().eq('group_id', groupId);
     if (deleteError) throw deleteError;
-    if (orderedItemIds.length === 0) return [];
-    const rows = orderedItemIds.map((itemId, i) => ({ group_id: groupId, item_id: itemId, sort_order: i }));
+    if (orderedRefs.length === 0) return [];
+    const rows = orderedRefs.map((ref, i) => ({
+      group_id: groupId,
+      item_id: ref.kind === 'component' ? null : ref.id,
+      component_id: ref.kind === 'component' ? ref.id : null,
+      sort_order: i,
+    }));
     const { data, error } = await supabase.from('sku_group_items').insert(rows).select();
     if (error) throw error;
     return data || [];

@@ -57,21 +57,40 @@ serve(async (req) => {
       // row needs a different value, and this list is a ~25-item
       // checklist, not a bulk import, so per-row round trips are fine.
       for (const entry of entries) {
-        const { itemId, level } = entry || {};
-        if (!itemId || (level !== 'ok' && level !== 'low' && level !== 'order_soon')) { skipped++; continue; }
-
-        const { data: siteRow } = await supabase.from('stock_item_sites').select('id').eq('item_id', itemId).eq('location_id', locationId).eq('org_id', org.id).single();
-        if (!siteRow) { skipped++; continue; }
-
+        const { itemId, componentId, level } = entry || {};
+        if ((!itemId && !componentId) || (level !== 'ok' && level !== 'low' && level !== 'order_soon')) { skipped++; continue; }
         const isOk = level === 'ok';
-        const { error: updateError } = await supabase.from('stock_item_sites').update({
-          staff_flag_level: isOk ? null : level,
-          staff_flagged_at: isOk ? null : new Date().toISOString(),
-          staff_flagged_by_name: isOk ? null : ((name || '').trim() || null),
-          updated_at: new Date().toISOString(),
-        }).eq('id', siteRow.id);
 
-        if (updateError) { skipped++; continue; }
+        if (itemId) {
+          const { data: siteRow } = await supabase.from('stock_item_sites').select('id').eq('item_id', itemId).eq('location_id', locationId).eq('org_id', org.id).single();
+          if (!siteRow) { skipped++; continue; }
+
+          const { error: updateError } = await supabase.from('stock_item_sites').update({
+            staff_flag_level: isOk ? null : level,
+            staff_flagged_at: isOk ? null : new Date().toISOString(),
+            staff_flagged_by_name: isOk ? null : ((name || '').trim() || null),
+            updated_at: new Date().toISOString(),
+          }).eq('id', siteRow.id);
+
+          if (updateError) { skipped++; continue; }
+        } else {
+          const { data: component } = await supabase.from('recipe_components').select('id').eq('id', componentId).eq('org_id', org.id).single();
+          if (!component) { skipped++; continue; }
+
+          // component_sites has no pre-seeded "carried here" row the way
+          // stock_item_sites does -- upsert rather than requiring one.
+          const { error: upsertError } = await supabase.from('component_sites').upsert({
+            org_id: org.id,
+            component_id: componentId,
+            location_id: locationId,
+            staff_flag_level: isOk ? null : level,
+            staff_flagged_at: isOk ? null : new Date().toISOString(),
+            staff_flagged_by_name: isOk ? null : ((name || '').trim() || null),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'component_id,location_id' });
+
+          if (upsertError) { skipped++; continue; }
+        }
         updated++;
       }
 
@@ -85,14 +104,16 @@ serve(async (req) => {
     // can show "already flagged" context. Always returned, including
     // after a submit, so the client's `data` stays a consistent shape --
     // it unconditionally re-reads data.groups/data.siteRows every render.
-    const [{ data: locations }, { data: groups }, { data: siteRows }, { data: allItems }] = await Promise.all([
+    const [{ data: locations }, { data: groups }, { data: siteRows }, { data: componentSiteRows }, { data: allItems }] = await Promise.all([
       supabase.from('locations').select('id, name').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
       supabase.from('sku_groups')
-        .select('id, name, sort_order, sku_group_items(item_id, sort_order, stock_items(id, name, sku, uom, active, category))')
+        .select('id, name, sort_order, sku_group_items(item_id, component_id, sort_order, stock_items(id, name, sku, uom, active, category), recipe_components(id, name, uom, active, category))')
         .eq('org_id', org.id)
         .eq('active', true)
         .order('sort_order', { ascending: true }),
       supabase.from('stock_item_sites').select('item_id, location_id, staff_flag_level, staff_flagged_at, staff_flagged_by_name').eq('org_id', org.id),
+      // Mirrors siteRows but for prepared components -- see component_sites.
+      supabase.from('component_sites').select('component_id, location_id, staff_flag_level, staff_flagged_at, staff_flagged_by_name').eq('org_id', org.id),
       // Every active SKU, not just the ones curated into a group -- lets
       // staff search for and flag any item carried at their site, not only
       // what an admin has already put on a list. Small payload (a couple
@@ -110,9 +131,11 @@ serve(async (req) => {
       id: g.id,
       name: g.name,
       items: (g.sku_group_items || [])
-        .filter((gi: any) => gi.stock_items && gi.stock_items.active)
+        .filter((gi: any) => (gi.stock_items && gi.stock_items.active) || (gi.recipe_components && gi.recipe_components.active))
         .sort((a: any, b: any) => a.sort_order - b.sort_order)
-        .map((gi: any) => ({ id: gi.stock_items.id, name: gi.stock_items.name, sku: gi.stock_items.sku, uom: gi.stock_items.uom, category: gi.stock_items.category })),
+        .map((gi: any) => gi.stock_items
+          ? { id: gi.stock_items.id, kind: 'item', name: gi.stock_items.name, sku: gi.stock_items.sku, uom: gi.stock_items.uom, category: gi.stock_items.category }
+          : { id: gi.recipe_components.id, kind: 'component', name: gi.recipe_components.name, sku: null, uom: gi.recipe_components.uom, category: gi.recipe_components.category }),
     })).filter((g: any) => g.items.length > 0);
 
     return jsonResponse({
@@ -120,6 +143,7 @@ serve(async (req) => {
       locations: locations || [],
       groups: cleanGroups,
       siteRows: siteRows || [],
+      componentSiteRows: componentSiteRows || [],
       items: allItems || [],
       ...(submitResult ? { success: true, ...submitResult } : {}),
     });
