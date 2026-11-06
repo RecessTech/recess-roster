@@ -601,8 +601,8 @@ function ChecklistStep({
             return (
               <React.Fragment key={item.id}>
                 {isNewCategory && (
-                  <div style={{ padding: idx === 0 ? '0 0 8px' : '18px 0 8px' }}>
-                    <span style={{ fontSize: 10.5, fontWeight: 700, color: TEXT_FAINT, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  <div style={{ padding: idx === 0 ? '0 0 9px' : '20px 0 9px' }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: TEXT_SECONDARY, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                       {categoryLabel(category)}
                     </span>
                   </div>

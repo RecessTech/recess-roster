@@ -553,29 +553,28 @@ export default function PublicTransferHubView({ token }) {
                     {withCategoryDividers(sodItems).map(({ item, isNewCategory, category }, idx) => (
                       <React.Fragment key={item.id}>
                         {isNewCategory && (
-                          <div style={{ padding: idx === 0 ? '0 0 6px' : '16px 0 6px' }}>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                          <div style={{ padding: idx === 0 ? '0 0 8px' : '18px 0 8px' }}>
+                            <span style={{ fontSize: 12.5, fontWeight: 800, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                               {categoryLabel(category)}
                             </span>
                           </div>
                         )}
                         <div
                           style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
                             padding: '11px 0', borderTop: (idx === 0 || isNewCategory) ? 'none' : '1px solid #F1F5F9',
                           }}
                         >
-                          <div style={{ minWidth: 0 }}>
+                          <div style={{ marginBottom: 9 }}>
                             <div style={{ fontSize: 13.5, fontWeight: 700, color: '#1E293B' }}>{item.name}</div>
                             <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 1 }}>{item.sku ? `${item.sku} · ` : ''}{item.uom}</div>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
                             <select
                               value={sodUnits[item.id] || 'Units'}
                               onChange={e => setSodUnit(item.id, e.target.value)}
                               style={{
-                                fontSize: 16, fontWeight: 600, color: '#475569', borderRadius: 8, border: '1px solid #E5E9EF',
-                                background: '#FAFBFC', padding: '4px 2px', fontFamily: 'inherit', maxWidth: 72,
+                                fontSize: 14, fontWeight: 600, color: '#475569', borderRadius: 9, border: '1px solid #E5E9EF',
+                                background: '#FAFBFC', padding: '9px 8px', fontFamily: 'inherit', width: 104, flexShrink: 0,
                               }}
                             >
                               {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
