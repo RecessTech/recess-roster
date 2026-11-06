@@ -557,7 +557,7 @@ export default function PublicTransferHubView({ token }) {
                     {withCategoryDividers(sodItems).map(({ item, isNewCategory, category }, idx) => (
                       <React.Fragment key={item.id}>
                         {isNewCategory && (
-                          <div style={{ padding: idx === 0 ? '0 0 8px' : '18px 0 8px' }}>
+                          <div style={{ padding: idx === 0 ? '0 0 5px' : '14px 0 5px' }}>
                             <span style={{ fontSize: 12.5, fontWeight: 800, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                               {categoryLabel(category)}
                             </span>
@@ -565,20 +565,21 @@ export default function PublicTransferHubView({ token }) {
                         )}
                         <div
                           style={{
-                            padding: '11px 0', borderTop: (idx === 0 || isNewCategory) ? 'none' : '1px solid #F1F5F9',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                            padding: '7px 0', borderTop: (idx === 0 || isNewCategory) ? 'none' : '1px solid #F1F5F9',
                           }}
                         >
-                          <div style={{ marginBottom: 9 }}>
-                            <div style={{ fontSize: 13.5, fontWeight: 700, color: '#1E293B' }}>{item.name}</div>
-                            <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 1 }}>{(item.kind === 'component' ? 'Component' : item.sku) ? `${item.kind === 'component' ? 'Component' : item.sku} · ` : ''}{item.uom}</div>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
+                            <div style={{ fontSize: 10.5, color: '#94A3B8', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(item.kind === 'component' ? 'Component' : item.sku) ? `${item.kind === 'component' ? 'Component' : item.sku} · ` : ''}{item.uom}</div>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
                             <select
                               value={sodUnits[item.id] || 'Units'}
                               onChange={e => setSodUnit(item.id, e.target.value)}
                               style={{
-                                fontSize: 14, fontWeight: 600, color: '#475569', borderRadius: 9, border: '1px solid #E5E9EF',
-                                background: '#FAFBFC', padding: '9px 8px', fontFamily: 'inherit', width: 104, flexShrink: 0,
+                                height: 30, boxSizing: 'border-box', fontSize: 11.5, fontWeight: 600, color: '#475569', borderRadius: 7, border: '1px solid #E5E9EF',
+                                background: '#FAFBFC', padding: '0 1px', fontFamily: 'inherit', width: 78, flexShrink: 0,
                               }}
                             >
                               {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
@@ -682,13 +683,13 @@ function QtyStepper({ value, onChange, accent = TEAL }) {
   }
 
   const btnStyle = (disabled) => ({
-    width: 32, height: 32, borderRadius: 9, border: '1px solid #E5E9EF', background: disabled ? '#F8FAFC' : 'white',
-    color: disabled ? '#CBD5E1' : accent, fontSize: 17, fontWeight: 700, lineHeight: 1, cursor: disabled ? 'default' : 'pointer',
+    width: 30, height: 30, borderRadius: 8, border: '1px solid #E5E9EF', background: disabled ? '#F8FAFC' : 'white',
+    color: disabled ? '#CBD5E1' : accent, fontSize: 16, fontWeight: 700, lineHeight: 1, cursor: disabled ? 'default' : 'pointer',
     display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', flexShrink: 0,
   });
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
       <button type="button" onClick={() => step(-1)} disabled={n <= 0} style={btnStyle(n <= 0)}>&minus;</button>
       {editing ? (
         <input
@@ -698,8 +699,8 @@ function QtyStepper({ value, onChange, accent = TEAL }) {
           onBlur={commit}
           onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditing(false); }}
           style={{
-            width: 42, textAlign: 'center', fontSize: 15, fontWeight: 800, color: '#1E293B',
-            border: `1px solid ${accent}`, borderRadius: 8, background: 'white', fontFamily: 'inherit', padding: '5px 2px',
+            width: 34, textAlign: 'center', fontSize: 14, fontWeight: 800, color: '#1E293B',
+            border: `1px solid ${accent}`, borderRadius: 7, background: 'white', fontFamily: 'inherit', padding: '4px 2px',
           }}
         />
       ) : (
@@ -707,8 +708,8 @@ function QtyStepper({ value, onChange, accent = TEAL }) {
           type="button"
           onClick={startEdit}
           style={{
-            width: 42, textAlign: 'center', fontSize: 15, fontWeight: 800, background: 'none', border: 'none',
-            color: n > 0 ? '#1E293B' : '#CBD5E1', cursor: 'pointer', fontFamily: 'inherit', padding: '5px 2px',
+            width: 34, textAlign: 'center', fontSize: 14, fontWeight: 800, background: 'none', border: 'none',
+            color: n > 0 ? '#1E293B' : '#CBD5E1', cursor: 'pointer', fontFamily: 'inherit', padding: '4px 2px',
           }}
         >
           {n}
