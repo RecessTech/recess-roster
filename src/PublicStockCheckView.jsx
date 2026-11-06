@@ -40,6 +40,39 @@ const LEVELS = [
 ];
 const LEVEL_LABEL = Object.fromEntries(LEVELS.map(l => [l.key, l.label]));
 
+// Maps a stock_items category code onto a human label -- same mapping as
+// CateringApp's stockCategoryLabel, duplicated here since this view ships
+// standalone (no shared import graph with the rest of the app).
+const CATEGORY_LABELS = {
+  PTN: 'Protein', PHF: 'Produce & Fresh Herbs', DRY: 'Dry Goods & Grocery',
+  DAI: 'Dairy', BEV: 'Beverage', FZN: 'Frozen', PCK: 'Packaging', SNK: 'Snacks', CLN: 'Cleaning',
+};
+function categoryLabel(code) {
+  return CATEGORY_LABELS[code] || code || 'Uncategorized';
+}
+
+// Groups a long checklist into labelled category sections instead of one
+// undifferentiated wall of items -- sorts by category (stable within each
+// category, so admin-curated ordering survives) and marks the first row
+// of each cluster so the caller can render a divider there.
+function withCategoryDividers(items) {
+  const sorted = items
+    .map((item, i) => ({ item, i }))
+    .sort((a, b) => {
+      const ca = a.item.category || '';
+      const cb = b.item.category || '';
+      return ca === cb ? a.i - b.i : ca.localeCompare(cb);
+    })
+    .map(x => x.item);
+  let prevCategory = null;
+  return sorted.map((item, idx) => {
+    const cat = item.category || '';
+    const isNewCategory = idx === 0 || cat !== prevCategory;
+    prevCategory = cat;
+    return { item, isNewCategory, category: cat };
+  });
+}
+
 // A pseudo-group id for "flag anything" sessions that don't start from an
 // admin-curated list at all -- selecting it jumps straight to an empty
 // checklist that's built entirely out of searched-and-added items.
@@ -136,7 +169,6 @@ export default function PublicStockCheckView({ token }) {
   const [levels, setLevels] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
-  const [confirmIncomplete, setConfirmIncomplete] = useState(false);
   const [doneSummary, setDoneSummary] = useState(null);
   // Items added by search rather than picked up from the chosen list --
   // lets staff flag any SKU carried at the site, not just what's on a
@@ -213,6 +245,7 @@ export default function PublicStockCheckView({ token }) {
 
   function addExtraItem(item) {
     setExtraItems(prev => (prev.some(i => i.id === item.id) ? prev : [...prev, item]));
+    setLevels(prev => (item.id in prev ? prev : { ...prev, [item.id]: 'ok' }));
     setItemSearch('');
   }
 
@@ -237,24 +270,24 @@ export default function PublicStockCheckView({ token }) {
     return map;
   }, [data, selectedLocationId]);
 
-  const checkedCount = useMemo(
-    () => checklistItems.filter(i => levels[i.id]).length,
+  // Everything starts "Stocked" -- staff only need to tap the exceptions
+  // (Running Low / Urgent), not confirm every single item one by one.
+  const flaggedCount = useMemo(
+    () => checklistItems.filter(i => (levels[i.id] || 'ok') !== 'ok').length,
     [checklistItems, levels]
   );
 
   function startCheck() {
     if (!selectedGroupId || !selectedLocationId) return;
-    setLevels({});
+    setLevels(Object.fromEntries(listItems.map(i => [i.id, 'ok'])));
     setExtraItems([]);
     setItemSearch('');
     setSubmitError(null);
-    setConfirmIncomplete(false);
     setStep('checklist');
   }
 
   function setLevel(itemId, level) {
     setLevels(prev => ({ ...prev, [itemId]: level }));
-    setConfirmIncomplete(false);
   }
 
   function changeChecklist() {
@@ -264,22 +297,11 @@ export default function PublicStockCheckView({ token }) {
     setExtraItems([]);
     setItemSearch('');
     setSubmitError(null);
-    setConfirmIncomplete(false);
   }
 
   async function handleSubmit() {
-    const entries = checklistItems
-      .filter(i => levels[i.id])
-      .map(i => ({ itemId: i.id, level: levels[i.id] }));
-
-    if (entries.length === 0) {
-      setSubmitError('Tap at least one item before submitting.');
-      return;
-    }
-    if (entries.length < checklistItems.length && !confirmIncomplete) {
-      setConfirmIncomplete(true);
-      return;
-    }
+    const entries = checklistItems.map(i => ({ itemId: i.id, level: levels[i.id] || 'ok' }));
+    if (entries.length === 0) return;
 
     setSubmitting(true);
     setSubmitError(null);
@@ -295,7 +317,6 @@ export default function PublicStockCheckView({ token }) {
       setSubmitError(e.message || 'Could not submit the check.');
     } finally {
       setSubmitting(false);
-      setConfirmIncomplete(false);
     }
   }
 
@@ -344,7 +365,7 @@ export default function PublicStockCheckView({ token }) {
     : 'No login required';
 
   const headerPill = step === 'checklist'
-    ? `${checkedCount}/${checklistItems.length}`
+    ? (flaggedCount > 0 ? `${flaggedCount} flagged` : 'All stocked')
     : step === 'done'
     ? 'Done'
     : `${data.groups.length} list${data.groups.length !== 1 ? 's' : ''}`;
@@ -418,12 +439,11 @@ export default function PublicStockCheckView({ token }) {
               onItemSearchChange={setItemSearch}
               searchResults={searchResults}
               onAddExtra={addExtraItem}
-              checkedCount={checkedCount}
+              flaggedCount={flaggedCount}
               onChangeChecklist={changeChecklist}
               onSubmit={handleSubmit}
               submitting={submitting}
               submitError={submitError}
-              confirmIncomplete={confirmIncomplete}
             />
           )}
 
@@ -555,7 +575,7 @@ function SetupStep({ data, selectedGroupId, onSelectGroup, selectedLocationId, o
 function ChecklistStep({
   items, levels, onSetLevel, existingFlagByItem, extraItemIds, onRemoveExtra,
   itemSearch, onItemSearchChange, searchResults, onAddExtra,
-  checkedCount, onChangeChecklist, onSubmit, submitting, submitError, confirmIncomplete,
+  flaggedCount, onChangeChecklist, onSubmit, submitting, submitError,
 }) {
   return (
     <>
@@ -575,56 +595,65 @@ function ChecklistStep({
         </div>
       ) : (
         <div style={{ marginBottom: 14 }}>
-          {items.map((item, idx) => {
-            const existing = !levels[item.id] ? existingFlagByItem.get(item.id) : null;
+          {withCategoryDividers(items).map(({ item, isNewCategory, category }, idx) => {
+            const existing = existingFlagByItem.get(item.id);
             const isExtra = extraItemIds.has(item.id);
             return (
-              <div key={item.id} style={{ borderTop: idx === 0 ? 'none' : `1px solid ${ROW_BORDER}`, padding: '13px 0' }}>
-                <div style={{ marginBottom: 9, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT_PRIMARY }}>{item.name}</div>
-                    <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 1 }}>
-                      {item.sku} &middot; {item.uom}
-                      {existing && ` · previously ${LEVEL_LABEL[existing.staff_flag_level].toLowerCase()} (${timeAgo(existing.staff_flagged_at)})`}
-                    </div>
+              <React.Fragment key={item.id}>
+                {isNewCategory && (
+                  <div style={{ padding: idx === 0 ? '0 0 8px' : '18px 0 8px' }}>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: TEXT_FAINT, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                      {categoryLabel(category)}
+                    </span>
                   </div>
-                  {isExtra && (
-                    <button
-                      type="button"
-                      onClick={() => onRemoveExtra(item.id)}
-                      aria-label={`Remove ${item.name}`}
-                      style={{
-                        flexShrink: 0, width: 24, height: 24, borderRadius: 999, border: 'none', background: LABEL_BG,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: TEXT_FAINT,
-                      }}
-                    >
-                      <XIcon />
-                    </button>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {LEVELS.map(l => {
-                    const active = levels[item.id] === l.key;
-                    return (
+                )}
+                <div style={{ borderTop: (idx === 0 || isNewCategory) ? 'none' : `1px solid ${ROW_BORDER}`, padding: '13px 0' }}>
+                  <div style={{ marginBottom: 9, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT_PRIMARY }}>{item.name}</div>
+                      <div style={{ fontSize: 11.5, color: TEXT_FAINT, marginTop: 1 }}>
+                        {item.sku} &middot; {item.uom}
+                        {existing && ` · previously ${LEVEL_LABEL[existing.staff_flag_level].toLowerCase()} (${timeAgo(existing.staff_flagged_at)})`}
+                      </div>
+                    </div>
+                    {isExtra && (
                       <button
-                        key={l.key}
                         type="button"
-                        onClick={() => onSetLevel(item.id, l.key)}
+                        onClick={() => onRemoveExtra(item.id)}
+                        aria-label={`Remove ${item.name}`}
                         style={{
-                          flex: 1, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                          borderRadius: 7, border: 'none', borderLeft: active ? `4px solid ${l.color}` : `1px solid ${CARD_BORDER}`,
-                          background: active ? l.bg : '#ffffff',
-                          color: active ? l.color : TEXT_SECONDARY, fontSize: 11.5, fontWeight: 700,
-                          fontFamily: FONT, cursor: 'pointer', padding: '0 4px',
+                          flexShrink: 0, width: 24, height: 24, borderRadius: 999, border: 'none', background: LABEL_BG,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: TEXT_FAINT,
                         }}
                       >
-                        {active && <CheckIcon size={11} color={l.color} />}
-                        {l.label}
+                        <XIcon />
                       </button>
-                    );
-                  })}
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {LEVELS.map(l => {
+                      const active = (levels[item.id] || 'ok') === l.key;
+                      return (
+                        <button
+                          key={l.key}
+                          type="button"
+                          onClick={() => onSetLevel(item.id, l.key)}
+                          style={{
+                            flex: 1, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                            borderRadius: 7, border: `1.5px solid ${active ? l.color : CARD_BORDER}`,
+                            background: active ? l.bg : '#ffffff',
+                            color: active ? l.color : TEXT_SECONDARY, fontSize: 11.5, fontWeight: 700,
+                            fontFamily: FONT, cursor: 'pointer', padding: '0 4px',
+                          }}
+                        >
+                          {active && <CheckIcon size={11} color={l.color} />}
+                          {l.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              </React.Fragment>
             );
           })}
         </div>
@@ -679,21 +708,16 @@ function ChecklistStep({
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           background: ACCENT_BG, border: `1px solid ${ACCENT_BORDER}`, borderRadius: 10, padding: '11px 16px', marginBottom: 16,
         }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: ACCENT_TEXT }}>Checked</span>
-          <span style={{ fontSize: 17, fontWeight: 800, color: BRAND }}>{checkedCount}/{items.length}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: ACCENT_TEXT }}>Flagged</span>
+          <span style={{ fontSize: 17, fontWeight: 800, color: BRAND }}>{flaggedCount}/{items.length}</span>
         </div>
       )}
 
-      {confirmIncomplete && (
-        <div style={{ fontSize: 12.5, color: WARN, fontWeight: 600, marginBottom: 10, textAlign: 'center' }}>
-          {items.length - checkedCount} item{items.length - checkedCount !== 1 ? 's' : ''} not checked &mdash; tap Submit again to send anyway.
-        </div>
-      )}
       {submitError && <div style={{ fontSize: 12.5, color: BAD, fontWeight: 500, marginBottom: 10, textAlign: 'center' }}>{submitError}</div>}
 
       {items.length > 0 && (
         <button type="button" onClick={onSubmit} disabled={submitting} style={primaryButtonStyle(submitting)}>
-          {submitting ? 'Submitting…' : `Submit Check (${checkedCount}/${items.length})`}
+          {submitting ? 'Submitting…' : 'Submit Check'}
         </button>
       )}
     </>
