@@ -14,6 +14,63 @@ function fmtQty(n) {
   return num % 1 === 0 ? String(num) : num.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
+// Order-shorthand legend (sizes, drink types, modifiers, milks) used on
+// tickets -- a static reference, not a selectable drink, so it's its own
+// card rather than a picker section.
+const SYMBOL_GROUPS = [
+  {
+    title: 'Sizes',
+    entries: [
+      { sym: 'S', meaning: 'Small' },
+      { sym: 'M', meaning: 'Medium' },
+      { sym: 'L', meaning: 'Large' },
+    ],
+  },
+  {
+    title: 'Drinks',
+    entries: [
+      { sym: 'FW', meaning: 'Flat White' },
+      { sym: 'L', meaning: 'Latte' },
+      { sym: 'C', meaning: 'Cappuccino' },
+      { sym: 'Moc', meaning: 'Mocha' },
+      { sym: 'LB', meaning: 'Long Black' },
+      { sym: 'ILB', meaning: 'Iced Long Black' },
+      { sym: 'IL', meaning: 'Iced Latte' },
+      { sym: 'IMT', meaning: 'Iced Matcha' },
+      { sym: 'IMoc', meaning: 'Iced Mocha' },
+      { sym: 'P', meaning: 'Piccolo' },
+      { sym: 'E', meaning: 'Espresso' },
+      { sym: 'CH', meaning: 'Chai Latte' },
+      { sym: 'DCH', meaning: 'Dirty Chai' },
+      { sym: 'MAC', meaning: 'Macchiato' },
+    ],
+  },
+  {
+    title: 'Sweeteners & Mods',
+    entries: [
+      { sym: '+1', meaning: 'One sugar' },
+      { sym: '+2', meaning: 'Two sugars' },
+      { sym: '+E', meaning: 'Equal sweetener' },
+      { sym: '+A', meaning: 'Add agave syrup' },
+      { sym: '+C', meaning: 'Add caramel syrup' },
+      { sym: '+V', meaning: 'Add vanilla syrup' },
+      { sym: '+H', meaning: 'Add honey' },
+      { sym: 'X', meaning: 'Extra shot' },
+      { sym: '!', meaning: 'Extra hot' },
+      { sym: 'DC', meaning: 'Decaf' },
+    ],
+  },
+  {
+    title: 'Milks',
+    entries: [
+      { sym: 'A', meaning: 'Almond milk' },
+      { sym: 'Y', meaning: 'Soy milk' },
+      { sym: 'SK', meaning: 'Skim milk' },
+      { sym: 'O', meaning: 'Oat milk' },
+    ],
+  },
+];
+
 // iOS Safari auto-zooms the whole page on focus for any text input under
 // 16px -- 16px avoids it without disabling pinch-zoom.
 const yieldInputStyle = {
@@ -29,6 +86,7 @@ const yieldInputStyle = {
 // rather than one long scroll -- tap a header to expand it.
 export function BaristaPickerScreen({ businessName, token, sections, guides, onSelect }) {
   const [openCategories, setOpenCategories] = useState(() => new Set());
+  const [symbolsOpen, setSymbolsOpen] = useState(false);
 
   const toggleCategory = (category) => {
     setOpenCategories(prev => {
@@ -65,6 +123,47 @@ export function BaristaPickerScreen({ businessName, token, sections, guides, onS
         </div>
 
         <div style={{ padding: '14px 12px 4px' }}>
+          <div style={{ marginBottom: 10 }}>
+            <button
+              onClick={() => setSymbolsOpen(o => !o)}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, border: 'none',
+                padding: '13px 16px', cursor: 'pointer', fontFamily: FONT,
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: '#1E293B' }}>Symbols</span>
+                <span style={{ fontSize: 11.5, color: '#B08968', fontWeight: 600 }}>Order shorthand</span>
+              </span>
+              <span style={{
+                fontSize: 13, color: '#CBD5E1', transition: 'transform 0.15s ease',
+                transform: symbolsOpen ? 'rotate(90deg)' : 'none', display: 'inline-block',
+              }}>
+                ›
+              </span>
+            </button>
+            {symbolsOpen && (
+              <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, overflow: 'hidden', marginTop: 6, padding: '12px 16px' }}>
+                {SYMBOL_GROUPS.map((group, gi) => (
+                  <div key={group.title} style={{ marginTop: gi > 0 ? 12 : 0 }}>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                      {group.title}
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 6, columnGap: 10 }}>
+                      {group.entries.map(({ sym, meaning }) => (
+                        <div key={sym + meaning} style={{ display: 'flex', alignItems: 'baseline', gap: 6, fontSize: 13 }}>
+                          <span style={{ fontWeight: 700, color: BROWN_DK, minWidth: 28, flexShrink: 0 }}>{sym}</span>
+                          <span style={{ color: '#475569' }}>{meaning}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {sections.length === 0 ? (
             <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, padding: '32px 20px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
               No coffee or tea items found.
