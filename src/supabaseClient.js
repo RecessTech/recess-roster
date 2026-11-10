@@ -2091,6 +2091,24 @@ export const db = {
     return data;
   },
 
+  // Toggle, not a one-way flag -- the sending site's stock can arrive
+  // later, at which point whoever's actioning the queue un-flags it.
+  async flagTransferNeedsOrdering(requestId, { value, flaggedByName }) {
+    const { data, error } = await supabase
+      .from('transfer_requests')
+      .update({
+        needs_ordering: value,
+        needs_ordering_at: value ? new Date().toISOString() : null,
+        needs_ordering_by_name: value ? (flaggedByName || null) : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', requestId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
   // ── Catering (R-Cater) ───────────────────────────────────────────────────────
 
   // Every catering job for the org, oldest first -- job volume is low enough
