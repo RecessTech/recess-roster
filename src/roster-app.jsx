@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck, Link2, Package, ChefHat, BookOpen, Sparkles, UtensilsCrossed, Layers, Coffee } from 'lucide-react';
+import { X, Edit2, Trash2, Users, Clock, Copy, Clipboard, Trash, Undo2, Redo2, LogOut, BarChart3, CalendarDays, Settings, HelpCircle, FileSpreadsheet, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Rocket, Keyboard, MapPin, DollarSign, Theater, ClipboardList, ChevronLeft, ChevronRight, LayoutList, LayoutGrid, Lock, Unlock, Mail, ArrowLeftRight, CalendarCheck, CalendarX, Link2, Package, ChefHat, BookOpen, Sparkles, UtensilsCrossed, Layers, Coffee } from 'lucide-react';
 import { useAuth, signOut } from './Auth';
 import { ErrorBoundary } from './ErrorBoundary';
 import { db, supabase } from './supabaseClient';
@@ -137,6 +137,46 @@ function partialWindowLabel(av) {
   return 'part of the day';
 }
 
+// 'YYYY-MM-DD' -> local Date at midnight, and back.
+const dateFromKey = (dk) => new Date(`${dk}T00:00:00`);
+const keyFromDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const nextDayKey = (dk) => { const d = dateFromKey(dk); d.setDate(d.getDate() + 1); return keyFromDate(d); };
+
+// Contiguous runs ({start, end}, 'HH:MM', end exclusive) from one day's 15-minute slots.
+function slotRuns(slots) {
+  const runs = [];
+  [...slots].sort().forEach(slot => {
+    const [h, m] = slot.split(':').map(Number);
+    const endMins = h * 60 + m + 15;
+    const end = `${String(Math.floor(endMins / 60)).padStart(2, '0')}:${String(endMins % 60).padStart(2, '0')}`;
+    const last = runs[runs.length - 1];
+    if (last && last.end === slot) last.end = end; else runs.push({ start: slot, end });
+  });
+  return runs;
+}
+
+// Fold a sorted list of time-off rows into ranges: the same person, kind,
+// window and reason on consecutive days becomes one entry, so a week away
+// reads as one line instead of seven.
+function groupTimeOffRows(rows) {
+  const byStaff = new Map();
+  rows.forEach(r => { if (!byStaff.has(r.staff_id)) byStaff.set(r.staff_id, []); byStaff.get(r.staff_id).push(r); });
+  const groups = [];
+  byStaff.forEach((list, staffId) => {
+    list.sort((a, b) => a.date.localeCompare(b.date));
+    list.forEach(r => {
+      const last = groups[groups.length - 1];
+      const sameRun = last && last.staffId === staffId && last.status === r.status
+        && (last.startTime || null) === (r.start_time || null) && (last.endTime || null) === (r.end_time || null)
+        && (last.notes || '') === (r.notes || '') && nextDayKey(last.to) === r.date;
+      if (sameRun) { last.to = r.date; last.dates.push(r.date); }
+      else groups.push({ staffId, status: r.status, startTime: r.start_time, endTime: r.end_time, notes: r.notes || '', from: r.date, to: r.date, dates: [r.date], addedAt: r.created_at });
+    });
+  });
+  return groups.sort((a, b) => a.from.localeCompare(b.from));
+}
+
 const RosterApp = () => {
   const { user } = useAuth();
 
@@ -233,10 +273,18 @@ const RosterApp = () => {
     return d;
   });
   const [avWeekLoading, setAvWeekLoading] = useState(false);
+  // Time off list (roster toolbar > Time off): every can't-work / limited-hours entry across all weeks
+  const [timeOffRows, setTimeOffRows] = useState([]);
+  const [timeOffSchedule, setTimeOffSchedule] = useState([]); // shifts over the same dates, for clash flags
+  const [timeOffLoading, setTimeOffLoading] = useState(false);
+  const [timeOffShowPast, setTimeOffShowPast] = useState(false);
+  const [timeOffStaffFilter, setTimeOffStaffFilter] = useState('');
+  const [timeOffKind, setTimeOffKind] = useState('all'); // 'all' | 'unavailable' | 'partial'
+  const [timeOffReload, setTimeOffReload] = useState(0);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [activeView, setActiveView] = useState('roster'); // 'roster', 'analytics', or 'staff-view'
   const [isMobileView, setIsMobileView] = useState(false);
-  const [rosterView, setRosterView] = useState('weekly'); // 'weekly' | 'daily' | 'availability'
+  const [rosterView, setRosterView] = useState('weekly'); // 'weekly' | 'daily' | 'availability' | 'time-off'
   const [dailyViewDate, setDailyViewDate] = useState(() => new Date());
 
   // Detect mobile on mount and resize
@@ -626,6 +674,35 @@ const RosterApp = () => {
       .finally(() => setAvWeekLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps, no-use-before-define
   }, [org, staff.length, avWeekStart.toISOString()]); // use staff.length (state) not activeStaff.length (const after this effect)
+
+  // Time off list: all entries from today on (or the last 90 days too, if asked),
+  // plus the shifts across those dates so clashes can be flagged. Only fetched
+  // while that view is open.
+  useEffect(() => {
+    if (!org || rosterView !== 'time-off') return;
+    let cancelled = false;
+    const today = new Date();
+    const todayKey = keyFromDate(today);
+    const from = new Date(today);
+    if (timeOffShowPast) from.setDate(from.getDate() - 90);
+    setTimeOffLoading(true);
+    (async () => {
+      try {
+        const rows = await db.getTimeOff(org.id, keyFromDate(from));
+        const upcoming = rows.filter(r => r.date >= todayKey);
+        // getSchedules returns { 'date|staffId|slot': {...} }; flatten to rows
+        const schedObj = upcoming.length ? await db.getSchedules(org.id, upcoming[0].date, upcoming[upcoming.length - 1].date) : {};
+        const sched = Object.keys(schedObj).map(k => { const [date_key, staff_id, time_slot] = k.split('|'); return { date_key, staff_id, time_slot }; });
+        if (!cancelled) { setTimeOffRows(rows); setTimeOffSchedule(sched); }
+      } catch (err) {
+        console.error('Error loading time off:', err);
+        if (!cancelled) toast.error('Could not load time off');
+      } finally {
+        if (!cancelled) setTimeOffLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [org, rosterView, timeOffShowPast, timeOffReload]);
 
   // A shift's site is stamped on the shift itself (schedules.location_id);
   // shifts saved before that column existed fall back to the staff
@@ -6633,6 +6710,166 @@ Key things to verify after rebuild:
     );
   }
 
+  // Every time-off entry in one list, whatever the week: who, which dates, can't
+  // work vs limited hours, why, and whether it clashes with a rostered shift.
+  // Same plain-function convention as the other views in here.
+  const renderTimeOffView = () => {
+    const todayKey = keyFromDate(new Date());
+    const thisYear = new Date().getFullYear();
+    const staffById = new Map(staff.map(s => [s.id, s]));
+    const visibleIds = new Set(orderedStaff.map(s => s.id)); // active staff, honouring the site filter
+
+    let rows = timeOffRows.filter(r => visibleIds.has(r.staff_id));
+    if (timeOffStaffFilter) rows = rows.filter(r => r.staff_id === timeOffStaffFilter);
+    if (timeOffKind !== 'all') rows = rows.filter(r => r.status === timeOffKind);
+    const groups = groupTimeOffRows(rows);
+
+    // Shifts by person+date, to flag entries that cover a day they're rostered on
+    const slotsByDay = new Map();
+    timeOffSchedule.forEach(r => {
+      const k = `${r.staff_id}|${r.date_key}`;
+      if (!slotsByDay.has(k)) slotsByDay.set(k, []);
+      slotsByDay.get(k).push(r.time_slot);
+    });
+    const clashesFor = (g) => g.dates.filter(d => d >= todayKey).flatMap(d => {
+      const runs = slotRuns(slotsByDay.get(`${g.staffId}|${d}`) || []);
+      const bad = runs.filter(r => g.status === 'unavailable'
+        || (g.startTime && r.start < g.startTime) || (g.endTime && r.end > g.endTime));
+      return bad.length ? [{ date: d, runs: bad }] : [];
+    });
+
+    const fmt = (dk, withYear) => dateFromKey(dk).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}) });
+    const rangeLabel = (g) => {
+      const y = dateFromKey(g.from).getFullYear() !== thisYear || dateFromKey(g.to).getFullYear() !== thisYear;
+      return g.from === g.to ? fmt(g.from, y) : `${fmt(g.from, false)} – ${fmt(g.to, y)}`;
+    };
+
+    const entries = groups.map(g => ({ g, clashes: clashesFor(g) }));
+    const clashCount = entries.filter(e => e.clashes.length > 0).length;
+    const people = new Set(groups.map(g => g.staffId)).size;
+
+    // Month sections, so a long list stays scannable
+    const sections = [];
+    entries.forEach(e => {
+      const label = dateFromKey(e.g.from).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+      const last = sections[sections.length - 1];
+      if (last && last.label === label) last.items.push(e); else sections.push({ label, items: [e] });
+    });
+
+    const removeEntry = (g) => {
+      const person = staffById.get(g.staffId)?.name || 'this person';
+      setConfirmDialog({
+        title: 'Remove time off',
+        message: `Remove ${person}'s time off (${rangeLabel(g)})? They'll show as available again.`,
+        danger: true,
+        confirmLabel: 'Remove',
+        onConfirm: async () => {
+          try {
+            await Promise.all(g.dates.map(d => db.setAvailability(org.id, g.staffId, d, null)));
+            setTimeOffRows(prev => prev.filter(r => !(r.staff_id === g.staffId && g.dates.includes(r.date))));
+            setAvailability(prev => { const n = { ...prev }; g.dates.forEach(d => { delete n[`${g.staffId}|${d}`]; }); return n; });
+            toast.success('Time off removed');
+          } catch (err) {
+            console.error('Error removing time off:', err);
+            toast.error('Could not remove time off');
+          }
+        },
+      });
+    };
+
+    const kindChip = (key, label) => (
+      <button key={key} onClick={() => setTimeOffKind(key)}
+        className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${timeOffKind === key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{label}</button>
+    );
+
+    return (
+      <div className="min-w-[820px]">
+        <div className="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-3 flex-wrap">
+          <div className="mr-1">
+            <div className="text-sm font-semibold text-gray-800">Time off</div>
+            <div className="text-[11px] text-gray-400">
+              {timeOffLoading ? 'Loading…' : `${groups.length} ${groups.length === 1 ? 'entry' : 'entries'} · ${people} ${people === 1 ? 'person' : 'people'}${timeOffShowPast ? '' : ' · upcoming'}`}
+              {clashCount > 0 && <span className="text-red-600 font-semibold"> · {clashCount} clash{clashCount === 1 ? '' : 'es'} with rostered shifts</span>}
+            </div>
+          </div>
+          <div className="flex bg-gray-100 p-0.5 rounded-lg">
+            {kindChip('all', 'All')}{kindChip('unavailable', "Can't work")}{kindChip('partial', 'Limited hours')}
+          </div>
+          <select value={timeOffStaffFilter} onChange={e => setTimeOffStaffFilter(e.target.value)}
+            className="text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded px-2 py-1.5 border-none cursor-pointer">
+            <option value="">Everyone</option>
+            {orderedStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
+            <input type="checkbox" checked={timeOffShowPast} onChange={e => setTimeOffShowPast(e.target.checked)} />
+            Include past (90 days)
+          </label>
+          <button onClick={() => setTimeOffReload(n => n + 1)} className="ml-auto text-xs text-gray-500 hover:text-gray-700 font-medium">Refresh</button>
+        </div>
+
+        {!timeOffLoading && groups.length === 0 ? (
+          <div className="py-20 text-center">
+            <CalendarX size={28} className="mx-auto text-gray-300 mb-3" />
+            <div className="text-sm font-medium text-gray-600">No time off {timeOffKind !== 'all' || timeOffStaffFilter ? 'matches those filters' : 'booked'}</div>
+            <div className="text-xs text-gray-400 mt-1">Staff add it from the Roster tile on their phone.</div>
+          </div>
+        ) : (
+          <div className={timeOffLoading ? 'opacity-50 transition-opacity' : 'transition-opacity'}>
+            {sections.map(sec => (
+              <div key={sec.label}>
+                <div className="px-4 py-1.5 bg-gray-50 border-y border-gray-100 text-[11px] font-bold uppercase tracking-wider text-gray-400">{sec.label}</div>
+                {sec.items.map(({ g, clashes }) => {
+                  const person = staffById.get(g.staffId);
+                  const isPast = g.to < todayKey;
+                  const isNow = g.from <= todayKey && g.to >= todayKey;
+                  const partial = g.status === 'partial';
+                  return (
+                    <div key={`${g.staffId}-${g.from}-${g.status}`} className={`flex items-start gap-4 px-4 py-3 border-b border-gray-100 hover:bg-gray-50/60 ${isPast ? 'opacity-50' : ''}`}>
+                      <div className="w-44 shrink-0">
+                        <div className="text-sm font-semibold text-gray-800 truncate">{person?.name || 'Unknown'}</div>
+                        <div className="text-[11px] text-gray-400 truncate">
+                          {person?.employmentType}{locations.length > 0 && person?.locationId ? ` · ${locations.find(l => l.id === person.locationId)?.name || ''}` : ''}
+                        </div>
+                      </div>
+                      <div className="w-60 shrink-0">
+                        <div className="text-sm text-gray-800">
+                          {rangeLabel(g)}
+                          {isNow && <span className="ml-2 text-[10px] font-bold text-white bg-blue-600 rounded px-1.5 py-0.5 align-middle">NOW</span>}
+                        </div>
+                        <div className="text-[11px] text-gray-400">
+                          {g.dates.length} {g.dates.length === 1 ? 'day' : 'days'}{g.addedAt ? ` · added ${new Date(g.addedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}` : ''}
+                        </div>
+                      </div>
+                      <div className="w-40 shrink-0">
+                        {partial
+                          ? <span className="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-700 text-xs font-semibold whitespace-nowrap">◐ {partialWindowLabel({ startTime: g.startTime, endTime: g.endTime })}</span>
+                          : <span className="inline-block px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-semibold">✕ Can't work</span>}
+                      </div>
+                      <div className="flex-1 min-w-0 text-sm text-gray-600 break-words">{g.notes || <span className="text-gray-300">No reason given</span>}</div>
+                      <div className="w-56 shrink-0 text-xs">
+                        {clashes.length > 0 ? (
+                          <div className="text-red-600 font-semibold" title={clashes.map(c => `${fmt(c.date, false)} ${c.runs.map(r => partialWindowLabel({ startTime: r.start, endTime: r.end })).join(', ')}`).join('\n')}>
+                            ⚠ Rostered {fmt(clashes[0].date, false)} {clashes[0].runs.map(r => partialWindowLabel({ startTime: r.start, endTime: r.end })).join(', ')}
+                            {clashes.length > 1 && <span className="font-normal"> (+{clashes.length - 1} more)</span>}
+                          </div>
+                        ) : <span className="text-gray-300">—</span>}
+                      </div>
+                      <div className="w-32 shrink-0 flex justify-end gap-1">
+                        <button onClick={() => { setCurrentDate(dateFromKey(g.from < todayKey ? todayKey : g.from)); setRosterView('weekly'); }}
+                          className="text-xs px-2 py-1 rounded-md text-blue-600 hover:bg-blue-50 font-medium" title="Open this week in the roster grid">View week</button>
+                        <button onClick={() => removeEntry(g)} className="p-1.5 rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50" title="Remove"><Trash2 size={13} /></button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Read-only "who can work when" matrix for the roster week: one row per
   // staff member, Mon-Sun across, each cell their availability plus any shift
   // they're rostered on -- with a red ring where the two clash. Called as a
@@ -7327,12 +7564,17 @@ Key things to verify after rebuild:
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors border-l border-gray-200 ${rosterView === 'availability' ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
                   <CalendarCheck size={13} /> Avail.
                 </button>
+                <button onClick={() => setRosterView('time-off')}
+                  title="All time off, across every week"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors border-l border-gray-200 ${rosterView === 'time-off' ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  <CalendarX size={13} /> Time off
+                </button>
               </div>
               {/* View mode — only relevant for weekly grid */}
               {rosterView === 'weekly' && <div className="flex bg-gray-100 p-0.5 rounded-lg">
                 {[1, 3, 7].map(m => <button key={m} onClick={() => setViewMode(m)} className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{m}D</button>)}
               </div>}
-              {rosterView !== 'availability' && <>
+              {rosterView !== 'availability' && rosterView !== 'time-off' && <>
               {/* Time interval */}
               <div className="flex bg-gray-100 p-0.5 rounded-lg">
                 {[15, 30, 60].map(i => <button key={i} onClick={() => setTimeInterval(i)} className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${timeInterval === i ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{i === 60 ? '1h' : `${i}m`}</button>)}
@@ -7346,7 +7588,7 @@ Key things to verify after rebuild:
               </>}
             </div>
 
-            {rosterView !== 'availability' && <>
+            {rosterView !== 'availability' && rosterView !== 'time-off' && <>
             <div className="h-4 w-px bg-gray-200 mx-1"></div>
 
             {/* Paint mode / Template mode */}
@@ -7446,6 +7688,12 @@ Key things to verify after rebuild:
               <p className="text-sm text-gray-500 mb-5 text-center">Add your first team member to start building schedules.</p>
               <button onClick={() => setShowStaffModal(true)} className="btn-primary w-full">Add Staff</button>
             </div>
+          </div>
+        )}
+
+        {activeStaff.length > 0 && rosterView === 'time-off' && (
+          <div className="card overflow-auto relative flex-1 min-h-0">
+            {renderTimeOffView()}
           </div>
         )}
 
