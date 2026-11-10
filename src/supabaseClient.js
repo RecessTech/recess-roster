@@ -662,6 +662,22 @@ export const db = {
     return data || [];
   },
 
+  // Every "can't work" / "limited hours" entry for the org from `fromDate` on,
+  // across all staff and weeks -- the Time off list. Past entries are only
+  // fetched when asked for (fromDate in the past).
+  async getTimeOff(orgId, fromDate) {
+    const { data, error } = await supabase
+      .from('staff_availability')
+      .select('*')
+      .eq('org_id', orgId)
+      .in('status', ['unavailable', 'partial'])
+      .gte('date', fromDate)
+      .order('date', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+  },
+
   async setAvailability(orgId, staffId, date, status, startTime = null, endTime = null, notes = null) {
     if (!status) {
       // Clear: delete the row rather than upserting null (status is NOT NULL in DB)
