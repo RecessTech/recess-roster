@@ -111,6 +111,22 @@ serve(async (req) => {
       }).eq('id', requestId);
       if (updateError) return jsonResponse({ error: updateError.message }, 400);
 
+    } else if (action === 'flag_needs_ordering') {
+      // Toggle, not a one-way flag -- the sending site's stock can arrive
+      // later, at which point whoever's actioning the queue un-flags it.
+      const { requestId, value, name } = body;
+
+      const { data: request } = await supabase.from('transfer_requests').select('id').eq('id', requestId).eq('org_id', org.id).eq('status', 'open').single();
+      if (!request) return jsonResponse({ error: 'That request is no longer open.' }, 400);
+
+      const { error: updateError } = await supabase.from('transfer_requests').update({
+        needs_ordering: !!value,
+        needs_ordering_at: value ? new Date().toISOString() : null,
+        needs_ordering_by_name: value ? ((name || '').trim() || null) : null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', requestId);
+      if (updateError) return jsonResponse({ error: updateError.message }, 400);
+
     } else if (action === 'create_batch') {
       // Start of Day Check -- FOH (or any site) walks a whole SKU group
       // and submits a request for every item they actually need in one
@@ -213,7 +229,7 @@ serve(async (req) => {
       supabase.from('recipe_components').select('id, name, uom, active').eq('org_id', org.id).order('sort_order'),
       // Priority ascending puts 'high' before 'low' alphabetically -- the
       // only two values, so this stays correct without a custom order.
-      supabase.from('transfer_requests').select('id, stock_item_id, component_id, requesting_location_id, quantity, quantity_unit, priority, note, requested_at, requested_by_name').eq('org_id', org.id).eq('status', 'open').order('priority', { ascending: true }).order('requested_at', { ascending: false }),
+      supabase.from('transfer_requests').select('id, stock_item_id, component_id, requesting_location_id, quantity, quantity_unit, priority, note, requested_at, requested_by_name, needs_ordering, needs_ordering_at, needs_ordering_by_name').eq('org_id', org.id).eq('status', 'open').order('priority', { ascending: true }).order('requested_at', { ascending: false }),
       // Same admin-curated SKU groups as Stock Check (R-Stock -> Groups) --
       // Start of Day Check walks one of these instead of making staff pick
       // items one at a time out of the full catalog.

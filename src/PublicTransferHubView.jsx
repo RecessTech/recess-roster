@@ -298,6 +298,10 @@ export default function PublicTransferHubView({ token }) {
     return load({ action: 'cancel', requestId, name });
   }
 
+  async function handleFlagNeedsOrdering(requestId, value) {
+    return load({ action: 'flag_needs_ordering', requestId, value, name });
+  }
+
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', background: '#F4F6F8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -645,6 +649,7 @@ export default function PublicTransferHubView({ token }) {
                     onFulfill={handleFulfill}
                     onUpdatePriority={handleUpdatePriority}
                     onDelete={handleDelete}
+                    onFlagNeedsOrdering={handleFlagNeedsOrdering}
                     isLast={ri === rows.length - 1}
                   />
                 ))}
@@ -795,12 +800,13 @@ function SubjectPicker({ items, components, value, onChange, placeholder = 'Sear
   );
 }
 
-function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLast }) {
+function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, onFlagNeedsOrdering, isLast }) {
   const [mode, setMode] = useState(null); // null | 'fulfil' | 'edit'
   const fallbackSource = locations.find(l => l.id !== row.requesting_location_id)?.id || locations[0]?.id || '';
   const [sourceLocationId, setSourceLocationId] = useState(fallbackSource);
   const [submitting, setSubmitting] = useState(false);
   const [rowError, setRowError] = useState(null);
+  const [flagging, setFlagging] = useState(false);
 
   // Held locally and only committed on "Done" -- committing on tap would
   // reorder the list (priority drives sort order) while the panel is still
@@ -853,6 +859,18 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
     }
   }
 
+  async function toggleNeedsOrdering() {
+    setFlagging(true);
+    setRowError(null);
+    try {
+      await onFlagNeedsOrdering(row.id, !row.needs_ordering);
+    } catch (e) {
+      setRowError(e.message || 'Could not update that request.');
+    } finally {
+      setFlagging(false);
+    }
+  }
+
   return (
     <div style={{ padding: '13px 16px', borderBottom: isLast ? 'none' : '1px solid #F1F5F9' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
@@ -865,6 +883,14 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
                 color: '#DC2626', background: '#FEF2F2', padding: '2px 7px', borderRadius: 999, flexShrink: 0,
               }}>
                 High
+              </span>
+            )}
+            {row.needs_ordering && (
+              <span style={{
+                fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em',
+                color: '#B45309', background: '#FFFBEB', padding: '2px 7px', borderRadius: 999, flexShrink: 0,
+              }}>
+                Needs Ordering
               </span>
             )}
           </div>
@@ -882,7 +908,7 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
       </div>
 
       {mode === null && (
-        <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+        <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button
             onClick={() => setMode('fulfil')}
             style={{
@@ -892,6 +918,21 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
             }}
           >
             <span>✓</span> Mark Fulfilled
+          </button>
+          <button
+            onClick={toggleNeedsOrdering}
+            disabled={flagging}
+            title={row.needs_ordering ? 'Unflag -- stock has arrived' : 'Flag as out of stock, needs ordering'}
+            style={{
+              padding: '7px 14px', borderRadius: 8, cursor: flagging ? 'default' : 'pointer', fontFamily: 'inherit',
+              fontSize: 12.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5,
+              border: row.needs_ordering ? 'none' : '1px solid #FDE68A',
+              background: row.needs_ordering ? '#B45309' : 'white',
+              color: row.needs_ordering ? 'white' : '#B45309',
+              opacity: flagging ? 0.6 : 1,
+            }}
+          >
+            <span>⚠</span> {row.needs_ordering ? 'Ordering Flagged' : 'Needs Ordering'}
           </button>
           <button
             onClick={openEdit}
@@ -905,6 +946,7 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
           </button>
         </div>
       )}
+      {mode === null && rowError && <div style={{ marginTop: 8, fontSize: 11.5, color: '#DC2626', fontWeight: 500 }}>{rowError}</div>}
 
       {mode === 'fulfil' && (
         <div style={{ marginTop: 10, padding: 12, background: '#F8FAFC', borderRadius: 12 }}>
