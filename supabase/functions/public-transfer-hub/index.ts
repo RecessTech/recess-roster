@@ -116,7 +116,7 @@ serve(async (req) => {
       // later, at which point whoever's actioning the queue un-flags it.
       const { requestId, value, name } = body;
 
-      const { data: request } = await supabase.from('transfer_requests').select('id').eq('id', requestId).eq('org_id', org.id).eq('status', 'open').single();
+      const { data: request } = await supabase.from('transfer_requests').select('id, stock_item_id, requesting_location_id').eq('id', requestId).eq('org_id', org.id).eq('status', 'open').single();
       if (!request) return jsonResponse({ error: 'That request is no longer open.' }, 400);
 
       const { error: updateError } = await supabase.from('transfer_requests').update({
@@ -126,6 +126,25 @@ serve(async (req) => {
         updated_at: new Date().toISOString(),
       }).eq('id', requestId);
       if (updateError) return jsonResponse({ error: updateError.message }, 400);
+
+      // Carry the flag into Stocktake (R-Stock -> Stocktake) so it shows up
+      // the same way a staff Stock Check "Urgent" tap does -- a transfer
+      // blocked on an out-of-stock SKU is exactly the kind of thing
+      // Stocktake's urgent flag exists to surface. Only for stock SKUs
+      // (components have no Stocktake row), and only where the requesting
+      // site actually carries the item -- same "skip, don't invent a row"
+      // rule public-stock-check's own flagging uses.
+      if (request.stock_item_id) {
+        const { data: siteRow } = await supabase.from('stock_item_sites').select('id').eq('item_id', request.stock_item_id).eq('location_id', request.requesting_location_id).eq('org_id', org.id).single();
+        if (siteRow) {
+          await supabase.from('stock_item_sites').update({
+            staff_flag_level: value ? 'order_soon' : null,
+            staff_flagged_at: value ? new Date().toISOString() : null,
+            staff_flagged_by_name: value ? ((name || '').trim() || null) : null,
+            updated_at: new Date().toISOString(),
+          }).eq('id', siteRow.id);
+        }
+      }
 
     } else if (action === 'create_batch') {
       // Start of Day Check -- FOH (or any site) walks a whole SKU group
