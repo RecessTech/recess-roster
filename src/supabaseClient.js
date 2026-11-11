@@ -2122,6 +2122,27 @@ export const db = {
       .select()
       .single();
     if (error) throw error;
+
+    // Carry the flag into Stocktake (R-Stock -> Stocktake) so it reads the
+    // same as a staff Stock Check "Urgent" tap -- only for stock SKUs, and
+    // only where the requesting site actually carries the item.
+    if (data?.stock_item_id) {
+      const { data: siteRow } = await supabase
+        .from('stock_item_sites')
+        .select('id')
+        .eq('item_id', data.stock_item_id)
+        .eq('location_id', data.requesting_location_id)
+        .single();
+      if (siteRow) {
+        await supabase.from('stock_item_sites').update({
+          staff_flag_level: value ? 'order_soon' : null,
+          staff_flagged_at: value ? new Date().toISOString() : null,
+          staff_flagged_by_name: value ? (flaggedByName || null) : null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', siteRow.id);
+      }
+    }
+
     return data;
   },
 
