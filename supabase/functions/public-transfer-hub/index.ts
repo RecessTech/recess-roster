@@ -130,19 +130,23 @@ serve(async (req) => {
       // Carry the flag into Stocktake (R-Stock -> Stocktake) so it shows up
       // the same way a staff Stock Check "Urgent" tap does -- a transfer
       // blocked on an out-of-stock SKU is exactly the kind of thing
-      // Stocktake's urgent flag exists to surface. Only for stock SKUs
-      // (components have no Stocktake row), and only where the requesting
-      // site actually carries the item -- same "skip, don't invent a row"
-      // rule public-stock-check's own flagging uses.
+      // Stocktake's urgent flag exists to surface. This needs ordering at
+      // whichever site would have SUPPLIED the transfer, not the
+      // requesting site itself -- e.g. Bourke requests, Crown orders in --
+      // so flag every other active site that carries the item, not
+      // requesting_location_id. Only for stock SKUs (components have no
+      // Stocktake row), and only sites that actually carry it -- same
+      // "skip, don't invent a row" rule public-stock-check's own flagging
+      // uses.
       if (request.stock_item_id) {
-        const { data: siteRow } = await supabase.from('stock_item_sites').select('id').eq('item_id', request.stock_item_id).eq('location_id', request.requesting_location_id).eq('org_id', org.id).single();
-        if (siteRow) {
+        const { data: siteRows } = await supabase.from('stock_item_sites').select('id').eq('item_id', request.stock_item_id).eq('org_id', org.id).neq('location_id', request.requesting_location_id);
+        if (siteRows && siteRows.length > 0) {
           await supabase.from('stock_item_sites').update({
             staff_flag_level: value ? 'order_soon' : null,
             staff_flagged_at: value ? new Date().toISOString() : null,
             staff_flagged_by_name: value ? ((name || '').trim() || null) : null,
             updated_at: new Date().toISOString(),
-          }).eq('id', siteRow.id);
+          }).in('id', siteRows.map((r: any) => r.id));
         }
       }
 

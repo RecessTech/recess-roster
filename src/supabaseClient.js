@@ -2124,22 +2124,24 @@ export const db = {
     if (error) throw error;
 
     // Carry the flag into Stocktake (R-Stock -> Stocktake) so it reads the
-    // same as a staff Stock Check "Urgent" tap -- only for stock SKUs, and
-    // only where the requesting site actually carries the item.
+    // same as a staff Stock Check "Urgent" tap -- this needs ordering at
+    // whichever site would have SUPPLIED the transfer, not the requesting
+    // site itself (e.g. Bourke requests, Crown orders in), so flag every
+    // other site that carries the item, not the requesting location. Only
+    // for stock SKUs, and only sites that actually carry it.
     if (data?.stock_item_id) {
-      const { data: siteRow } = await supabase
+      const { data: siteRows } = await supabase
         .from('stock_item_sites')
         .select('id')
         .eq('item_id', data.stock_item_id)
-        .eq('location_id', data.requesting_location_id)
-        .single();
-      if (siteRow) {
+        .neq('location_id', data.requesting_location_id);
+      if (siteRows && siteRows.length > 0) {
         await supabase.from('stock_item_sites').update({
           staff_flag_level: value ? 'order_soon' : null,
           staff_flagged_at: value ? new Date().toISOString() : null,
           staff_flagged_by_name: value ? (flaggedByName || null) : null,
           updated_at: new Date().toISOString(),
-        }).eq('id', siteRow.id);
+        }).in('id', siteRows.map(r => r.id));
       }
     }
 
