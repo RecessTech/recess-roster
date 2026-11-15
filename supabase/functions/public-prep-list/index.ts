@@ -72,6 +72,13 @@ serve(async (req) => {
           : { status: 'pending', completed_at: null, updated_at: new Date().toISOString() }
       ).eq('id', itemId);
       if (updateError) return jsonResponse({ error: updateError.message }, 400);
+
+      // The client applies this optimistically and only needs confirmation
+      // -- skip the standing-task seed check and the full plan/catalog
+      // refetch below (that round trip is what made ticking something off
+      // feel slow). A toggle never touches the catalog or seeding anyway,
+      // since the item being toggled already proves the day has rows.
+      return jsonResponse({ ok: true });
     }
 
     // ── Everything below is admin-only: re-check the shared roster PIN on
