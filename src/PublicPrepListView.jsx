@@ -5,15 +5,8 @@ import { PinPad, BLUE, RED, INK, MUTED, FAINT, HAIRLINE, FONT } from './PublicMy
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
 const BRAND_DARK = '#2D4EC9';
 const BODY_BG = '#F1F5F9';
-const NAME_STORAGE_KEY = 'prepList_yourName';
 const PIN_STORAGE_KEY = (token) => `rr_preplist_pin_${token}`;
 
-function readStoredName() {
-  try { return localStorage.getItem(NAME_STORAGE_KEY) || ''; } catch { return ''; }
-}
-function storeName(name) {
-  try { localStorage.setItem(NAME_STORAGE_KEY, name); } catch { /* private browsing etc. -- fine to skip */ }
-}
 function readStoredPin(token) {
   try { return sessionStorage.getItem(PIN_STORAGE_KEY(token)) || ''; } catch { return ''; }
 }
@@ -66,7 +59,6 @@ export default function PublicPrepListView({ token }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [name, setName] = useState(readStoredName);
 
   const [pin, setPin] = useState(() => readStoredPin(token));
   const [adminData, setAdminData] = useState(null); // { catalog } once unlocked
@@ -100,11 +92,6 @@ export default function PublicPrepListView({ token }) {
   }, [call]);
 
   useEffect(() => { setLoading(true); load().finally(() => setLoading(false)); }, [load]);
-
-  function handleNameChange(v) {
-    setName(v);
-    storeName(v);
-  }
 
   function buildDraftFromPlan(planItems) {
     return planItems.map(i => ({
@@ -148,7 +135,7 @@ export default function PublicPrepListView({ token }) {
   async function toggleComplete(item) {
     setCompletingId(item.id);
     try {
-      const result = await call({ action: 'toggleComplete', itemId: item.id, name, done: item.status !== 'done' });
+      const result = await call({ action: 'toggleComplete', itemId: item.id, done: item.status !== 'done' });
       setData(result);
     } catch (e) {
       setError(e.message || 'Could not update that task.');
@@ -295,8 +282,6 @@ export default function PublicPrepListView({ token }) {
           {tab === 'plan' ? (
             <PlanTab
               items={sortedPlanItems}
-              name={name}
-              onNameChange={handleNameChange}
               onToggle={toggleComplete}
               completingId={completingId}
               error={error}
@@ -325,14 +310,9 @@ export default function PublicPrepListView({ token }) {
   );
 }
 
-function PlanTab({ items, name, onNameChange, onToggle, completingId, error }) {
+function PlanTab({ items, onToggle, completingId, error }) {
   return (
     <>
-      <div style={{ marginBottom: 14 }}>
-        <label style={labelStyle}>Your name (so ticks have a name on them)</label>
-        <input value={name} onChange={e => onNameChange(e.target.value)} placeholder="Optional" style={inputStyle} />
-      </div>
-
       {error && <div style={{ fontSize: 12.5, color: RED, fontWeight: 500, marginBottom: 10 }}>{error}</div>}
 
       {items.length === 0 ? (
@@ -344,6 +324,7 @@ function PlanTab({ items, name, onNameChange, onToggle, completingId, error }) {
         <div style={{ border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden' }}>
           {items.map((item, idx) => {
             const done = item.status === 'done';
+            const qtyLabel = fmtQty(item.qty) ? `${fmtQty(item.qty)}${item.uom ? ' ' + item.uom : ''}` : '';
             return (
               <div key={item.id} style={{
                 padding: '13px 14px', borderBottom: idx === items.length - 1 ? 'none' : `1px solid ${HAIRLINE}`,
@@ -361,11 +342,21 @@ function PlanTab({ items, name, onNameChange, onToggle, completingId, error }) {
                   }}
                 >{completingId === item.id ? '…' : '✓'}</button>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 14.5, fontWeight: 700, color: done ? FAINT : INK, textDecoration: done ? 'line-through' : 'none' }}>{item.name}</div>
-                  <div style={{ fontSize: 11.5, color: FAINT, marginTop: 2 }}>
-                    {[fmtQty(item.qty) && `${fmtQty(item.qty)}${item.uom ? ' ' + item.uom : ''}`, item.assignedTo].filter(Boolean).join(' · ')}
-                    {done && item.completedBy ? ` · ${item.completedBy}${item.completedAt ? ' · ' + timeAgo(item.completedAt) : ''}` : ''}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 14.5, fontWeight: 700, color: done ? FAINT : INK, textDecoration: done ? 'line-through' : 'none' }}>{item.name}</span>
+                    {item.assignedTo && (
+                      <span style={{
+                        fontSize: 10.5, fontWeight: 800, color: done ? FAINT : BLUE, background: done ? '#F1F5F9' : '#EEF2FF',
+                        borderRadius: 999, padding: '2px 8px', whiteSpace: 'nowrap',
+                      }}>{item.assignedTo}</span>
+                    )}
                   </div>
+                  {(qtyLabel || (done && item.completedAt)) && (
+                    <div style={{ fontSize: 11.5, color: FAINT, marginTop: 2 }}>
+                      {qtyLabel}
+                      {done && item.completedAt ? `${qtyLabel ? ' · ' : ''}done ${timeAgo(item.completedAt)}` : ''}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -411,12 +402,21 @@ function SetPlanTab({ draft, catalog, staffOptions, onAdd, onCreate, onRemove, o
                 <button onClick={() => onRemove(d.taskId)} aria-label={`Remove ${d.name}`} style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 999, border: 'none', background: '#F1F5F9', color: FAINT, cursor: 'pointer', fontSize: 12 }}>✕</button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.3fr', gap: 6 }}>
-                <input value={d.qty} onChange={e => onUpdateField(d.taskId, 'qty', e.target.value)} placeholder="Qty" inputMode="decimal" style={{ ...inputStyle, padding: '9px 10px', fontSize: 14 }} />
-                <input value={d.uom} onChange={e => onUpdateField(d.taskId, 'uom', e.target.value)} placeholder="Unit" style={{ ...inputStyle, padding: '9px 10px', fontSize: 14 }} />
-                <select value={d.assignedTo} onChange={e => onUpdateField(d.taskId, 'assignedTo', e.target.value)} style={{ ...inputStyle, padding: '9px 10px', fontSize: 14, color: d.assignedTo ? INK : FAINT }}>
-                  <option value="">Unassigned</option>
-                  {staffOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                <div>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 3 }}>Qty</span>
+                  <input value={d.qty} onChange={e => onUpdateField(d.taskId, 'qty', e.target.value)} placeholder="e.g. 2" inputMode="decimal" style={{ ...inputStyle, padding: '9px 10px' }} />
+                </div>
+                <div>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 3 }}>Unit</span>
+                  <input value={d.uom} onChange={e => onUpdateField(d.taskId, 'uom', e.target.value)} placeholder="e.g. trays" style={{ ...inputStyle, padding: '9px 10px' }} />
+                </div>
+                <div>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 3 }}>Assigned to</span>
+                  <select value={d.assignedTo} onChange={e => onUpdateField(d.taskId, 'assignedTo', e.target.value)} style={{ ...inputStyle, padding: '9px 10px', color: d.assignedTo ? INK : FAINT }}>
+                    <option value="">Unassigned</option>
+                    {staffOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
           ))}
