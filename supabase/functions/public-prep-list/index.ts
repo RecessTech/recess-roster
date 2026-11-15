@@ -59,16 +59,17 @@ serve(async (req) => {
     const today = todayIn(tz);
 
     // ── Mark a task done / not done. No PIN -- every staff member can
-    // tick things off through the day, same as the old Prep List.
+    // tick things off through the day, same as the old Prep List. Who
+    // ticked it doesn't matter, so nothing records an identity here.
     if (action === 'toggleComplete') {
-      const { itemId, name, done } = body;
+      const { itemId, done } = body;
       const { data: item } = await supabase.from('prep_plan_items').select('id').eq('id', itemId).eq('org_id', org.id).single();
       if (!item) return jsonResponse({ error: 'That task is no longer on the plan.' }, 400);
 
       const { error: updateError } = await supabase.from('prep_plan_items').update(
         done
-          ? { status: 'done', completed_at: new Date().toISOString(), completed_by: (name || '').trim() || null, updated_at: new Date().toISOString() }
-          : { status: 'pending', completed_at: null, completed_by: null, updated_at: new Date().toISOString() }
+          ? { status: 'done', completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+          : { status: 'pending', completed_at: null, updated_at: new Date().toISOString() }
       ).eq('id', itemId);
       if (updateError) return jsonResponse({ error: updateError.message }, 400);
     }
@@ -131,9 +132,9 @@ serve(async (req) => {
         if (delError) return jsonResponse({ error: delError.message }, 400);
       }
 
-      // Upsert by (org_id, plan_date, task_id) -- status/completed_at/
-      // completed_by are deliberately left out of the payload so a
-      // re-save never un-ticks something staff already finished.
+      // Upsert by (org_id, plan_date, task_id) -- status/completed_at are
+      // deliberately left out of the payload so a re-save never un-ticks
+      // something staff already finished.
       for (let idx = 0; idx < items.length; idx++) {
         const it = items[idx];
         if (!it.taskId) continue;
@@ -170,7 +171,7 @@ serve(async (req) => {
 
     const { data: planRows } = await supabase
       .from('prep_plan_items')
-      .select('id, task_id, qty, uom, assigned_to, sort_order, status, completed_at, completed_by')
+      .select('id, task_id, qty, uom, assigned_to, sort_order, status, completed_at')
       .eq('org_id', org.id).eq('plan_date', today)
       .order('sort_order', { ascending: true });
 
@@ -190,7 +191,6 @@ serve(async (req) => {
       sortOrder: r.sort_order,
       status: r.status,
       completedAt: r.completed_at,
-      completedBy: r.completed_by,
     }));
 
     const responseBody: Record<string, unknown> = {
