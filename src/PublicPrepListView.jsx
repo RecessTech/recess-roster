@@ -35,6 +35,25 @@ function fmtQty(n) {
   return num % 1 === 0 ? String(num) : num.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
+// One colour per assignee, so a glance at the list tells you whose task is
+// whose without reading every name. Cycles by a hash of the name rather
+// than a fixed name->colour map, so it still works if the staff list grows
+// beyond today's four.
+const ASSIGNEE_PALETTE = [
+  { text: '#3B5BDB', bg: '#EEF2FF' }, // blue
+  { text: '#9333EA', bg: '#F3E8FF' }, // purple
+  { text: '#0D9488', bg: '#CCFBF1' }, // teal
+  { text: '#DB2777', bg: '#FCE7F3' }, // pink
+  { text: '#B45309', bg: '#FEF3C7' }, // amber
+  { text: '#059669', bg: '#D1FAE5' }, // green
+];
+function assigneeColor(name) {
+  if (!name) return ASSIGNEE_PALETTE[0];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  return ASSIGNEE_PALETTE[Math.abs(hash) % ASSIGNEE_PALETTE.length];
+}
+
 // iOS Safari auto-zooms the whole page on focus for any text input/select
 // under 16px -- 16px avoids it without disabling pinch-zoom.
 const inputStyle = {
@@ -69,7 +88,6 @@ export default function PublicPrepListView({ token }) {
   const [draft, setDraft] = useState(null); // working copy of today's plan while editing
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
-  const [completingId, setCompletingId] = useState(null);
 
   const call = useCallback(async (extra) => {
     const { data: result, error: err } = await supabase.functions.invoke('public-prep-list', {
@@ -133,14 +151,24 @@ export default function PublicPrepListView({ token }) {
   }
 
   async function toggleComplete(item) {
-    setCompletingId(item.id);
+    const done = item.status !== 'done';
+    // Flip it on screen immediately rather than waiting on the round trip --
+    // the 2-3s lag was every tick waiting on a full reload of the plan
+    // (settings + items + task names) when all that actually changed is
+    // this one row's status. Confirm with the server in the background;
+    // roll back only if that call actually fails.
+    setData(prev => prev && {
+      ...prev,
+      planItems: prev.planItems.map(i => i.id === item.id ? { ...i, status: done ? 'done' : 'pending', completedAt: done ? new Date().toISOString() : null } : i),
+    });
     try {
-      const result = await call({ action: 'toggleComplete', itemId: item.id, done: item.status !== 'done' });
-      setData(result);
+      await call({ action: 'toggleComplete', itemId: item.id, done });
     } catch (e) {
+      setData(prev => prev && {
+        ...prev,
+        planItems: prev.planItems.map(i => i.id === item.id ? item : i),
+      });
       setError(e.message || 'Could not update that task.');
-    } finally {
-      setCompletingId(null);
     }
   }
 
@@ -283,7 +311,6 @@ export default function PublicPrepListView({ token }) {
             <PlanTab
               items={sortedPlanItems}
               onToggle={toggleComplete}
-              completingId={completingId}
               error={error}
             />
           ) : (
@@ -310,7 +337,7 @@ export default function PublicPrepListView({ token }) {
   );
 }
 
-function PlanTab({ items, onToggle, completingId, error }) {
+function PlanTab({ items, onToggle, error }) {
   return (
     <>
       {error && <div style={{ fontSize: 12.5, color: RED, fontWeight: 500, marginBottom: 10 }}>{error}</div>}
@@ -332,22 +359,21 @@ function PlanTab({ items, onToggle, completingId, error }) {
               }}>
                 <button
                   onClick={() => onToggle(item)}
-                  disabled={completingId === item.id}
                   title={done ? 'Mark not done' : 'Mark done'}
                   style={{
                     width: 26, height: 26, borderRadius: 999, flexShrink: 0, cursor: 'pointer',
                     border: done ? 'none' : '2px solid #E2E8F0', background: done ? '#0f9d4e' : 'white',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', color: done ? 'white' : '#CBD5E1', fontSize: 14,
-                    opacity: completingId === item.id ? 0.5 : 1,
                   }}
-                >{completingId === item.id ? '…' : '✓'}</button>
+                >✓</button>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 14.5, fontWeight: 700, color: done ? FAINT : INK, textDecoration: done ? 'line-through' : 'none' }}>{item.name}</span>
                     {item.assignedTo && (
                       <span style={{
-                        fontSize: 10.5, fontWeight: 800, color: done ? FAINT : BLUE, background: done ? '#F1F5F9' : '#EEF2FF',
-                        borderRadius: 999, padding: '2px 8px', whiteSpace: 'nowrap',
+                        fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 8px',
+                        color: done ? FAINT : assigneeColor(item.assignedTo).text,
+                        background: done ? '#F1F5F9' : assigneeColor(item.assignedTo).bg,
                       }}>{item.assignedTo}</span>
                     )}
                   </div>
@@ -412,7 +438,12 @@ function SetPlanTab({ draft, catalog, staffOptions, onAdd, onCreate, onRemove, o
                 </div>
                 <div>
                   <span style={{ fontSize: 9.5, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 3 }}>Assigned to</span>
-                  <select value={d.assignedTo} onChange={e => onUpdateField(d.taskId, 'assignedTo', e.target.value)} style={{ ...inputStyle, padding: '9px 10px', color: d.assignedTo ? INK : FAINT }}>
+                  <select value={d.assignedTo} onChange={e => onUpdateField(d.taskId, 'assignedTo', e.target.value)} style={{
+                    ...inputStyle, padding: '9px 10px', fontWeight: d.assignedTo ? 700 : 400,
+                    color: d.assignedTo ? assigneeColor(d.assignedTo).text : FAINT,
+                    background: d.assignedTo ? assigneeColor(d.assignedTo).bg : inputStyle.background,
+                    borderColor: d.assignedTo ? assigneeColor(d.assignedTo).text : '#E2E8F0',
+                  }}>
                     <option value="">Unassigned</option>
                     {staffOptions.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
