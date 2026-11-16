@@ -45,13 +45,6 @@ function fmtQty(n) {
   return num % 1 === 0 ? String(num) : num.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-function fmtNeededBy(dateStr) {
-  if (!dateStr) return '';
-  const d = new Date(`${dateStr}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return '';
-  return `by ${d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}`;
-}
-
 // One colour per assignee, so a glance at the list tells you whose task is
 // whose without reading every name. Cycles by a hash of the name rather
 // than a fixed name->colour map, so it still works if the staff list grows
@@ -157,12 +150,14 @@ export default function PublicPrepListView({ token }) {
   }
 
   async function toggleComplete(item) {
+    const done = !item.done;
     // Flip it on screen immediately rather than waiting on the round trip.
-    setData(prev => prev && { ...prev, planItems: prev.planItems.filter(i => i.id !== item.id) });
+    // The task stays on the list either way -- done just strikes it through.
+    setData(prev => prev && { ...prev, planItems: prev.planItems.map(i => i.id === item.id ? { ...i, done } : i) });
     try {
-      await call({ action: 'toggleComplete', itemId: item.id });
+      await call({ action: 'toggleComplete', itemId: item.id, done });
     } catch (e) {
-      setData(prev => prev && { ...prev, planItems: [...prev.planItems, item] });
+      setData(prev => prev && { ...prev, planItems: prev.planItems.map(i => i.id === item.id ? { ...i, done: item.done } : i) });
       setError(e.message || 'Could not update that task.');
     }
   }
@@ -177,10 +172,10 @@ export default function PublicPrepListView({ token }) {
       uom: fields.uom ?? task.flag_uom ?? task.default_uom ?? '',
       assignedTo: fields.assignedTo ?? task.assigned_to ?? '',
       note: fields.note ?? task.note ?? '',
-      neededBy: fields.neededBy ?? task.needed_by ?? '',
+      catering: fields.catering ?? task.catering ?? false,
     };
     patchCatalogRow(task.id, {
-      status, flag_qty: payload.qty, flag_uom: payload.uom, assigned_to: payload.assignedTo, note: payload.note, needed_by: payload.neededBy,
+      status, flag_qty: payload.qty, flag_uom: payload.uom, assigned_to: payload.assignedTo, note: payload.note, catering: payload.catering,
     });
     setSaveError(null);
     try {
@@ -341,32 +336,36 @@ function PlanTab({ items, onToggle, error }) {
           {items.map((item, idx) => {
             const meta = STATUS_META[item.status] || STATUS_META.ok;
             const qtyLabel = fmtQty(item.qty) ? `${fmtQty(item.qty)}${item.uom ? ' ' + item.uom : ''}` : '';
-            const neededByLabel = fmtNeededBy(item.neededBy);
+            const done = item.done;
             return (
               <div key={item.id} style={{
                 padding: '13px 14px', borderBottom: idx === items.length - 1 ? 'none' : `1px solid ${HAIRLINE}`,
                 display: 'flex', alignItems: 'flex-start', gap: 12, borderLeft: `3px solid ${meta.color}`,
+                background: done ? '#FAFBFC' : 'white',
               }}>
                 <button
                   onClick={() => onToggle(item)}
-                  title="Mark done"
+                  title={done ? 'Mark not done' : 'Mark done'}
                   style={{
                     width: 26, height: 26, borderRadius: 999, flexShrink: 0, cursor: 'pointer', marginTop: 1,
-                    border: '2px solid #E2E8F0', background: 'white',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#CBD5E1', fontSize: 14,
+                    border: done ? 'none' : '2px solid #E2E8F0', background: done ? '#0f9d4e' : 'white',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: done ? 'white' : '#CBD5E1', fontSize: 14,
                   }}
                 >✓</button>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 3 }}>
-                    <span style={{ fontSize: 10, fontWeight: 800, color: meta.color, background: meta.bg, borderRadius: 999, padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{meta.label}</span>
+                    <span style={{ fontSize: 10, fontWeight: 800, color: done ? FAINT : meta.color, background: done ? '#F1F5F9' : meta.bg, borderRadius: 999, padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{meta.label}</span>
+                    {item.catering && (
+                      <span style={{ fontSize: 10, fontWeight: 800, color: done ? FAINT : '#7C3AED', background: done ? '#F1F5F9' : '#F3E8FF', borderRadius: 999, padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Catering</span>
+                    )}
                     {item.assignedTo && (
-                      <span style={{ fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 8px', color: assigneeColor(item.assignedTo).text, background: assigneeColor(item.assignedTo).bg }}>{item.assignedTo}</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 8px', color: done ? FAINT : assigneeColor(item.assignedTo).text, background: done ? '#F1F5F9' : assigneeColor(item.assignedTo).bg }}>{item.assignedTo}</span>
                     )}
                   </div>
-                  <div style={{ fontSize: 14.5, fontWeight: 700, color: INK }}>{item.name}</div>
-                  {(qtyLabel || neededByLabel || item.note || item.flaggedAt) && (
-                    <div style={{ fontSize: 11.5, color: FAINT, marginTop: 2 }}>
-                      {[qtyLabel, neededByLabel, item.note, item.flaggedAt ? `flagged ${timeAgo(item.flaggedAt)}` : ''].filter(Boolean).join(' · ')}
+                  <div style={{ fontSize: 14.5, fontWeight: 700, color: done ? FAINT : INK, textDecoration: done ? 'line-through' : 'none' }}>{item.name}</div>
+                  {(qtyLabel || item.note || item.flaggedAt) && (
+                    <div style={{ fontSize: 11.5, color: FAINT, marginTop: 2, textDecoration: done ? 'line-through' : 'none' }}>
+                      {[qtyLabel, item.note, item.flaggedAt ? `flagged ${timeAgo(item.flaggedAt)}` : ''].filter(Boolean).join(' · ')}
                     </div>
                   )}
                 </div>
@@ -442,6 +441,9 @@ function SetPlanTab({ catalog, staffOptions, onSetFlag, onSetCarryForward, onMov
                   style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', textAlign: 'left', cursor: isFlagged ? 'pointer' : 'default', padding: 0, fontFamily: FONT }}
                 >
                   <span style={{ fontSize: 14, fontWeight: 700, color: INK, flex: 1, minWidth: 0 }}>{task.name}</span>
+                  {task.catering && (
+                    <span style={{ fontSize: 9.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 6px', color: '#7C3AED', background: '#F3E8FF' }}>Catering</span>
+                  )}
                   {task.assigned_to && (
                     <span style={{ fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 7px', color: assigneeColor(task.assigned_to).text, background: assigneeColor(task.assigned_to).bg }}>{task.assigned_to}</span>
                   )}
@@ -503,30 +505,25 @@ function SetPlanTab({ catalog, staffOptions, onSetFlag, onSetCarryForward, onMov
                       {staffOptions.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
-                    <div>
-                      <span style={miniLabelStyle}>Note</span>
-                      <input
-                        defaultValue={task.note || ''}
-                        onBlur={e => onSetFlag(task, task.status, { note: e.target.value })}
-                        placeholder="Optional" style={{ ...inputStyle, padding: '9px 10px' }}
-                      />
-                    </div>
-                    <div>
-                      <span style={miniLabelStyle}>Needed by</span>
-                      <input
-                        type="date"
-                        defaultValue={task.needed_by || ''}
-                        onBlur={e => onSetFlag(task, task.status, { neededBy: e.target.value })}
-                        style={{ ...inputStyle, padding: '9px 10px' }}
-                      />
-                    </div>
+                  <div style={{ marginBottom: 10 }}>
+                    <span style={miniLabelStyle}>Note</span>
+                    <input
+                      defaultValue={task.note || ''}
+                      onBlur={e => onSetFlag(task, task.status, { note: e.target.value })}
+                      placeholder="Optional" style={{ ...inputStyle, padding: '9px 10px' }}
+                    />
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: MUTED, fontWeight: 600, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!task.catering} onChange={e => onSetFlag(task, task.status, { catering: e.target.checked })} />
+                      Catering
+                    </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: MUTED, fontWeight: 600, cursor: 'pointer' }}>
                       <input type="checkbox" checked={!!task.carry_forward} onChange={e => onSetCarryForward(task, e.target.checked)} />
                       Carry to tomorrow if not done
                     </label>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <div style={{ display: 'flex', gap: 4 }}>
                       <button onClick={() => onMove(task, -1)} disabled={flagIdx <= 0} style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: 6, width: 26, height: 26, color: flagIdx <= 0 ? '#E2E8F0' : MUTED, cursor: flagIdx <= 0 ? 'default' : 'pointer' }}>▲</button>
                       <button onClick={() => onMove(task, 1)} disabled={flagIdx === -1 || flagIdx >= flaggedOrdered.length - 1} style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: 6, width: 26, height: 26, color: (flagIdx === -1 || flagIdx >= flaggedOrdered.length - 1) ? '#E2E8F0' : MUTED, cursor: 'pointer' }}>▼</button>
