@@ -66,7 +66,7 @@ serve(async (req) => {
     // itself is consumed so it needs pressing again to survive the next.
     if (org.prep_last_reset_date !== today) {
       await supabase.from('prep_tasks').update({
-        status: 'ok', carry_forward: false, assigned_to: null, note: null, needed_by: null, flagged_at: null,
+        status: 'ok', carry_forward: false, assigned_to: null, note: null, catering: false, done: false, flagged_at: null,
       }).eq('org_id', org.id).neq('status', 'ok').eq('carry_forward', false);
       await supabase.from('prep_tasks').update({ carry_forward: false }).eq('org_id', org.id).eq('carry_forward', true);
 
@@ -75,7 +75,7 @@ serve(async (req) => {
       // going on with them, since "every morning, doesn't change" means
       // unconditionally, not just when nothing else flagged it first.
       await supabase.from('prep_tasks').update({
-        status: 'urgent', flag_order: -1, flagged_at: new Date().toISOString(),
+        status: 'urgent', flag_order: -1, flagged_at: new Date().toISOString(), done: false,
       }).eq('org_id', org.id).eq('auto_include', true).eq('active', true);
       const { data: autoTasks } = await supabase.from('prep_tasks').select('id, default_qty, default_uom').eq('org_id', org.id).eq('auto_include', true).eq('active', true);
       for (const t of (autoTasks || [])) {
@@ -85,16 +85,16 @@ serve(async (req) => {
       await supabase.from('organisations').update({ prep_last_reset_date: today }).eq('id', org.id);
     }
 
-    // ── Mark a flagged task done. No PIN -- every staff member can tick
-    // things off; who did it doesn't matter, so nothing records an identity.
+    // ── Mark a flagged task done, or un-done. No PIN -- every staff member
+    // can tick things off; who did it doesn't matter, so nothing records
+    // an identity. The task stays on the Plan either way (struck through
+    // once done) -- it only actually clears at the next reset.
     if (action === 'toggleComplete') {
-      const { itemId } = body;
-      const { data: item } = await supabase.from('prep_tasks').select('id').eq('id', itemId).eq('org_id', org.id).single();
+      const { itemId, done } = body;
+      const { data: item } = await supabase.from('prep_tasks').select('id').eq('id', itemId).eq('org_id', org.id).neq('status', 'ok').single();
       if (!item) return jsonResponse({ error: 'That task is no longer on the plan.' }, 400);
 
-      const { error: updateError } = await supabase.from('prep_tasks').update({
-        status: 'ok', carry_forward: false,
-      }).eq('id', itemId);
+      const { error: updateError } = await supabase.from('prep_tasks').update({ done: !!done }).eq('id', itemId);
       if (updateError) return jsonResponse({ error: updateError.message }, 400);
 
       // The client applies this optimistically -- just confirm, skip the
@@ -141,17 +141,17 @@ serve(async (req) => {
         default_qty: defaultQty === '' || defaultQty == null ? null : Number(defaultQty),
         default_uom: (defaultUom || '').trim() || null,
         sort_order: (maxRow?.sort_order ?? -1) + 1,
-      }).select('id, name, default_qty, default_uom, auto_include, status, flag_qty, flag_uom, assigned_to, note, needed_by, carry_forward, flag_order').single();
+      }).select('id, name, default_qty, default_uom, auto_include, status, flag_qty, flag_uom, assigned_to, note, catering, done, carry_forward, flag_order').single();
       if (createError) return jsonResponse({ error: createError.message }, 400);
 
       return jsonResponse({ task: created });
     }
 
     // Flag (or clear) a task: sets its status plus the instance fields
-    // that go with it. Clearing back to 'ok' also drops carry_forward --
-    // there's nothing to carry once it's not flagged at all.
+    // that go with it. Clearing back to 'ok' also drops carry_forward and
+    // done -- there's nothing to carry or tick once it's not flagged.
     if (action === 'setFlag' && pinOk) {
-      const { taskId, status, qty, uom, assignedTo, note, neededBy } = body;
+      const { taskId, status, qty, uom, assignedTo, note, catering } = body;
       if (!STATUSES.includes(status)) return jsonResponse({ error: 'Unknown status.' }, 400);
 
       const update: Record<string, unknown> = {
@@ -160,11 +160,12 @@ serve(async (req) => {
         flag_uom: (uom || '').trim() || null,
         assigned_to: (assignedTo || '').trim() || null,
         note: (note || '').trim() || null,
-        needed_by: neededBy || null,
+        catering: !!catering,
         flagged_at: status === 'ok' ? null : new Date().toISOString(),
       };
       if (status === 'ok') {
         update.carry_forward = false;
+        update.done = false;
       } else {
         // Newly (re-)flagged tasks land at the back of the priority
         // queue by default -- admin reorders from there with the arrows.
@@ -202,17 +203,19 @@ serve(async (req) => {
     const { data: settings } = await supabase.from('business_settings').select('business_name').eq('org_id', org.id).maybeSingle();
 
     // Plan view: everything currently flagged, Urgent first, then Running
-    // Low, ordered within each by the admin-set flag_order.
+    // Low, ordered within each by the admin-set flag_order -- with
+    // already-done tasks sinking to the bottom of their bucket so the
+    // still-outstanding ones surface first.
     const severity: Record<string, number> = { urgent: 0, low: 1, ok: 2 };
     const { data: flaggedRows } = await supabase
       .from('prep_tasks')
-      .select('id, name, status, flag_qty, flag_uom, assigned_to, note, needed_by, flagged_at, carry_forward, flag_order')
+      .select('id, name, status, flag_qty, flag_uom, assigned_to, note, catering, done, flagged_at, carry_forward, flag_order')
       .eq('org_id', org.id).eq('active', true).neq('status', 'ok');
     const planItems = (flaggedRows || [])
-      .sort((a, b) => (severity[a.status] - severity[b.status]) || (a.flag_order - b.flag_order))
+      .sort((a, b) => (severity[a.status] - severity[b.status]) || (Number(a.done) - Number(b.done)) || (a.flag_order - b.flag_order))
       .map(r => ({
         id: r.id, name: r.name, status: r.status, qty: r.flag_qty, uom: r.flag_uom,
-        assignedTo: r.assigned_to, note: r.note, neededBy: r.needed_by, flaggedAt: r.flagged_at, carryForward: r.carry_forward,
+        assignedTo: r.assigned_to, note: r.note, catering: r.catering, done: r.done, flaggedAt: r.flagged_at, carryForward: r.carry_forward,
       }));
 
     const responseBody: Record<string, unknown> = {
@@ -229,7 +232,7 @@ serve(async (req) => {
     if (pinOk) {
       const { data: catalogRows } = await supabase
         .from('prep_tasks')
-        .select('id, name, default_qty, default_uom, auto_include, status, flag_qty, flag_uom, assigned_to, note, needed_by, carry_forward, flag_order')
+        .select('id, name, default_qty, default_uom, auto_include, status, flag_qty, flag_uom, assigned_to, note, catering, done, carry_forward, flag_order')
         .eq('org_id', org.id).eq('active', true)
         .order('sort_order', { ascending: true }).order('name', { ascending: true });
       responseBody.catalog = catalogRows || [];
