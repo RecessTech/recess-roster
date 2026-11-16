@@ -15,6 +15,7 @@ function jsonResponse(body: unknown, status = 200) {
 const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILS_PER_IP = 5;
 const MAX_FAILS_PER_ORG = 40;
+const STATUSES = ['ok', 'low', 'urgent'];
 
 // Hardcoded for now, per Clark -- revisit if the team grows past these four.
 const STAFF_OPTIONS = ['Amrin', 'Slim', 'Matilda', 'Paddy'];
@@ -47,7 +48,7 @@ serve(async (req) => {
     // Transfer Hub -- one link to distribute and regenerate.
     const { data: org, error: orgError } = await supabase
       .from('organisations')
-      .select('id, name, timezone, roster_view_pin')
+      .select('id, name, timezone, roster_view_pin, prep_last_reset_date')
       .eq('staff_hub_public_token', token)
       .single();
 
@@ -58,33 +59,53 @@ serve(async (req) => {
     const tz = org.timezone || 'Australia/Sydney';
     const today = todayIn(tz);
 
-    // ── Mark a task done / not done. No PIN -- every staff member can
-    // tick things off through the day, same as the old Prep List. Who
-    // ticked it doesn't matter, so nothing records an identity here.
+    // ── Lazy day reset, applied on the first request past local midnight
+    // (same pattern this app uses everywhere else for "today" -- no cron
+    // job needed). Any flagged task without carry_forward clears back to
+    // 'ok'; one with carry_forward survives this one reset, but the flag
+    // itself is consumed so it needs pressing again to survive the next.
+    if (org.prep_last_reset_date !== today) {
+      await supabase.from('prep_tasks').update({
+        status: 'ok', carry_forward: false, assigned_to: null, note: null, needed_by: null, flagged_at: null,
+      }).eq('org_id', org.id).neq('status', 'ok').eq('carry_forward', false);
+      await supabase.from('prep_tasks').update({ carry_forward: false }).eq('org_id', org.id).eq('carry_forward', true);
+
+      // Standing tasks (the 2kg of bacon) always come back urgent, first
+      // in the list, at their default qty -- overriding whatever else is
+      // going on with them, since "every morning, doesn't change" means
+      // unconditionally, not just when nothing else flagged it first.
+      await supabase.from('prep_tasks').update({
+        status: 'urgent', flag_order: -1, flagged_at: new Date().toISOString(),
+      }).eq('org_id', org.id).eq('auto_include', true).eq('active', true);
+      const { data: autoTasks } = await supabase.from('prep_tasks').select('id, default_qty, default_uom').eq('org_id', org.id).eq('auto_include', true).eq('active', true);
+      for (const t of (autoTasks || [])) {
+        await supabase.from('prep_tasks').update({ flag_qty: t.default_qty, flag_uom: t.default_uom }).eq('id', t.id);
+      }
+
+      await supabase.from('organisations').update({ prep_last_reset_date: today }).eq('id', org.id);
+    }
+
+    // ── Mark a flagged task done. No PIN -- every staff member can tick
+    // things off; who did it doesn't matter, so nothing records an identity.
     if (action === 'toggleComplete') {
-      const { itemId, done } = body;
-      const { data: item } = await supabase.from('prep_plan_items').select('id').eq('id', itemId).eq('org_id', org.id).single();
+      const { itemId } = body;
+      const { data: item } = await supabase.from('prep_tasks').select('id').eq('id', itemId).eq('org_id', org.id).single();
       if (!item) return jsonResponse({ error: 'That task is no longer on the plan.' }, 400);
 
-      const { error: updateError } = await supabase.from('prep_plan_items').update(
-        done
-          ? { status: 'done', completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }
-          : { status: 'pending', completed_at: null, updated_at: new Date().toISOString() }
-      ).eq('id', itemId);
+      const { error: updateError } = await supabase.from('prep_tasks').update({
+        status: 'ok', carry_forward: false,
+      }).eq('id', itemId);
       if (updateError) return jsonResponse({ error: updateError.message }, 400);
 
-      // The client applies this optimistically and only needs confirmation
-      // -- skip the standing-task seed check and the full plan/catalog
-      // refetch below (that round trip is what made ticking something off
-      // feel slow). A toggle never touches the catalog or seeding anyway,
-      // since the item being toggled already proves the day has rows.
+      // The client applies this optimistically -- just confirm, skip the
+      // full catalog/plan refetch below.
       return jsonResponse({ ok: true });
     }
 
     // ── Everything below is admin-only: re-check the shared roster PIN on
     // every call (stateless, same brute-force lockout as Day Roster/My
     // Roster -- see staff_pin_attempts).
-    const isAdminAction = action === 'unlock' || action === 'createTask' || action === 'savePlan';
+    const isAdminAction = ['unlock', 'createTask', 'setFlag', 'setOrder', 'setCarryForward'].includes(action);
     let pinOk = false;
     if (isAdminAction) {
       const { pin } = body;
@@ -120,101 +141,95 @@ serve(async (req) => {
         default_qty: defaultQty === '' || defaultQty == null ? null : Number(defaultQty),
         default_uom: (defaultUom || '').trim() || null,
         sort_order: (maxRow?.sort_order ?? -1) + 1,
-      }).select('id, name, default_qty, default_uom, auto_include').single();
+      }).select('id, name, default_qty, default_uom, auto_include, status, flag_qty, flag_uom, assigned_to, note, needed_by, carry_forward, flag_order').single();
       if (createError) return jsonResponse({ error: createError.message }, 400);
 
       return jsonResponse({ task: created });
     }
 
-    if (action === 'savePlan' && pinOk) {
-      const items = Array.isArray(body.items) ? body.items : [];
+    // Flag (or clear) a task: sets its status plus the instance fields
+    // that go with it. Clearing back to 'ok' also drops carry_forward --
+    // there's nothing to carry once it's not flagged at all.
+    if (action === 'setFlag' && pinOk) {
+      const { taskId, status, qty, uom, assignedTo, note, neededBy } = body;
+      if (!STATUSES.includes(status)) return jsonResponse({ error: 'Unknown status.' }, 400);
 
-      const { data: existingRows } = await supabase.from('prep_plan_items').select('id, task_id').eq('org_id', org.id).eq('plan_date', today);
-      const existingTaskIds = new Set((existingRows || []).map(r => r.task_id));
-      const submittedTaskIds = new Set(items.map((i: any) => i.taskId));
-
-      const toRemove = [...existingTaskIds].filter(id => !submittedTaskIds.has(id));
-      if (toRemove.length > 0) {
-        const { error: delError } = await supabase.from('prep_plan_items').delete().eq('org_id', org.id).eq('plan_date', today).in('task_id', toRemove);
-        if (delError) return jsonResponse({ error: delError.message }, 400);
+      const update: Record<string, unknown> = {
+        status,
+        flag_qty: qty === '' || qty == null ? null : Number(qty),
+        flag_uom: (uom || '').trim() || null,
+        assigned_to: (assignedTo || '').trim() || null,
+        note: (note || '').trim() || null,
+        needed_by: neededBy || null,
+        flagged_at: status === 'ok' ? null : new Date().toISOString(),
+      };
+      if (status === 'ok') {
+        update.carry_forward = false;
+      } else {
+        // Newly (re-)flagged tasks land at the back of the priority
+        // queue by default -- admin reorders from there with the arrows.
+        const { data: maxRow } = await supabase.from('prep_tasks').select('flag_order').eq('org_id', org.id).neq('status', 'ok').order('flag_order', { ascending: false }).limit(1).maybeSingle();
+        update.flag_order = (maxRow?.flag_order ?? -1) + 1;
       }
 
-      // Upsert by (org_id, plan_date, task_id) -- status/completed_at are
-      // deliberately left out of the payload so a re-save never un-ticks
-      // something staff already finished.
-      for (let idx = 0; idx < items.length; idx++) {
-        const it = items[idx];
-        if (!it.taskId) continue;
-        const { error: upsertError } = await supabase.from('prep_plan_items').upsert({
-          org_id: org.id, plan_date: today, task_id: it.taskId,
-          qty: it.qty === '' || it.qty == null ? null : Number(it.qty),
-          uom: (it.uom || '').trim() || null,
-          assigned_to: (it.assignedTo || '').trim() || null,
-          sort_order: idx,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'org_id,plan_date,task_id' });
-        if (upsertError) return jsonResponse({ error: upsertError.message }, 400);
-      }
+      const { error: updateError } = await supabase.from('prep_tasks').update(update).eq('id', taskId).eq('org_id', org.id);
+      if (updateError) return jsonResponse({ error: updateError.message }, 400);
     }
 
-    // ── Standing tasks (e.g. the 2 trays of bacon) belong on every day's
-    // plan -- re-seed any that are missing whenever the day has no items
-    // at all yet, so nobody has to remember to add them each morning.
-    const { count: dayCount } = await supabase.from('prep_plan_items').select('id', { count: 'exact', head: true }).eq('org_id', org.id).eq('plan_date', today);
-    if (!dayCount) {
-      const { data: autoTasks } = await supabase.from('prep_tasks').select('id, default_qty, default_uom').eq('org_id', org.id).eq('auto_include', true).eq('active', true);
-      if (autoTasks && autoTasks.length > 0) {
-        await supabase.from('prep_plan_items').upsert(
-          autoTasks.map((t, idx) => ({
-            org_id: org.id, plan_date: today, task_id: t.id,
-            qty: t.default_qty, uom: t.default_uom, sort_order: idx,
-          })),
-          { onConflict: 'org_id,plan_date,task_id' }
-        );
+    if (action === 'setCarryForward' && pinOk) {
+      const { taskId, carryForward } = body;
+      const { error: updateError } = await supabase.from('prep_tasks').update({ carry_forward: !!carryForward }).eq('id', taskId).eq('org_id', org.id);
+      if (updateError) return jsonResponse({ error: updateError.message }, 400);
+    }
+
+    if (action === 'setOrder' && pinOk) {
+      const { taskId, direction } = body; // direction: -1 | 1, swaps flag_order with the adjacent flagged task
+      const { data: flagged } = await supabase.from('prep_tasks').select('id, status, flag_order').eq('org_id', org.id).neq('status', 'ok').order('flag_order', { ascending: true });
+      const list = flagged || [];
+      const idx = list.findIndex(t => t.id === taskId);
+      const j = idx + (direction < 0 ? -1 : 1);
+      if (idx === -1 || j < 0 || j >= list.length) {
+        // no-op, still fine to fall through and return current state
+      } else {
+        const a = list[idx], b = list[j];
+        await Promise.all([
+          supabase.from('prep_tasks').update({ flag_order: b.flag_order }).eq('id', a.id),
+          supabase.from('prep_tasks').update({ flag_order: a.flag_order }).eq('id', b.id),
+        ]);
       }
     }
 
     const { data: settings } = await supabase.from('business_settings').select('business_name').eq('org_id', org.id).maybeSingle();
 
-    const { data: planRows } = await supabase
-      .from('prep_plan_items')
-      .select('id, task_id, qty, uom, assigned_to, sort_order, status, completed_at')
-      .eq('org_id', org.id).eq('plan_date', today)
-      .order('sort_order', { ascending: true });
-
-    const taskIds = [...new Set((planRows || []).map(r => r.task_id))];
-    const { data: taskRows } = taskIds.length
-      ? await supabase.from('prep_tasks').select('id, name, default_qty, default_uom, auto_include').in('id', taskIds)
-      : { data: [] as any[] };
-    const taskById = new Map((taskRows || []).map(t => [t.id, t]));
-
-    const planItems = (planRows || []).map(r => ({
-      id: r.id,
-      taskId: r.task_id,
-      name: taskById.get(r.task_id)?.name || 'Unknown task',
-      qty: r.qty,
-      uom: r.uom,
-      assignedTo: r.assigned_to,
-      sortOrder: r.sort_order,
-      status: r.status,
-      completedAt: r.completed_at,
-    }));
+    // Plan view: everything currently flagged, Urgent first, then Running
+    // Low, ordered within each by the admin-set flag_order.
+    const severity: Record<string, number> = { urgent: 0, low: 1, ok: 2 };
+    const { data: flaggedRows } = await supabase
+      .from('prep_tasks')
+      .select('id, name, status, flag_qty, flag_uom, assigned_to, note, needed_by, flagged_at, carry_forward, flag_order')
+      .eq('org_id', org.id).eq('active', true).neq('status', 'ok');
+    const planItems = (flaggedRows || [])
+      .sort((a, b) => (severity[a.status] - severity[b.status]) || (a.flag_order - b.flag_order))
+      .map(r => ({
+        id: r.id, name: r.name, status: r.status, qty: r.flag_qty, uom: r.flag_uom,
+        assignedTo: r.assigned_to, note: r.note, neededBy: r.needed_by, flaggedAt: r.flagged_at, carryForward: r.carry_forward,
+      }));
 
     const responseBody: Record<string, unknown> = {
       businessName: settings?.business_name || org.name || 'Prep List',
       today,
       planItems,
-      // Harmless to send unconditionally -- the staff tab's "who's
-      // ticking this off" picker needs the same fixed list, with no PIN.
+      // Harmless to send unconditionally -- the staff tab doesn't need a
+      // PIN for anything, but the name list itself isn't sensitive.
       staffOptions: STAFF_OPTIONS,
     };
 
-    // The task catalog only goes out once the PIN has been verified --
-    // not sensitive, just no reason to hand the full picker list to an
-    // anonymous read of the staff tab.
+    // The full catalog (including unflagged tasks, for the "walk every
+    // task" flagging screen) only goes out once the PIN has been verified.
     if (pinOk) {
       const { data: catalogRows } = await supabase
-        .from('prep_tasks').select('id, name, default_qty, default_uom, auto_include')
+        .from('prep_tasks')
+        .select('id, name, default_qty, default_uom, auto_include, status, flag_qty, flag_uom, assigned_to, note, needed_by, carry_forward, flag_order')
         .eq('org_id', org.id).eq('active', true)
         .order('sort_order', { ascending: true }).order('name', { ascending: true });
       responseBody.catalog = catalogRows || [];

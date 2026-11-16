@@ -7,6 +7,16 @@ const BRAND_DARK = '#2D4EC9';
 const BODY_BG = '#F1F5F9';
 const PIN_STORAGE_KEY = (token) => `rr_preplist_pin_${token}`;
 
+const URGENT = '#DC2626';
+const URGENT_BG = '#FEF2F2';
+const LOW = '#B45309';
+const LOW_BG = '#FFFBEB';
+const STATUS_META = {
+  urgent: { label: 'Urgent', color: URGENT, bg: URGENT_BG },
+  low: { label: 'Running Low', color: LOW, bg: LOW_BG },
+  ok: { label: 'All good', color: FAINT, bg: '#F1F5F9' },
+};
+
 function readStoredPin(token) {
   try { return sessionStorage.getItem(PIN_STORAGE_KEY(token)) || ''; } catch { return ''; }
 }
@@ -35,6 +45,13 @@ function fmtQty(n) {
   return num % 1 === 0 ? String(num) : num.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
+function fmtNeededBy(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
+  return `by ${d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}`;
+}
+
 // One colour per assignee, so a glance at the list tells you whose task is
 // whose without reading every name. Cycles by a hash of the name rather
 // than a fixed name->colour map, so it still works if the staff list grows
@@ -61,16 +78,14 @@ const inputStyle = {
   border: '1px solid #E2E8F0', color: INK, fontFamily: FONT, boxSizing: 'border-box',
   background: '#FAFBFC',
 };
-const labelStyle = { fontSize: 10.5, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'block' };
-const primaryButtonStyle = (disabled) => ({
-  width: '100%', padding: '13px 20px', borderRadius: 11, border: 'none', cursor: disabled ? 'default' : 'pointer',
-  background: BLUE, color: '#ffffff', fontSize: 15, fontWeight: 700, fontFamily: FONT,
-  opacity: disabled ? 0.55 : 1, boxShadow: disabled ? 'none' : '0 4px 12px -4px rgba(59,91,219,0.45)',
-});
+const miniLabelStyle = { fontSize: 9.5, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 3 };
 
 // Two tabs, one tile: "Plan" is the staff-facing ordered list (no login,
 // anyone ticks things off through the day); "Set Plan" is Clark/Paddy
-// building that list (PIN-gated, same shared roster PIN as Day Roster).
+// flagging tasks Urgent/Running Low -- same shape as R-Stock's Stock
+// Check, no date/day granularity. A task flagged and never finished
+// clears itself back to "all good" at the next local-midnight reset,
+// unless carry_forward was switched on for it first.
 // Both read/write supabase/functions/public-prep-list.
 
 export default function PublicPrepListView({ token }) {
@@ -80,13 +95,11 @@ export default function PublicPrepListView({ token }) {
   const [error, setError] = useState(null);
 
   const [pin, setPin] = useState(() => readStoredPin(token));
-  const [adminData, setAdminData] = useState(null); // { catalog } once unlocked
+  const [catalog, setCatalog] = useState(null); // full task list, only once unlocked
   const [pinBusy, setPinBusy] = useState(false);
   const [pinError, setPinError] = useState('');
   const [locked, setLocked] = useState(false);
 
-  const [draft, setDraft] = useState(null); // working copy of today's plan while editing
-  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
 
   const call = useCallback(async (extra) => {
@@ -111,20 +124,13 @@ export default function PublicPrepListView({ token }) {
 
   useEffect(() => { setLoading(true); load().finally(() => setLoading(false)); }, [load]);
 
-  function buildDraftFromPlan(planItems) {
-    return planItems.map(i => ({
-      taskId: i.taskId, name: i.name, qty: i.qty ?? '', uom: i.uom ?? '', assignedTo: i.assignedTo ?? '',
-    }));
-  }
-
   const unlock = useCallback(async (enteredPin) => {
     setPinError(''); setPinBusy(true);
     try {
       const result = await call({ action: 'unlock', pin: enteredPin });
       storePin(token, enteredPin);
       setPin(enteredPin);
-      setAdminData({ catalog: result.catalog || [] });
-      setDraft(buildDraftFromPlan(result.planItems || []));
+      setCatalog(result.catalog || []);
       setData(result);
       setPinError(''); setLocked(false);
     } catch (e) {
@@ -140,94 +146,80 @@ export default function PublicPrepListView({ token }) {
   // Once a stored PIN exists, silently re-unlock on arriving at Set Plan
   // rather than asking again every visit this session.
   useEffect(() => {
-    if (tab === 'setPlan' && pin && !adminData && !pinBusy) {
+    if (tab === 'setPlan' && pin && !catalog && !pinBusy) {
       unlock(pin);
     }
-  }, [tab, pin, adminData, pinBusy, unlock]);
+  }, [tab, pin, catalog, pinBusy, unlock]);
 
   function signOutAdmin() {
     clearStoredPin(token);
-    setPin(''); setAdminData(null); setDraft(null); setPinError(''); setLocked(false);
+    setPin(''); setCatalog(null); setPinError(''); setLocked(false);
   }
 
   async function toggleComplete(item) {
-    const done = item.status !== 'done';
-    // Flip it on screen immediately rather than waiting on the round trip --
-    // the 2-3s lag was every tick waiting on a full reload of the plan
-    // (settings + items + task names) when all that actually changed is
-    // this one row's status. Confirm with the server in the background;
-    // roll back only if that call actually fails.
-    setData(prev => prev && {
-      ...prev,
-      planItems: prev.planItems.map(i => i.id === item.id ? { ...i, status: done ? 'done' : 'pending', completedAt: done ? new Date().toISOString() : null } : i),
-    });
+    // Flip it on screen immediately rather than waiting on the round trip.
+    setData(prev => prev && { ...prev, planItems: prev.planItems.filter(i => i.id !== item.id) });
     try {
-      await call({ action: 'toggleComplete', itemId: item.id, done });
+      await call({ action: 'toggleComplete', itemId: item.id });
     } catch (e) {
-      setData(prev => prev && {
-        ...prev,
-        planItems: prev.planItems.map(i => i.id === item.id ? item : i),
-      });
+      setData(prev => prev && { ...prev, planItems: [...prev.planItems, item] });
       setError(e.message || 'Could not update that task.');
     }
   }
 
-  // ── Draft editing (Set Plan) ────────────────────────────────────────────
-  function addTaskToDraft(task) {
-    setDraft(prev => {
-      if (prev.some(d => d.taskId === task.id)) return prev;
-      return [...prev, { taskId: task.id, name: task.name, qty: task.default_qty ?? '', uom: task.default_uom ?? '', assignedTo: '' }];
-    });
-  }
-  function removeFromDraft(taskId) {
-    setDraft(prev => prev.filter(d => d.taskId !== taskId));
-  }
-  function updateDraftField(taskId, field, value) {
-    setDraft(prev => prev.map(d => d.taskId === taskId ? { ...d, [field]: value } : d));
-  }
-  function moveDraft(idx, dir) {
-    setDraft(prev => {
-      const next = [...prev];
-      const j = idx + dir;
-      if (j < 0 || j >= next.length) return prev;
-      [next[idx], next[j]] = [next[j], next[idx]];
-      return next;
-    });
+  function patchCatalogRow(taskId, patch) {
+    setCatalog(prev => prev && prev.map(t => t.id === taskId ? { ...t, ...patch } : t));
   }
 
-  async function createAndAddTask(taskName) {
-    const trimmed = taskName.trim();
+  async function setFlag(task, status, fields) {
+    const payload = {
+      qty: fields.qty ?? task.flag_qty ?? task.default_qty ?? '',
+      uom: fields.uom ?? task.flag_uom ?? task.default_uom ?? '',
+      assignedTo: fields.assignedTo ?? task.assigned_to ?? '',
+      note: fields.note ?? task.note ?? '',
+      neededBy: fields.neededBy ?? task.needed_by ?? '',
+    };
+    patchCatalogRow(task.id, {
+      status, flag_qty: payload.qty, flag_uom: payload.uom, assigned_to: payload.assignedTo, note: payload.note, needed_by: payload.neededBy,
+    });
+    setSaveError(null);
+    try {
+      await call({ action: 'setFlag', pin, taskId: task.id, status, ...payload });
+    } catch (e) {
+      setSaveError(e.message || 'Could not save that change.');
+    }
+  }
+
+  async function setCarryForward(task, carryForward) {
+    patchCatalogRow(task.id, { carry_forward: carryForward });
+    try {
+      await call({ action: 'setCarryForward', pin, taskId: task.id, carryForward });
+    } catch (e) {
+      setSaveError(e.message || 'Could not save that change.');
+    }
+  }
+
+  async function moveFlag(task, direction) {
+    try {
+      const result = await call({ action: 'setOrder', pin, taskId: task.id, direction });
+      setCatalog(result.catalog || []);
+    } catch (e) {
+      setSaveError(e.message || 'Could not reorder that task.');
+    }
+  }
+
+  async function createTask(name) {
+    const trimmed = name.trim();
     if (!trimmed) return;
     try {
       const result = await call({ action: 'createTask', pin, name: trimmed });
-      setAdminData(prev => ({ catalog: [...(prev?.catalog || []), result.task] }));
-      addTaskToDraft(result.task);
+      setCatalog(prev => [...(prev || []), { ...result.task, status: 'ok' }]);
     } catch (e) {
       setSaveError(e.message || 'Could not add that task.');
     }
   }
 
-  async function savePlan() {
-    setSaving(true); setSaveError(null);
-    try {
-      const items = draft.map(d => ({ taskId: d.taskId, qty: d.qty, uom: d.uom, assignedTo: d.assignedTo }));
-      const result = await call({ action: 'savePlan', pin, items });
-      setAdminData({ catalog: result.catalog || [] });
-      setDraft(buildDraftFromPlan(result.planItems || []));
-      setData(result);
-    } catch (e) {
-      setSaveError(e.message || 'Could not save the plan.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const sortedPlanItems = useMemo(() => {
-    if (!data) return [];
-    return [...data.planItems].sort((a, b) => a.sortOrder - b.sortOrder);
-  }, [data]);
-
-  const doneCount = sortedPlanItems.filter(i => i.status === 'done').length;
+  const planItems = data?.planItems || [];
 
   if (loading) {
     return (
@@ -256,7 +248,7 @@ export default function PublicPrepListView({ token }) {
 
   // The PIN screen is its own full page (same as Day Roster) -- it isn't
   // nested inside the tab chrome below, which assumes it's already unlocked.
-  if (tab === 'setPlan' && (!pin || !adminData)) {
+  if (tab === 'setPlan' && (!pin || !catalog)) {
     return (
       <PinPad
         token={token}
@@ -271,6 +263,9 @@ export default function PublicPrepListView({ token }) {
       />
     );
   }
+
+  const urgentCount = planItems.filter(i => i.status === 'urgent').length;
+  const lowCount = planItems.filter(i => i.status === 'low').length;
 
   return (
     <div style={{ minHeight: '100vh', background: BODY_BG, padding: '20px 14px 32px', fontFamily: FONT, touchAction: 'manipulation' }}>
@@ -290,7 +285,9 @@ export default function PublicPrepListView({ token }) {
             <a href={`/hub/${token}`} aria-label="Back to Staff Hub" style={{ width: 28, height: 28, borderRadius: 999, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', textDecoration: 'none', flexShrink: 0, fontSize: 14 }}>🏠</a>
           </div>
           <div style={{ color: 'rgba(255,255,255,0.82)', fontSize: 13, marginTop: 10 }}>
-            {tab === 'plan' ? (doneCount === sortedPlanItems.length && sortedPlanItems.length > 0 ? 'All done' : `${doneCount}/${sortedPlanItems.length} done today`) : 'Build today\'s plan'}
+            {tab === 'plan'
+              ? (planItems.length === 0 ? 'All good -- nothing flagged' : `${urgentCount} urgent · ${lowCount} running low`)
+              : 'Flag tasks Urgent / Running Low'}
           </div>
         </div>
 
@@ -308,23 +305,15 @@ export default function PublicPrepListView({ token }) {
         {/* Body card */}
         <div style={{ background: '#ffffff', borderLeft: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', borderBottom: '1px solid #E2E8F0', borderRadius: '0 0 14px 14px', padding: '18px 18px 20px' }}>
           {tab === 'plan' ? (
-            <PlanTab
-              items={sortedPlanItems}
-              onToggle={toggleComplete}
-              error={error}
-            />
+            <PlanTab items={planItems} onToggle={toggleComplete} error={error} />
           ) : (
             <SetPlanTab
-              draft={draft}
-              catalog={adminData.catalog}
+              catalog={catalog}
               staffOptions={data.staffOptions || []}
-              onAdd={addTaskToDraft}
-              onCreate={createAndAddTask}
-              onRemove={removeFromDraft}
-              onUpdateField={updateDraftField}
-              onMove={moveDraft}
-              onSave={savePlan}
-              saving={saving}
+              onSetFlag={setFlag}
+              onSetCarryForward={setCarryForward}
+              onMove={moveFlag}
+              onCreate={createTask}
               saveError={saveError}
               onSignOut={signOutAdmin}
             />
@@ -345,42 +334,39 @@ function PlanTab({ items, onToggle, error }) {
       {items.length === 0 ? (
         <div style={{ padding: '28px 10px', textAlign: 'center' }}>
           <div style={{ fontSize: 28, marginBottom: 8 }}>🌤️</div>
-          <div style={{ fontSize: 13.5, color: MUTED }}>Nothing on today's plan yet.</div>
+          <div style={{ fontSize: 13.5, color: MUTED }}>All good -- nothing flagged right now.</div>
         </div>
       ) : (
         <div style={{ border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden' }}>
           {items.map((item, idx) => {
-            const done = item.status === 'done';
+            const meta = STATUS_META[item.status] || STATUS_META.ok;
             const qtyLabel = fmtQty(item.qty) ? `${fmtQty(item.qty)}${item.uom ? ' ' + item.uom : ''}` : '';
+            const neededByLabel = fmtNeededBy(item.neededBy);
             return (
               <div key={item.id} style={{
                 padding: '13px 14px', borderBottom: idx === items.length - 1 ? 'none' : `1px solid ${HAIRLINE}`,
-                display: 'flex', alignItems: 'center', gap: 12, background: done ? '#FAFBFC' : 'white',
+                display: 'flex', alignItems: 'flex-start', gap: 12, borderLeft: `3px solid ${meta.color}`,
               }}>
                 <button
                   onClick={() => onToggle(item)}
-                  title={done ? 'Mark not done' : 'Mark done'}
+                  title="Mark done"
                   style={{
-                    width: 26, height: 26, borderRadius: 999, flexShrink: 0, cursor: 'pointer',
-                    border: done ? 'none' : '2px solid #E2E8F0', background: done ? '#0f9d4e' : 'white',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: done ? 'white' : '#CBD5E1', fontSize: 14,
+                    width: 26, height: 26, borderRadius: 999, flexShrink: 0, cursor: 'pointer', marginTop: 1,
+                    border: '2px solid #E2E8F0', background: 'white',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#CBD5E1', fontSize: 14,
                   }}
                 >✓</button>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 14.5, fontWeight: 700, color: done ? FAINT : INK, textDecoration: done ? 'line-through' : 'none' }}>{item.name}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 3 }}>
+                    <span style={{ fontSize: 10, fontWeight: 800, color: meta.color, background: meta.bg, borderRadius: 999, padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{meta.label}</span>
                     {item.assignedTo && (
-                      <span style={{
-                        fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 8px',
-                        color: done ? FAINT : assigneeColor(item.assignedTo).text,
-                        background: done ? '#F1F5F9' : assigneeColor(item.assignedTo).bg,
-                      }}>{item.assignedTo}</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 8px', color: assigneeColor(item.assignedTo).text, background: assigneeColor(item.assignedTo).bg }}>{item.assignedTo}</span>
                     )}
                   </div>
-                  {(qtyLabel || (done && item.completedAt)) && (
+                  <div style={{ fontSize: 14.5, fontWeight: 700, color: INK }}>{item.name}</div>
+                  {(qtyLabel || neededByLabel || item.note || item.flaggedAt) && (
                     <div style={{ fontSize: 11.5, color: FAINT, marginTop: 2 }}>
-                      {qtyLabel}
-                      {done && item.completedAt ? `${qtyLabel ? ' · ' : ''}done ${timeAgo(item.completedAt)}` : ''}
+                      {[qtyLabel, neededByLabel, item.note, item.flaggedAt ? `flagged ${timeAgo(item.flaggedAt)}` : ''].filter(Boolean).join(' · ')}
                     </div>
                   )}
                 </div>
@@ -393,17 +379,31 @@ function PlanTab({ items, onToggle, error }) {
   );
 }
 
-function SetPlanTab({ draft, catalog, staffOptions, onAdd, onCreate, onRemove, onUpdateField, onMove, onSave, saving, saveError, onSignOut }) {
+function SetPlanTab({ catalog, staffOptions, onSetFlag, onSetCarryForward, onMove, onCreate, saveError, onSignOut }) {
   const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState(() => new Set());
 
-  const draftTaskIds = useMemo(() => new Set(draft.map(d => d.taskId)), [draft]);
-  const available = useMemo(() => catalog.filter(t => !draftTaskIds.has(t.id)), [catalog, draftTaskIds]);
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return available;
-    return available.filter(t => t.name.toLowerCase().includes(q));
-  }, [available, search]);
-  const exactMatch = useMemo(() => catalog.some(t => t.name.toLowerCase() === search.trim().toLowerCase()), [catalog, search]);
+  // Flagged tasks first (urgent, then low, in flag_order), unflagged
+  // tasks after in catalog order -- same ordering the Plan tab gets.
+  const ordered = useMemo(() => {
+    const severity = { urgent: 0, low: 1, ok: 2 };
+    return [...catalog].sort((a, b) => (severity[a.status] - severity[b.status]) || (a.flag_order - b.flag_order));
+  }, [catalog]);
+
+  const flaggedIds = useMemo(() => new Set(catalog.filter(t => t.status !== 'ok').map(t => t.id)), [catalog]);
+  const flaggedOrdered = useMemo(() => ordered.filter(t => flaggedIds.has(t.id)), [ordered, flaggedIds]);
+
+  const q = search.trim().toLowerCase();
+  const visible = q ? ordered.filter(t => t.name.toLowerCase().includes(q)) : ordered;
+  const exactMatch = catalog.some(t => t.name.toLowerCase() === q);
+
+  function toggleExpanded(id) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   return (
     <>
@@ -411,81 +411,133 @@ function SetPlanTab({ draft, catalog, staffOptions, onAdd, onCreate, onRemove, o
         <button onClick={onSignOut} style={{ background: 'none', border: 'none', color: MUTED, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: FONT }}>Lock</button>
       </div>
 
-      <label style={labelStyle}>Today's tasks, in priority order</label>
-      {draft.length === 0 ? (
-        <div style={{ fontSize: 13, color: FAINT, padding: '10px 2px 16px' }}>Nothing added yet -- pick from the list below.</div>
-      ) : (
-        <div style={{ border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
-          {draft.map((d, idx) => (
-            <div key={d.taskId} style={{ padding: '12px 12px', borderBottom: idx === draft.length - 1 ? 'none' : `1px solid ${HAIRLINE}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: FAINT, width: 16, flexShrink: 0 }}>{idx + 1}.</span>
-                <span style={{ fontSize: 14, fontWeight: 700, color: INK, flex: 1, minWidth: 0 }}>{d.name}</span>
-                <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-                  <button onClick={() => onMove(idx, -1)} disabled={idx === 0} style={{ background: 'none', border: 'none', color: idx === 0 ? '#E2E8F0' : MUTED, cursor: idx === 0 ? 'default' : 'pointer', fontSize: 11, padding: '0 2px', lineHeight: 1 }}>▲</button>
-                  <button onClick={() => onMove(idx, 1)} disabled={idx === draft.length - 1} style={{ background: 'none', border: 'none', color: idx === draft.length - 1 ? '#E2E8F0' : MUTED, cursor: idx === draft.length - 1 ? 'default' : 'pointer', fontSize: 11, padding: '0 2px', lineHeight: 1 }}>▼</button>
-                </div>
-                <button onClick={() => onRemove(d.taskId)} aria-label={`Remove ${d.name}`} style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 999, border: 'none', background: '#F1F5F9', color: FAINT, cursor: 'pointer', fontSize: 12 }}>✕</button>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.3fr', gap: 6 }}>
-                <div>
-                  <span style={{ fontSize: 9.5, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 3 }}>Qty</span>
-                  <input value={d.qty} onChange={e => onUpdateField(d.taskId, 'qty', e.target.value)} placeholder="e.g. 2" inputMode="decimal" style={{ ...inputStyle, padding: '9px 10px' }} />
-                </div>
-                <div>
-                  <span style={{ fontSize: 9.5, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 3 }}>Unit</span>
-                  <input value={d.uom} onChange={e => onUpdateField(d.taskId, 'uom', e.target.value)} placeholder="e.g. trays" style={{ ...inputStyle, padding: '9px 10px' }} />
-                </div>
-                <div>
-                  <span style={{ fontSize: 9.5, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 3 }}>Assigned to</span>
-                  <select value={d.assignedTo} onChange={e => onUpdateField(d.taskId, 'assignedTo', e.target.value)} style={{
-                    ...inputStyle, padding: '9px 10px', fontWeight: d.assignedTo ? 700 : 400,
-                    color: d.assignedTo ? assigneeColor(d.assignedTo).text : FAINT,
-                    background: d.assignedTo ? assigneeColor(d.assignedTo).bg : inputStyle.background,
-                    borderColor: d.assignedTo ? assigneeColor(d.assignedTo).text : '#E2E8F0',
-                  }}>
-                    <option value="">Unassigned</option>
-                    {staffOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      {saveError && <div style={{ fontSize: 12.5, color: RED, fontWeight: 500, marginBottom: 10 }}>{saveError}</div>}
 
-      {saveError && <div style={{ fontSize: 12.5, color: RED, fontWeight: 500, marginBottom: 10, textAlign: 'center' }}>{saveError}</div>}
-
-      <button onClick={onSave} disabled={saving} style={{ ...primaryButtonStyle(saving), marginBottom: 20 }}>
-        {saving ? 'Saving…' : 'Save Plan'}
-      </button>
-
-      <label style={labelStyle}>Add a task</label>
-      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search or type a new task" style={{ ...inputStyle, marginBottom: 8 }} />
-
-      {filtered.length > 0 && (
-        <div style={{ border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden' }}>
-          {filtered.map((t, idx) => (
-            <button key={t.id} onClick={() => { onAdd(t); setSearch(''); }} style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-              padding: '11px 13px', border: 'none', borderTop: idx === 0 ? 'none' : `1px solid ${HAIRLINE}`,
-              background: '#ffffff', cursor: 'pointer', fontFamily: FONT, textAlign: 'left',
-            }}>
-              <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>{t.name}</span>
-              <span style={{ fontSize: 11, color: FAINT }}>{[fmtQty(t.default_qty), t.default_uom].filter(Boolean).join(' ') || 'Add'}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search or type a new task" style={{ ...inputStyle, marginBottom: 12 }} />
 
       {search.trim() && !exactMatch && (
-        <button onClick={() => onCreate(search)} style={{
-          display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginTop: 8, padding: '11px 13px',
-          border: `1px dashed #C7D2FE`, borderRadius: 10, background: '#EEF2FF', color: BLUE, cursor: 'pointer', fontFamily: FONT, fontSize: 13.5, fontWeight: 700,
+        <button onClick={() => { onCreate(search); setSearch(''); }} style={{
+          display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginBottom: 14, padding: '11px 13px',
+          border: '1px dashed #C7D2FE', borderRadius: 10, background: '#EEF2FF', color: BLUE, cursor: 'pointer', fontFamily: FONT, fontSize: 13.5, fontWeight: 700,
         }}>
           + Add “{search.trim()}” as a new task
         </button>
       )}
+
+      <div style={{ border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden' }}>
+        {visible.length === 0 ? (
+          <div style={{ padding: '18px', textAlign: 'center', fontSize: 13, color: FAINT }}>No tasks match.</div>
+        ) : visible.map((task, idx) => {
+          const meta = STATUS_META[task.status] || STATUS_META.ok;
+          const isFlagged = task.status !== 'ok';
+          const isOpen = isFlagged && expanded.has(task.id);
+          const flagIdx = flaggedOrdered.findIndex(t => t.id === task.id);
+
+          return (
+            <div key={task.id} style={{ borderTop: idx === 0 ? 'none' : `1px solid ${HAIRLINE}`, borderLeft: isFlagged ? `3px solid ${meta.color}` : 'none' }}>
+              <div style={{ padding: '11px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  onClick={() => isFlagged && toggleExpanded(task.id)}
+                  disabled={!isFlagged}
+                  style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', textAlign: 'left', cursor: isFlagged ? 'pointer' : 'default', padding: 0, fontFamily: FONT }}
+                >
+                  <span style={{ fontSize: 14, fontWeight: 700, color: INK, flex: 1, minWidth: 0 }}>{task.name}</span>
+                  {task.assigned_to && (
+                    <span style={{ fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 7px', color: assigneeColor(task.assigned_to).text, background: assigneeColor(task.assigned_to).bg }}>{task.assigned_to}</span>
+                  )}
+                  {isFlagged && <span style={{ fontSize: 12, color: FAINT, flexShrink: 0 }}>{isOpen ? '▲' : '▼'}</span>}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: 6, padding: '0 12px 11px' }}>
+                {['ok', 'low', 'urgent'].map(s => {
+                  const active = task.status === s;
+                  const m = STATUS_META[s];
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => { onSetFlag(task, s, {}); if (s !== 'ok') setExpanded(prev => new Set(prev).add(task.id)); }}
+                      style={{
+                        flex: 1, minHeight: 36, borderRadius: 7, border: `1.5px solid ${active ? m.color : '#E2E8F0'}`,
+                        background: active ? m.bg : 'white', color: active ? m.color : MUTED, fontSize: 11.5, fontWeight: 700,
+                        fontFamily: FONT, cursor: 'pointer', padding: '0 4px',
+                      }}
+                    >{m.label}</button>
+                  );
+                })}
+              </div>
+
+              {isOpen && (
+                <div style={{ padding: '0 12px 14px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
+                    <div>
+                      <span style={miniLabelStyle}>Qty</span>
+                      <input
+                        defaultValue={task.flag_qty ?? task.default_qty ?? ''}
+                        onBlur={e => onSetFlag(task, task.status, { qty: e.target.value })}
+                        placeholder="e.g. 2" inputMode="decimal" style={{ ...inputStyle, padding: '9px 10px' }}
+                      />
+                    </div>
+                    <div>
+                      <span style={miniLabelStyle}>Unit</span>
+                      <input
+                        defaultValue={task.flag_uom ?? task.default_uom ?? ''}
+                        onBlur={e => onSetFlag(task, task.status, { uom: e.target.value })}
+                        placeholder="e.g. kg" style={{ ...inputStyle, padding: '9px 10px' }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <span style={miniLabelStyle}>Assigned to</span>
+                    <select
+                      value={task.assigned_to || ''}
+                      onChange={e => onSetFlag(task, task.status, { assignedTo: e.target.value })}
+                      style={{
+                        ...inputStyle, padding: '9px 10px', fontWeight: task.assigned_to ? 700 : 400,
+                        color: task.assigned_to ? assigneeColor(task.assigned_to).text : FAINT,
+                        background: task.assigned_to ? assigneeColor(task.assigned_to).bg : inputStyle.background,
+                        borderColor: task.assigned_to ? assigneeColor(task.assigned_to).text : '#E2E8F0',
+                      }}
+                    >
+                      <option value="">Unassigned</option>
+                      {staffOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
+                    <div>
+                      <span style={miniLabelStyle}>Note</span>
+                      <input
+                        defaultValue={task.note || ''}
+                        onBlur={e => onSetFlag(task, task.status, { note: e.target.value })}
+                        placeholder="Optional" style={{ ...inputStyle, padding: '9px 10px' }}
+                      />
+                    </div>
+                    <div>
+                      <span style={miniLabelStyle}>Needed by</span>
+                      <input
+                        type="date"
+                        defaultValue={task.needed_by || ''}
+                        onBlur={e => onSetFlag(task, task.status, { neededBy: e.target.value })}
+                        style={{ ...inputStyle, padding: '9px 10px' }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: MUTED, fontWeight: 600, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!task.carry_forward} onChange={e => onSetCarryForward(task, e.target.checked)} />
+                      Carry to tomorrow if not done
+                    </label>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button onClick={() => onMove(task, -1)} disabled={flagIdx <= 0} style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: 6, width: 26, height: 26, color: flagIdx <= 0 ? '#E2E8F0' : MUTED, cursor: flagIdx <= 0 ? 'default' : 'pointer' }}>▲</button>
+                      <button onClick={() => onMove(task, 1)} disabled={flagIdx === -1 || flagIdx >= flaggedOrdered.length - 1} style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: 6, width: 26, height: 26, color: (flagIdx === -1 || flagIdx >= flaggedOrdered.length - 1) ? '#E2E8F0' : MUTED, cursor: 'pointer' }}>▼</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </>
   );
 }
