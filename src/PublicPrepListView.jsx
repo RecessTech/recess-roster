@@ -35,17 +35,6 @@ function clearStoredPin(token) {
   try { sessionStorage.removeItem(PIN_STORAGE_KEY(token)); } catch { /* ignore */ }
 }
 
-function timeAgo(iso) {
-  if (!iso) return '';
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const mins = Math.round(diffMs / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
-}
-
 function fmtQty(n) {
   if (n == null || n === '') return '';
   const num = Number(n);
@@ -86,14 +75,17 @@ function sortTasks(list) {
 }
 
 // Drag-and-drop reorder for one group of task ids (one priority tier).
-// While dragging, `order` is the live preview; the dragged row's new rank
-// is just "how many other rows' midpoints are above the pointer" -- no
-// swapping logic, so it can't land in the wrong slot by one.
+// Plain touch/mouse listeners rather than Pointer Events + setPointerCapture
+// -- the latter is known to be unreliable on mobile Safari for exactly this
+// kind of custom drag list. Listeners are attached once and stay attached;
+// they no-op via draggingRef when nothing is being dragged, so there's no
+// per-drag add/remove-listener cycle to get wrong.
 function useDragReorder(ids, onCommit) {
   const [dragId, setDragId] = useState(null);
   const [order, setOrder] = useState(ids);
   const orderRef = useRef(ids);
   const rowRefs = useRef(new Map());
+  const draggingRef = useRef(null);
 
   useEffect(() => {
     if (!dragId) { setOrder(ids); orderRef.current = ids; }
@@ -104,43 +96,65 @@ function useDragReorder(ids, onCommit) {
     if (el) rowRefs.current.set(id, el); else rowRefs.current.delete(id);
   }
 
-  function handlePointerDown(id, e) {
+  function reorderTo(y) {
+    const dragged = draggingRef.current;
+    if (!dragged) return;
+    const rest = orderRef.current.filter(id => id !== dragged);
+    let newIdx = 0;
+    for (const id of rest) {
+      const el = rowRefs.current.get(id);
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (y > rect.top + rect.height / 2) newIdx++;
+    }
+    const next = [...rest];
+    next.splice(newIdx, 0, dragged);
+    if (next.join(',') !== orderRef.current.join(',')) {
+      orderRef.current = next;
+      setOrder(next);
+    }
+  }
+
+  function endDrag() {
+    if (!draggingRef.current) return;
+    draggingRef.current = null;
+    setDragId(null);
+    onCommit(orderRef.current);
+  }
+
+  function handleStart(id, e) {
     e.preventDefault();
+    draggingRef.current = id;
     orderRef.current = ids;
     setOrder(ids);
     setDragId(id);
-    try { e.target.setPointerCapture(e.pointerId); } catch { /* not all pointer types support capture */ }
   }
 
   useEffect(() => {
-    if (!dragId) return;
-    function reorder(y) {
-      const rest = orderRef.current.filter(id => id !== dragId);
-      let newIdx = 0;
-      for (const id of rest) {
-        const el = rowRefs.current.get(id);
-        if (!el) continue;
-        const rect = el.getBoundingClientRect();
-        if (y > rect.top + rect.height / 2) newIdx++;
-      }
-      const next = [...rest];
-      next.splice(newIdx, 0, dragId);
-      if (next.join(',') !== orderRef.current.join(',')) {
-        orderRef.current = next;
-        setOrder(next);
-      }
+    function onTouchMove(e) {
+      if (!draggingRef.current) return;
+      e.preventDefault();
+      if (e.touches[0]) reorderTo(e.touches[0].clientY);
     }
-    function onMove(e) { reorder(e.clientY); }
-    function onUp() { setDragId(null); onCommit(orderRef.current); }
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp, { once: true });
+    function onMouseMove(e) {
+      if (draggingRef.current) reorderTo(e.clientY);
+    }
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', endDrag);
+    window.addEventListener('touchcancel', endDrag);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', endDrag);
     return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', endDrag);
+      window.removeEventListener('touchcancel', endDrag);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', endDrag);
     };
-  }, [dragId, onCommit]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onCommit]);
 
-  return { order: dragId ? order : ids, dragId, registerRow, handlePointerDown };
+  return { order: dragId ? order : ids, dragId, registerRow, handleStart };
 }
 
 // Two tabs, one tile: "Plan" is the staff-facing ordered list (no login,
@@ -366,8 +380,8 @@ export default function PublicPrepListView({ token }) {
     );
   }
 
-  const urgentCount = planItems.filter(i => i.status === 'urgent').length;
-  const lowCount = planItems.filter(i => i.status === 'low').length;
+  const doneCount = planItems.filter(i => i.done).length;
+  const remainingCount = planItems.length - doneCount;
 
   return (
     <div style={{ minHeight: '100vh', background: BODY_BG, padding: '20px 14px 32px', fontFamily: FONT, touchAction: 'manipulation' }}>
@@ -388,8 +402,8 @@ export default function PublicPrepListView({ token }) {
           </div>
           <div style={{ color: 'rgba(255,255,255,0.82)', fontSize: 13, marginTop: 10 }}>
             {tab === 'plan'
-              ? (planItems.length === 0 ? 'All good -- nothing flagged' : `${urgentCount} urgent · ${lowCount} running low`)
-              : 'Flag tasks Urgent / Running Low'}
+              ? (planItems.length === 0 ? 'All good -- nothing flagged' : `${remainingCount} to prep${doneCount > 0 ? ` · ${doneCount} done` : ''}`)
+              : 'Flag tasks for today'}
           </div>
         </div>
 
@@ -558,7 +572,17 @@ function FlagEditor({ task, staffOptions, onSetFlag, onSetCarryForward }) {
   );
 }
 
+// Status (Urgent/Running Low) was just the mechanism for getting a task
+// onto this list in the first place -- it carries no meaning once it's
+// here, so Plan never shows it. Priority is what actually orders and
+// matters, so Plan groups by priority the same way Set Plan does.
 function PlanTab({ items, onToggle, error, canEdit, editingId, onRequestEdit, staffOptions, onSetFlag, onSetCarryForward, saveError }) {
+  const groups = useMemo(() => {
+    const byP = { 1: [], 2: [], 3: [] };
+    items.forEach(i => (byP[i.priority] || byP[2]).push(i));
+    return byP;
+  }, [items]);
+
   return (
     <>
       {error && <div style={{ fontSize: 12.5, color: RED, fontWeight: 500, marginBottom: 10 }}>{error}</div>}
@@ -570,69 +594,93 @@ function PlanTab({ items, onToggle, error, canEdit, editingId, onRequestEdit, st
           <div style={{ fontSize: 13.5, color: MUTED }}>All good -- nothing flagged right now.</div>
         </div>
       ) : (
-        <div style={{ border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden' }}>
-          {items.map((item, idx) => {
-            const meta = STATUS_META[item.status] || STATUS_META.ok;
-            const qtyLabel = fmtQty(item.qty) ? `${fmtQty(item.qty)}${item.uom ? ' ' + item.uom : ''}` : '';
-            const done = item.done;
-            const isEditing = editingId === item.id;
-            return (
-              <div key={item.id} style={{ borderBottom: idx === items.length - 1 ? 'none' : `1px solid ${HAIRLINE}`, borderLeft: `3px solid ${meta.color}`, background: done ? '#FAFBFC' : 'white' }}>
-                <div style={{ padding: '13px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                  <button
-                    onClick={() => onToggle(item)}
-                    title={done ? 'Mark not done' : 'Mark done'}
-                    style={{
-                      width: 26, height: 26, borderRadius: 999, flexShrink: 0, cursor: 'pointer', marginTop: 1,
-                      border: done ? 'none' : '2px solid #E2E8F0', background: done ? '#0f9d4e' : 'white',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', color: done ? 'white' : '#CBD5E1', fontSize: 14,
-                    }}
-                  >✓</button>
+        [1, 2, 3].map(p => groups[p].length > 0 && (
+          <PlanPriorityGroup
+            key={p}
+            priority={p}
+            items={groups[p]}
+            onToggle={onToggle}
+            canEdit={canEdit}
+            editingId={editingId}
+            onRequestEdit={onRequestEdit}
+            staffOptions={staffOptions}
+            onSetFlag={onSetFlag}
+            onSetCarryForward={onSetCarryForward}
+          />
+        ))
+      )}
+    </>
+  );
+}
+
+function PlanPriorityGroup({ priority, items, onToggle, canEdit, editingId, onRequestEdit, staffOptions, onSetFlag, onSetCarryForward }) {
+  const meta = PRIORITY_META[priority];
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6, paddingLeft: 2 }}>
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: meta.color, background: meta.bg, borderRadius: 999, padding: '2px 8px' }}>Priority {priority}</span>
+        <span style={{ fontSize: 10.5, color: FAINT, fontWeight: 600 }}>{meta.sub}</span>
+      </div>
+      <div style={{ border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden' }}>
+        {items.map((item, idx) => {
+          const qtyLabel = fmtQty(item.qty) ? `${fmtQty(item.qty)}${item.uom ? ' ' + item.uom : ''}` : '';
+          const done = item.done;
+          const isEditing = editingId === item.id;
+          return (
+            <div key={item.id} style={{ borderTop: idx === 0 ? 'none' : `1px solid ${HAIRLINE}`, background: done ? '#FAFBFC' : 'white' }}>
+              <div style={{ padding: '12px 10px 12px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button
+                  onClick={() => onToggle(item)}
+                  title={done ? 'Mark not done' : 'Mark done'}
+                  style={{
+                    width: 26, height: 26, borderRadius: 999, flexShrink: 0, cursor: 'pointer',
+                    border: done ? 'none' : '2px solid #E2E8F0', background: done ? '#0f9d4e' : 'white',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: done ? 'white' : '#CBD5E1', fontSize: 14,
+                  }}
+                >✓</button>
+                <button
+                  onClick={() => onRequestEdit(item.id)}
+                  style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', padding: 0, fontFamily: FONT }}
+                >
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 3 }}>
-                      <span style={{ fontSize: 10, fontWeight: 800, color: done ? FAINT : meta.color, background: done ? '#F1F5F9' : meta.bg, borderRadius: 999, padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{meta.label}</span>
-                      {item.catering && (
-                        <span style={{ fontSize: 10, fontWeight: 800, color: done ? FAINT : '#7C3AED', background: done ? '#F1F5F9' : '#F3E8FF', borderRadius: 999, padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Catering</span>
-                      )}
-                      {item.assignedTo && (
-                        <span style={{ fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 8px', color: done ? FAINT : assigneeColor(item.assignedTo).text, background: done ? '#F1F5F9' : assigneeColor(item.assignedTo).bg }}>{item.assignedTo}</span>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
                       <span style={{ fontSize: 14.5, fontWeight: 700, color: done ? FAINT : INK, textDecoration: done ? 'line-through' : 'none' }}>{item.name}</span>
                       {qtyLabel && (
-                        <span style={{ fontSize: 15.5, fontWeight: 800, color: done ? FAINT : INK, textDecoration: done ? 'line-through' : 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>{qtyLabel}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: done ? FAINT : INK, textDecoration: done ? 'line-through' : 'none', whiteSpace: 'nowrap' }}>· {qtyLabel}</span>
                       )}
                     </div>
-                    {(item.note || item.flaggedAt) && (
-                      <div style={{ fontSize: 11.5, color: FAINT, marginTop: 2, textDecoration: done ? 'line-through' : 'none' }}>
-                        {[item.note, item.flaggedAt ? `flagged ${timeAgo(item.flaggedAt)}` : ''].filter(Boolean).join(' · ')}
+                    {(item.catering || item.assignedTo) && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 3 }}>
+                        {item.catering && (
+                          <span style={{ fontSize: 10, fontWeight: 800, color: done ? FAINT : '#7C3AED', background: done ? '#F1F5F9' : '#F3E8FF', borderRadius: 999, padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Catering</span>
+                        )}
+                        {item.assignedTo && (
+                          <span style={{ fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 8px', color: done ? FAINT : assigneeColor(item.assignedTo).text, background: done ? '#F1F5F9' : assigneeColor(item.assignedTo).bg }}>{item.assignedTo}</span>
+                        )}
+                      </div>
+                    )}
+                    {item.note && (
+                      <div style={{ fontSize: 12.5, color: done ? FAINT : '#334155', fontStyle: 'italic', marginTop: 3, textDecoration: done ? 'line-through' : 'none' }}>
+                        {item.note}
                       </div>
                     )}
                   </div>
-                  <button
-                    onClick={() => onRequestEdit(item.id)}
-                    aria-label="Edit"
-                    style={{
-                      flexShrink: 0, width: 28, height: 28, borderRadius: 8, border: '1px solid #E2E8F0', background: isEditing ? '#EEF2FF' : 'white',
-                      color: isEditing ? BLUE : MUTED, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >✏️</button>
-                </div>
-                {isEditing && canEdit && (
-                  <div style={{ padding: '0 14px 14px 14px', borderTop: `1px solid ${HAIRLINE}`, marginTop: -1, paddingTop: 12 }}>
-                    <FlagEditor task={{
-                      id: item.id, status: item.status, flag_qty: item.qty, flag_uom: item.uom, assigned_to: item.assignedTo,
-                      note: item.note, catering: item.catering, carry_forward: item.carryForward, priority: item.priority,
-                    }} staffOptions={staffOptions} onSetFlag={onSetFlag} onSetCarryForward={onSetCarryForward} />
-                  </div>
-                )}
+                  <span style={{ fontSize: 12, color: FAINT, flexShrink: 0 }}>{isEditing ? '▲' : '▼'}</span>
+                </button>
               </div>
-            );
-          })}
-        </div>
-      )}
-    </>
+              {isEditing && canEdit && (
+                <div style={{ padding: '0 14px 14px 14px', borderTop: `1px solid ${HAIRLINE}`, marginTop: -1, paddingTop: 12 }}>
+                  <FlagEditor task={{
+                    id: item.id, status: item.status, flag_qty: item.qty, flag_uom: item.uom, assigned_to: item.assignedTo,
+                    note: item.note, catering: item.catering, carry_forward: item.carryForward, priority: item.priority,
+                  }} staffOptions={staffOptions} onSetFlag={onSetFlag} onSetCarryForward={onSetCarryForward} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -640,7 +688,7 @@ function PlanTab({ items, onToggle, error, canEdit, editingId, onRequestEdit, st
 function PriorityGroup({ priority, tasks, staffOptions, onSetFlag, onSetCarryForward, onReorder, expanded, onToggleExpanded }) {
   const ids = useMemo(() => sortTasks(tasks).map(t => t.id), [tasks]);
   const byId = useMemo(() => new Map(tasks.map(t => [t.id, t])), [tasks]);
-  const { order, dragId, registerRow, handlePointerDown } = useDragReorder(ids, onReorder);
+  const { order, dragId, registerRow, handleStart } = useDragReorder(ids, onReorder);
   const meta = PRIORITY_META[priority];
 
   if (tasks.length === 0) return null;
@@ -665,8 +713,9 @@ function PriorityGroup({ priority, tasks, staffOptions, onSetFlag, onSetCarryFor
             }}>
               <div style={{ padding: '11px 8px 11px 4px', display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span
-                  onPointerDown={e => handlePointerDown(task.id, e)}
-                  style={{ touchAction: 'none', cursor: 'grab', color: '#CBD5E1', fontSize: 16, padding: '4px 6px', flexShrink: 0, userSelect: 'none' }}
+                  onTouchStart={e => handleStart(task.id, e)}
+                  onMouseDown={e => handleStart(task.id, e)}
+                  style={{ touchAction: 'none', WebkitTouchCallout: 'none', cursor: 'grab', color: '#CBD5E1', fontSize: 20, padding: '6px 8px', flexShrink: 0, userSelect: 'none' }}
                 >⠿</span>
                 <button
                   onClick={() => onToggleExpanded(task.id)}
