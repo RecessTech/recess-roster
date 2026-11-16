@@ -66,16 +66,17 @@ serve(async (req) => {
     // itself is consumed so it needs pressing again to survive the next.
     if (org.prep_last_reset_date !== today) {
       await supabase.from('prep_tasks').update({
-        status: 'ok', carry_forward: false, assigned_to: null, note: null, catering: false, done: false, flagged_at: null,
+        status: 'ok', carry_forward: false, assigned_to: null, note: null, catering: false, done: false, flagged_at: null, priority: 2,
       }).eq('org_id', org.id).neq('status', 'ok').eq('carry_forward', false);
       await supabase.from('prep_tasks').update({ carry_forward: false }).eq('org_id', org.id).eq('carry_forward', true);
 
-      // Standing tasks (the 2kg of bacon) always come back urgent, first
-      // in the list, at their default qty -- overriding whatever else is
-      // going on with them, since "every morning, doesn't change" means
-      // unconditionally, not just when nothing else flagged it first.
+      // Standing tasks (the 2kg of bacon) always come back urgent, highest
+      // priority, first in the list, at their default qty -- overriding
+      // whatever else is going on with them, since "every morning,
+      // doesn't change" means unconditionally, not just when nothing else
+      // flagged it first.
       await supabase.from('prep_tasks').update({
-        status: 'urgent', flag_order: -1, flagged_at: new Date().toISOString(), done: false,
+        status: 'urgent', priority: 1, flag_order: -1, flagged_at: new Date().toISOString(), done: false,
       }).eq('org_id', org.id).eq('auto_include', true).eq('active', true);
       const { data: autoTasks } = await supabase.from('prep_tasks').select('id, default_qty, default_uom').eq('org_id', org.id).eq('auto_include', true).eq('active', true);
       for (const t of (autoTasks || [])) {
@@ -105,7 +106,7 @@ serve(async (req) => {
     // ── Everything below is admin-only: re-check the shared roster PIN on
     // every call (stateless, same brute-force lockout as Day Roster/My
     // Roster -- see staff_pin_attempts).
-    const isAdminAction = ['unlock', 'createTask', 'setFlag', 'setOrder', 'setCarryForward'].includes(action);
+    const isAdminAction = ['unlock', 'createTask', 'setFlag', 'reorderFlags', 'setCarryForward'].includes(action);
     let pinOk = false;
     if (isAdminAction) {
       const { pin } = body;
@@ -141,7 +142,7 @@ serve(async (req) => {
         default_qty: defaultQty === '' || defaultQty == null ? null : Number(defaultQty),
         default_uom: (defaultUom || '').trim() || null,
         sort_order: (maxRow?.sort_order ?? -1) + 1,
-      }).select('id, name, default_qty, default_uom, auto_include, status, flag_qty, flag_uom, assigned_to, note, catering, done, carry_forward, flag_order').single();
+      }).select('id, name, default_qty, default_uom, auto_include, status, flag_qty, flag_uom, assigned_to, note, catering, done, carry_forward, priority, flag_order').single();
       if (createError) return jsonResponse({ error: createError.message }, 400);
 
       return jsonResponse({ task: created });
@@ -151,11 +152,13 @@ serve(async (req) => {
     // that go with it. Clearing back to 'ok' also drops carry_forward and
     // done -- there's nothing to carry or tick once it's not flagged.
     if (action === 'setFlag' && pinOk) {
-      const { taskId, status, qty, uom, assignedTo, note, catering } = body;
+      const { taskId, status, qty, uom, assignedTo, note, catering, priority } = body;
       if (!STATUSES.includes(status)) return jsonResponse({ error: 'Unknown status.' }, 400);
 
       const update: Record<string, unknown> = {
         status,
+        // Qty is deliberately optional -- '' / null / undefined all mean
+        // "no quantity", not "default to 0".
         flag_qty: qty === '' || qty == null ? null : Number(qty),
         flag_uom: (uom || '').trim() || null,
         assigned_to: (assignedTo || '').trim() || null,
@@ -163,14 +166,20 @@ serve(async (req) => {
         catering: !!catering,
         flagged_at: status === 'ok' ? null : new Date().toISOString(),
       };
+      if ([1, 2, 3].includes(priority)) update.priority = priority;
+
       if (status === 'ok') {
         update.carry_forward = false;
         update.done = false;
+        update.priority = 2;
       } else {
-        // Newly (re-)flagged tasks land at the back of the priority
-        // queue by default -- admin reorders from there with the arrows.
-        const { data: maxRow } = await supabase.from('prep_tasks').select('flag_order').eq('org_id', org.id).neq('status', 'ok').order('flag_order', { ascending: false }).limit(1).maybeSingle();
-        update.flag_order = (maxRow?.flag_order ?? -1) + 1;
+        // Newly (re-)flagged tasks land at the back of the queue by
+        // default -- admin reorders from there with drag-and-drop.
+        const { data: existing } = await supabase.from('prep_tasks').select('status').eq('id', taskId).single();
+        if (existing?.status === 'ok') {
+          const { data: maxRow } = await supabase.from('prep_tasks').select('flag_order').eq('org_id', org.id).neq('status', 'ok').order('flag_order', { ascending: false }).limit(1).maybeSingle();
+          update.flag_order = (maxRow?.flag_order ?? -1) + 1;
+        }
       }
 
       const { error: updateError } = await supabase.from('prep_tasks').update(update).eq('id', taskId).eq('org_id', org.id);
@@ -183,39 +192,40 @@ serve(async (req) => {
       if (updateError) return jsonResponse({ error: updateError.message }, 400);
     }
 
-    if (action === 'setOrder' && pinOk) {
-      const { taskId, direction } = body; // direction: -1 | 1, swaps flag_order with the adjacent flagged task
-      const { data: flagged } = await supabase.from('prep_tasks').select('id, status, flag_order').eq('org_id', org.id).neq('status', 'ok').order('flag_order', { ascending: true });
-      const list = flagged || [];
-      const idx = list.findIndex(t => t.id === taskId);
-      const j = idx + (direction < 0 ? -1 : 1);
-      if (idx === -1 || j < 0 || j >= list.length) {
-        // no-op, still fine to fall through and return current state
-      } else {
-        const a = list[idx], b = list[j];
-        await Promise.all([
-          supabase.from('prep_tasks').update({ flag_order: b.flag_order }).eq('id', a.id),
-          supabase.from('prep_tasks').update({ flag_order: a.flag_order }).eq('id', b.id),
-        ]);
-      }
+    // Drag-and-drop reorder: the client sends the full set of currently-
+    // flagged task ids in their new order (within one priority tier, or
+    // across the whole flagged list -- doesn't matter, flag_order is
+    // only ever used as a tiebreaker after priority), and every one of
+    // them gets rewritten to its index. Scoped to this org's flagged
+    // tasks only, so a stale/foreign id can't smuggle in an update.
+    if (action === 'reorderFlags' && pinOk) {
+      const order: string[] = Array.isArray(body.order) ? body.order : [];
+      const { data: flagged } = await supabase.from('prep_tasks').select('id').eq('org_id', org.id).neq('status', 'ok');
+      const validIds = new Set((flagged || []).map(t => t.id));
+      await Promise.all(
+        order.filter(id => validIds.has(id)).map((id, idx) =>
+          supabase.from('prep_tasks').update({ flag_order: idx }).eq('id', id)
+        )
+      );
     }
 
     const { data: settings } = await supabase.from('business_settings').select('business_name').eq('org_id', org.id).maybeSingle();
 
-    // Plan view: everything currently flagged, Urgent first, then Running
-    // Low, ordered within each by the admin-set flag_order -- with
-    // already-done tasks sinking to the bottom of their bucket so the
-    // still-outstanding ones surface first.
-    const severity: Record<string, number> = { urgent: 0, low: 1, ok: 2 };
+    // Plan view: everything currently flagged, ordered by the admin-set
+    // priority (1 highest) and then by drag position within a tier --
+    // already-done tasks sink to the bottom so the still-outstanding
+    // ones surface first. Status (Urgent/Running Low) is now purely a
+    // descriptive tag, not a sort key.
     const { data: flaggedRows } = await supabase
       .from('prep_tasks')
-      .select('id, name, status, flag_qty, flag_uom, assigned_to, note, catering, done, flagged_at, carry_forward, flag_order')
+      .select('id, name, status, flag_qty, flag_uom, assigned_to, note, catering, done, flagged_at, carry_forward, priority, flag_order')
       .eq('org_id', org.id).eq('active', true).neq('status', 'ok');
     const planItems = (flaggedRows || [])
-      .sort((a, b) => (severity[a.status] - severity[b.status]) || (Number(a.done) - Number(b.done)) || (a.flag_order - b.flag_order))
+      .sort((a, b) => (Number(a.done) - Number(b.done)) || (a.priority - b.priority) || (a.flag_order - b.flag_order))
       .map(r => ({
         id: r.id, name: r.name, status: r.status, qty: r.flag_qty, uom: r.flag_uom,
-        assignedTo: r.assigned_to, note: r.note, catering: r.catering, done: r.done, flaggedAt: r.flagged_at, carryForward: r.carry_forward,
+        assignedTo: r.assigned_to, note: r.note, catering: r.catering, done: r.done, flaggedAt: r.flagged_at,
+        carryForward: r.carry_forward, priority: r.priority,
       }));
 
     const responseBody: Record<string, unknown> = {
@@ -232,7 +242,7 @@ serve(async (req) => {
     if (pinOk) {
       const { data: catalogRows } = await supabase
         .from('prep_tasks')
-        .select('id, name, default_qty, default_uom, auto_include, status, flag_qty, flag_uom, assigned_to, note, catering, done, carry_forward, flag_order')
+        .select('id, name, default_qty, default_uom, auto_include, status, flag_qty, flag_uom, assigned_to, note, catering, done, carry_forward, priority, flag_order')
         .eq('org_id', org.id).eq('active', true)
         .order('sort_order', { ascending: true }).order('name', { ascending: true });
       responseBody.catalog = catalogRows || [];

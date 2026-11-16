@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { supabase } from './supabaseClient';
 import { PinPad, BLUE, RED, INK, MUTED, FAINT, HAIRLINE, FONT } from './PublicMyRosterView';
 
@@ -15,6 +15,14 @@ const STATUS_META = {
   urgent: { label: 'Urgent', color: URGENT, bg: URGENT_BG },
   low: { label: 'Running Low', color: LOW, bg: LOW_BG },
   ok: { label: 'All good', color: FAINT, bg: '#F1F5F9' },
+};
+
+// A distinct palette from status (red/amber) so the two badges never
+// look like the same kind of thing. 1 = darkest/most prominent.
+const PRIORITY_META = {
+  1: { label: '1', sub: 'Highest', color: '#ffffff', bg: BLUE, border: BLUE },
+  2: { label: '2', sub: 'Medium', color: BLUE, bg: '#EEF2FF', border: BLUE },
+  3: { label: '3', sub: 'Lowest', color: MUTED, bg: '#F1F5F9', border: '#CBD5E1' },
 };
 
 function readStoredPin(token) {
@@ -73,6 +81,68 @@ const inputStyle = {
 };
 const miniLabelStyle = { fontSize: 9.5, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 3 };
 
+function sortTasks(list) {
+  return [...list].sort((a, b) => (Number(a.done) - Number(b.done)) || (a.priority - b.priority) || (a.flag_order - b.flag_order));
+}
+
+// Drag-and-drop reorder for one group of task ids (one priority tier).
+// While dragging, `order` is the live preview; the dragged row's new rank
+// is just "how many other rows' midpoints are above the pointer" -- no
+// swapping logic, so it can't land in the wrong slot by one.
+function useDragReorder(ids, onCommit) {
+  const [dragId, setDragId] = useState(null);
+  const [order, setOrder] = useState(ids);
+  const orderRef = useRef(ids);
+  const rowRefs = useRef(new Map());
+
+  useEffect(() => {
+    if (!dragId) { setOrder(ids); orderRef.current = ids; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ids.join(',')]);
+
+  function registerRow(id, el) {
+    if (el) rowRefs.current.set(id, el); else rowRefs.current.delete(id);
+  }
+
+  function handlePointerDown(id, e) {
+    e.preventDefault();
+    orderRef.current = ids;
+    setOrder(ids);
+    setDragId(id);
+    try { e.target.setPointerCapture(e.pointerId); } catch { /* not all pointer types support capture */ }
+  }
+
+  useEffect(() => {
+    if (!dragId) return;
+    function reorder(y) {
+      const rest = orderRef.current.filter(id => id !== dragId);
+      let newIdx = 0;
+      for (const id of rest) {
+        const el = rowRefs.current.get(id);
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        if (y > rect.top + rect.height / 2) newIdx++;
+      }
+      const next = [...rest];
+      next.splice(newIdx, 0, dragId);
+      if (next.join(',') !== orderRef.current.join(',')) {
+        orderRef.current = next;
+        setOrder(next);
+      }
+    }
+    function onMove(e) { reorder(e.clientY); }
+    function onUp() { setDragId(null); onCommit(orderRef.current); }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [dragId, onCommit]);
+
+  return { order: dragId ? order : ids, dragId, registerRow, handlePointerDown };
+}
+
 // Two tabs, one tile: "Plan" is the staff-facing ordered list (no login,
 // anyone ticks things off through the day); "Set Plan" is Clark/Paddy
 // flagging tasks Urgent/Running Low -- same shape as R-Stock's Stock
@@ -94,6 +164,7 @@ export default function PublicPrepListView({ token }) {
   const [locked, setLocked] = useState(false);
 
   const [saveError, setSaveError] = useState(null);
+  const [editingPlanId, setEditingPlanId] = useState(null);
 
   const call = useCallback(async (extra) => {
     const { data: result, error: err } = await supabase.functions.invoke('public-prep-list', {
@@ -162,8 +233,37 @@ export default function PublicPrepListView({ token }) {
     }
   }
 
-  function patchCatalogRow(taskId, patch) {
-    setCatalog(prev => prev && prev.map(t => t.id === taskId ? { ...t, ...patch } : t));
+  // Every admin mutation's response already carries a fresh, authoritative
+  // planItems (and catalog, since these are all PIN-gated) -- syncing from
+  // that after the call, rather than hand-patching local state, is what
+  // keeps Plan and Set Plan from drifting regardless of which tab an edit
+  // came from (editing from Plan doesn't need Set Plan's catalog loaded
+  // at all, just a valid pin).
+  function syncFromResult(result) {
+    if (result.catalog) setCatalog(result.catalog);
+    if (result.planItems) setData(prev => prev && { ...prev, planItems: result.planItems });
+  }
+
+  // Optimistic patch applied right away for instant feedback, covering
+  // both "editing an already-flagged task" and "flagging a task for the
+  // first time" (which has no existing planItems row to update).
+  function optimisticPatch(task, status, payload) {
+    setCatalog(prev => prev && prev.map(t => t.id === task.id ? {
+      ...t, status, flag_qty: payload.qty, flag_uom: payload.uom, assigned_to: payload.assignedTo,
+      note: payload.note, catering: payload.catering, priority: status === 'ok' ? 2 : payload.priority,
+    } : t));
+    setData(prev => {
+      if (!prev) return prev;
+      if (status === 'ok') return { ...prev, planItems: prev.planItems.filter(i => i.id !== task.id) };
+      const patch = { status, qty: payload.qty, uom: payload.uom, assignedTo: payload.assignedTo, note: payload.note, catering: payload.catering, priority: payload.priority };
+      const exists = prev.planItems.some(i => i.id === task.id);
+      return {
+        ...prev,
+        planItems: exists
+          ? prev.planItems.map(i => i.id === task.id ? { ...i, ...patch } : i)
+          : [...prev.planItems, { id: task.id, name: task.name, done: false, carryForward: false, flaggedAt: new Date().toISOString(), ...patch }],
+      };
+    });
   }
 
   async function setFlag(task, status, fields) {
@@ -173,31 +273,33 @@ export default function PublicPrepListView({ token }) {
       assignedTo: fields.assignedTo ?? task.assigned_to ?? '',
       note: fields.note ?? task.note ?? '',
       catering: fields.catering ?? task.catering ?? false,
+      priority: fields.priority ?? task.priority ?? 2,
     };
-    patchCatalogRow(task.id, {
-      status, flag_qty: payload.qty, flag_uom: payload.uom, assigned_to: payload.assignedTo, note: payload.note, catering: payload.catering,
-    });
+    optimisticPatch(task, status, payload);
     setSaveError(null);
     try {
-      await call({ action: 'setFlag', pin, taskId: task.id, status, ...payload });
+      const result = await call({ action: 'setFlag', pin, taskId: task.id, status, ...payload });
+      syncFromResult(result);
     } catch (e) {
       setSaveError(e.message || 'Could not save that change.');
     }
   }
 
   async function setCarryForward(task, carryForward) {
-    patchCatalogRow(task.id, { carry_forward: carryForward });
+    setCatalog(prev => prev && prev.map(t => t.id === task.id ? { ...t, carry_forward: carryForward } : t));
+    setData(prev => prev && { ...prev, planItems: prev.planItems.map(i => i.id === task.id ? { ...i, carryForward } : i) });
     try {
-      await call({ action: 'setCarryForward', pin, taskId: task.id, carryForward });
+      const result = await call({ action: 'setCarryForward', pin, taskId: task.id, carryForward });
+      syncFromResult(result);
     } catch (e) {
       setSaveError(e.message || 'Could not save that change.');
     }
   }
 
-  async function moveFlag(task, direction) {
+  async function reorderFlags(order) {
     try {
-      const result = await call({ action: 'setOrder', pin, taskId: task.id, direction });
-      setCatalog(result.catalog || []);
+      const result = await call({ action: 'reorderFlags', pin, order });
+      syncFromResult(result);
     } catch (e) {
       setSaveError(e.message || 'Could not reorder that task.');
     }
@@ -212,6 +314,11 @@ export default function PublicPrepListView({ token }) {
     } catch (e) {
       setSaveError(e.message || 'Could not add that task.');
     }
+  }
+
+  function requestEdit(itemId) {
+    if (!pin) { setTab('setPlan'); return; }
+    setEditingPlanId(prev => prev === itemId ? null : itemId);
   }
 
   const planItems = data?.planItems || [];
@@ -300,14 +407,25 @@ export default function PublicPrepListView({ token }) {
         {/* Body card */}
         <div style={{ background: '#ffffff', borderLeft: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', borderBottom: '1px solid #E2E8F0', borderRadius: '0 0 14px 14px', padding: '18px 18px 20px' }}>
           {tab === 'plan' ? (
-            <PlanTab items={planItems} onToggle={toggleComplete} error={error} />
+            <PlanTab
+              items={planItems}
+              onToggle={toggleComplete}
+              error={error}
+              canEdit={!!pin}
+              editingId={editingPlanId}
+              onRequestEdit={requestEdit}
+              staffOptions={data.staffOptions || []}
+              onSetFlag={setFlag}
+              onSetCarryForward={setCarryForward}
+              saveError={saveError}
+            />
           ) : (
             <SetPlanTab
               catalog={catalog}
               staffOptions={data.staffOptions || []}
               onSetFlag={setFlag}
               onSetCarryForward={setCarryForward}
-              onMove={moveFlag}
+              onReorder={reorderFlags}
               onCreate={createTask}
               saveError={saveError}
               onSignOut={signOutAdmin}
@@ -321,10 +439,130 @@ export default function PublicPrepListView({ token }) {
   );
 }
 
-function PlanTab({ items, onToggle, error }) {
+// Shared editor for one task's flag -- used both inline on Plan (via the
+// Edit button) and expanded on Set Plan, so the two never drift apart.
+function FlagEditor({ task, staffOptions, onSetFlag, onSetCarryForward }) {
+  const [qty, setQty] = useState(task.flag_qty ?? task.default_qty ?? '');
+  const [uom, setUom] = useState(task.flag_uom ?? task.default_uom ?? '');
+  const [note, setNote] = useState(task.note || '');
+
+  return (
+    <div style={{ padding: '2px 0 4px' }}>
+      <div style={{ marginBottom: 10 }}>
+        <span style={miniLabelStyle}>Status</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {['ok', 'low', 'urgent'].map(s => {
+            const active = task.status === s;
+            const m = STATUS_META[s];
+            return (
+              <button
+                key={s}
+                onClick={() => onSetFlag(task, s, { qty, uom, note })}
+                style={{
+                  flex: 1, minHeight: 36, borderRadius: 7, border: `1.5px solid ${active ? m.color : '#E2E8F0'}`,
+                  background: active ? m.bg : 'white', color: active ? m.color : MUTED, fontSize: 11.5, fontWeight: 700,
+                  fontFamily: FONT, cursor: 'pointer', padding: '0 4px',
+                }}
+              >{m.label}</button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <span style={miniLabelStyle}>Priority (1 = highest)</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[1, 2, 3].map(p => {
+            const active = task.priority === p;
+            const m = PRIORITY_META[p];
+            return (
+              <button
+                key={p}
+                onClick={() => onSetFlag(task, task.status, { qty, uom, note, priority: p })}
+                style={{
+                  flex: 1, minHeight: 36, borderRadius: 7, border: `1.5px solid ${active ? m.border : '#E2E8F0'}`,
+                  background: active ? m.bg : 'white', color: active ? m.color : MUTED, fontSize: 12.5, fontWeight: 800,
+                  fontFamily: FONT, cursor: 'pointer', padding: '0 4px',
+                }}
+              >{m.label}<span style={{ fontWeight: 600, fontSize: 10 }}> · {m.sub}</span></button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
+        <div>
+          <span style={miniLabelStyle}>Qty</span>
+          <div style={{ position: 'relative' }}>
+            <input
+              value={qty} onChange={e => setQty(e.target.value)}
+              onBlur={() => onSetFlag(task, task.status, { qty, uom, note })}
+              placeholder="No qty" inputMode="decimal" style={{ ...inputStyle, padding: '9px 30px 9px 10px' }}
+            />
+            {qty !== '' && (
+              <button
+                onClick={() => { setQty(''); onSetFlag(task, task.status, { qty: '', uom, note }); }}
+                aria-label="Clear quantity"
+                style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', width: 24, height: 24, borderRadius: 999, border: 'none', background: '#F1F5F9', color: FAINT, cursor: 'pointer', fontSize: 12 }}
+              >✕</button>
+            )}
+          </div>
+        </div>
+        <div>
+          <span style={miniLabelStyle}>Unit</span>
+          <input
+            value={uom} onChange={e => setUom(e.target.value)}
+            onBlur={() => onSetFlag(task, task.status, { qty, uom, note })}
+            placeholder="e.g. kg" style={{ ...inputStyle, padding: '9px 10px' }}
+          />
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 8 }}>
+        <span style={miniLabelStyle}>Assigned to</span>
+        <select
+          value={task.assigned_to || ''}
+          onChange={e => onSetFlag(task, task.status, { qty, uom, note, assignedTo: e.target.value })}
+          style={{
+            ...inputStyle, padding: '9px 10px', fontWeight: task.assigned_to ? 700 : 400,
+            color: task.assigned_to ? assigneeColor(task.assigned_to).text : FAINT,
+            background: task.assigned_to ? assigneeColor(task.assigned_to).bg : inputStyle.background,
+            borderColor: task.assigned_to ? assigneeColor(task.assigned_to).text : '#E2E8F0',
+          }}
+        >
+          <option value="">Unassigned</option>
+          {staffOptions.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <span style={miniLabelStyle}>Note</span>
+        <input
+          value={note} onChange={e => setNote(e.target.value)}
+          onBlur={() => onSetFlag(task, task.status, { qty, uom, note })}
+          placeholder="Optional" style={{ ...inputStyle, padding: '9px 10px' }}
+        />
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: MUTED, fontWeight: 600, cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!task.catering} onChange={e => onSetFlag(task, task.status, { qty, uom, note, catering: e.target.checked })} />
+          Catering
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: MUTED, fontWeight: 600, cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!task.carry_forward} onChange={e => onSetCarryForward(task, e.target.checked)} />
+          Carry to tomorrow if not done
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function PlanTab({ items, onToggle, error, canEdit, editingId, onRequestEdit, staffOptions, onSetFlag, onSetCarryForward, saveError }) {
   return (
     <>
       {error && <div style={{ fontSize: 12.5, color: RED, fontWeight: 500, marginBottom: 10 }}>{error}</div>}
+      {saveError && <div style={{ fontSize: 12.5, color: RED, fontWeight: 500, marginBottom: 10 }}>{saveError}</div>}
 
       {items.length === 0 ? (
         <div style={{ padding: '28px 10px', textAlign: 'center' }}>
@@ -337,38 +575,58 @@ function PlanTab({ items, onToggle, error }) {
             const meta = STATUS_META[item.status] || STATUS_META.ok;
             const qtyLabel = fmtQty(item.qty) ? `${fmtQty(item.qty)}${item.uom ? ' ' + item.uom : ''}` : '';
             const done = item.done;
+            const isEditing = editingId === item.id;
             return (
-              <div key={item.id} style={{
-                padding: '13px 14px', borderBottom: idx === items.length - 1 ? 'none' : `1px solid ${HAIRLINE}`,
-                display: 'flex', alignItems: 'flex-start', gap: 12, borderLeft: `3px solid ${meta.color}`,
-                background: done ? '#FAFBFC' : 'white',
-              }}>
-                <button
-                  onClick={() => onToggle(item)}
-                  title={done ? 'Mark not done' : 'Mark done'}
-                  style={{
-                    width: 26, height: 26, borderRadius: 999, flexShrink: 0, cursor: 'pointer', marginTop: 1,
-                    border: done ? 'none' : '2px solid #E2E8F0', background: done ? '#0f9d4e' : 'white',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: done ? 'white' : '#CBD5E1', fontSize: 14,
-                  }}
-                >✓</button>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 3 }}>
-                    <span style={{ fontSize: 10, fontWeight: 800, color: done ? FAINT : meta.color, background: done ? '#F1F5F9' : meta.bg, borderRadius: 999, padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{meta.label}</span>
-                    {item.catering && (
-                      <span style={{ fontSize: 10, fontWeight: 800, color: done ? FAINT : '#7C3AED', background: done ? '#F1F5F9' : '#F3E8FF', borderRadius: 999, padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Catering</span>
-                    )}
-                    {item.assignedTo && (
-                      <span style={{ fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 8px', color: done ? FAINT : assigneeColor(item.assignedTo).text, background: done ? '#F1F5F9' : assigneeColor(item.assignedTo).bg }}>{item.assignedTo}</span>
+              <div key={item.id} style={{ borderBottom: idx === items.length - 1 ? 'none' : `1px solid ${HAIRLINE}`, borderLeft: `3px solid ${meta.color}`, background: done ? '#FAFBFC' : 'white' }}>
+                <div style={{ padding: '13px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <button
+                    onClick={() => onToggle(item)}
+                    title={done ? 'Mark not done' : 'Mark done'}
+                    style={{
+                      width: 26, height: 26, borderRadius: 999, flexShrink: 0, cursor: 'pointer', marginTop: 1,
+                      border: done ? 'none' : '2px solid #E2E8F0', background: done ? '#0f9d4e' : 'white',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', color: done ? 'white' : '#CBD5E1', fontSize: 14,
+                    }}
+                  >✓</button>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 3 }}>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: done ? FAINT : meta.color, background: done ? '#F1F5F9' : meta.bg, borderRadius: 999, padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{meta.label}</span>
+                      {item.catering && (
+                        <span style={{ fontSize: 10, fontWeight: 800, color: done ? FAINT : '#7C3AED', background: done ? '#F1F5F9' : '#F3E8FF', borderRadius: 999, padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Catering</span>
+                      )}
+                      {item.assignedTo && (
+                        <span style={{ fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 8px', color: done ? FAINT : assigneeColor(item.assignedTo).text, background: done ? '#F1F5F9' : assigneeColor(item.assignedTo).bg }}>{item.assignedTo}</span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ fontSize: 14.5, fontWeight: 700, color: done ? FAINT : INK, textDecoration: done ? 'line-through' : 'none' }}>{item.name}</span>
+                      {qtyLabel && (
+                        <span style={{ fontSize: 15.5, fontWeight: 800, color: done ? FAINT : INK, textDecoration: done ? 'line-through' : 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>{qtyLabel}</span>
+                      )}
+                    </div>
+                    {(item.note || item.flaggedAt) && (
+                      <div style={{ fontSize: 11.5, color: FAINT, marginTop: 2, textDecoration: done ? 'line-through' : 'none' }}>
+                        {[item.note, item.flaggedAt ? `flagged ${timeAgo(item.flaggedAt)}` : ''].filter(Boolean).join(' · ')}
+                      </div>
                     )}
                   </div>
-                  <div style={{ fontSize: 14.5, fontWeight: 700, color: done ? FAINT : INK, textDecoration: done ? 'line-through' : 'none' }}>{item.name}</div>
-                  {(qtyLabel || item.note || item.flaggedAt) && (
-                    <div style={{ fontSize: 11.5, color: FAINT, marginTop: 2, textDecoration: done ? 'line-through' : 'none' }}>
-                      {[qtyLabel, item.note, item.flaggedAt ? `flagged ${timeAgo(item.flaggedAt)}` : ''].filter(Boolean).join(' · ')}
-                    </div>
-                  )}
+                  <button
+                    onClick={() => onRequestEdit(item.id)}
+                    aria-label="Edit"
+                    style={{
+                      flexShrink: 0, width: 28, height: 28, borderRadius: 8, border: '1px solid #E2E8F0', background: isEditing ? '#EEF2FF' : 'white',
+                      color: isEditing ? BLUE : MUTED, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >✏️</button>
                 </div>
+                {isEditing && canEdit && (
+                  <div style={{ padding: '0 14px 14px 14px', borderTop: `1px solid ${HAIRLINE}`, marginTop: -1, paddingTop: 12 }}>
+                    <FlagEditor task={{
+                      id: item.id, status: item.status, flag_qty: item.qty, flag_uom: item.uom, assigned_to: item.assignedTo,
+                      note: item.note, catering: item.catering, carry_forward: item.carryForward, priority: item.priority,
+                    }} staffOptions={staffOptions} onSetFlag={onSetFlag} onSetCarryForward={onSetCarryForward} />
+                  </div>
+                )}
               </div>
             );
           })}
@@ -378,23 +636,71 @@ function PlanTab({ items, onToggle, error }) {
   );
 }
 
-function SetPlanTab({ catalog, staffOptions, onSetFlag, onSetCarryForward, onMove, onCreate, saveError, onSignOut }) {
+// One priority tier's flagged tasks, draggable to reorder within the tier.
+function PriorityGroup({ priority, tasks, staffOptions, onSetFlag, onSetCarryForward, onReorder, expanded, onToggleExpanded }) {
+  const ids = useMemo(() => sortTasks(tasks).map(t => t.id), [tasks]);
+  const byId = useMemo(() => new Map(tasks.map(t => [t.id, t])), [tasks]);
+  const { order, dragId, registerRow, handlePointerDown } = useDragReorder(ids, onReorder);
+  const meta = PRIORITY_META[priority];
+
+  if (tasks.length === 0) return null;
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6, paddingLeft: 2 }}>
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: meta.color, background: meta.bg, borderRadius: 999, padding: '2px 8px' }}>Priority {priority}</span>
+        <span style={{ fontSize: 10.5, color: FAINT, fontWeight: 600 }}>{meta.sub}</span>
+      </div>
+      <div style={{ border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden' }}>
+        {order.map((id, idx) => {
+          const task = byId.get(id);
+          if (!task) return null;
+          const meta2 = STATUS_META[task.status] || STATUS_META.ok;
+          const isOpen = expanded.has(task.id);
+          return (
+            <div key={task.id} ref={el => registerRow(task.id, el)} style={{
+              borderTop: idx === 0 ? 'none' : `1px solid ${HAIRLINE}`, borderLeft: `3px solid ${meta2.color}`,
+              background: dragId === task.id ? '#F8FAFC' : 'white', boxShadow: dragId === task.id ? '0 4px 12px -4px rgba(15,23,42,0.25)' : 'none',
+              position: 'relative', zIndex: dragId === task.id ? 1 : 0,
+            }}>
+              <div style={{ padding: '11px 8px 11px 4px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span
+                  onPointerDown={e => handlePointerDown(task.id, e)}
+                  style={{ touchAction: 'none', cursor: 'grab', color: '#CBD5E1', fontSize: 16, padding: '4px 6px', flexShrink: 0, userSelect: 'none' }}
+                >⠿</span>
+                <button
+                  onClick={() => onToggleExpanded(task.id)}
+                  style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', padding: 0, fontFamily: FONT }}
+                >
+                  <span style={{ fontSize: 14, fontWeight: 700, color: INK, flex: 1, minWidth: 0 }}>{task.name}</span>
+                  {fmtQty(task.flag_qty) && (
+                    <span style={{ fontSize: 13.5, fontWeight: 800, color: INK, whiteSpace: 'nowrap' }}>{fmtQty(task.flag_qty)}{task.flag_uom ? ' ' + task.flag_uom : ''}</span>
+                  )}
+                  {task.catering && (
+                    <span style={{ fontSize: 9.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 6px', color: '#7C3AED', background: '#F3E8FF' }}>Catering</span>
+                  )}
+                  {task.assigned_to && (
+                    <span style={{ fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 7px', color: assigneeColor(task.assigned_to).text, background: assigneeColor(task.assigned_to).bg }}>{task.assigned_to}</span>
+                  )}
+                  <span style={{ fontSize: 12, color: FAINT, flexShrink: 0 }}>{isOpen ? '▲' : '▼'}</span>
+                </button>
+              </div>
+              {isOpen && (
+                <div style={{ padding: '0 12px 14px' }}>
+                  <FlagEditor task={task} staffOptions={staffOptions} onSetFlag={onSetFlag} onSetCarryForward={onSetCarryForward} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SetPlanTab({ catalog, staffOptions, onSetFlag, onSetCarryForward, onReorder, onCreate, saveError, onSignOut }) {
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState(() => new Set());
-
-  // Flagged tasks first (urgent, then low, in flag_order), unflagged
-  // tasks after in catalog order -- same ordering the Plan tab gets.
-  const ordered = useMemo(() => {
-    const severity = { urgent: 0, low: 1, ok: 2 };
-    return [...catalog].sort((a, b) => (severity[a.status] - severity[b.status]) || (a.flag_order - b.flag_order));
-  }, [catalog]);
-
-  const flaggedIds = useMemo(() => new Set(catalog.filter(t => t.status !== 'ok').map(t => t.id)), [catalog]);
-  const flaggedOrdered = useMemo(() => ordered.filter(t => flaggedIds.has(t.id)), [ordered, flaggedIds]);
-
-  const q = search.trim().toLowerCase();
-  const visible = q ? ordered.filter(t => t.name.toLowerCase().includes(q)) : ordered;
-  const exactMatch = catalog.some(t => t.name.toLowerCase() === q);
 
   function toggleExpanded(id) {
     setExpanded(prev => {
@@ -402,6 +708,24 @@ function SetPlanTab({ catalog, staffOptions, onSetFlag, onSetCarryForward, onMov
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  }
+
+  const flagged = useMemo(() => catalog.filter(t => t.status !== 'ok'), [catalog]);
+  const byPriority = useMemo(() => ({
+    1: flagged.filter(t => t.priority === 1),
+    2: flagged.filter(t => t.priority === 2),
+    3: flagged.filter(t => t.priority === 3),
+  }), [flagged]);
+
+  const q = search.trim().toLowerCase();
+  const unflagged = useMemo(() => catalog.filter(t => t.status === 'ok'), [catalog]);
+  const visible = q
+    ? catalog.filter(t => t.name.toLowerCase().includes(q))
+    : unflagged;
+  const exactMatch = catalog.some(t => t.name.toLowerCase() === q);
+
+  async function commitOrder(priority, order) {
+    await onReorder(order);
   }
 
   return (
@@ -412,7 +736,27 @@ function SetPlanTab({ catalog, staffOptions, onSetFlag, onSetCarryForward, onMov
 
       {saveError && <div style={{ fontSize: 12.5, color: RED, fontWeight: 500, marginBottom: 10 }}>{saveError}</div>}
 
-      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search or type a new task" style={{ ...inputStyle, marginBottom: 12 }} />
+      {!q && (
+        <>
+          {flagged.length === 0 && <div style={{ fontSize: 13, color: FAINT, marginBottom: 14 }}>Nothing flagged yet -- pick a task below.</div>}
+          {[1, 2, 3].map(p => (
+            <PriorityGroup
+              key={p}
+              priority={p}
+              tasks={byPriority[p]}
+              staffOptions={staffOptions}
+              onSetFlag={onSetFlag}
+              onSetCarryForward={onSetCarryForward}
+              onReorder={order => commitOrder(p, order)}
+              expanded={expanded}
+              onToggleExpanded={toggleExpanded}
+            />
+          ))}
+        </>
+      )}
+
+      <label style={miniLabelStyle}>{q ? 'Search results' : 'Add a task'}</label>
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search or type a new task" style={{ ...inputStyle, marginBottom: 8 }} />
 
       {search.trim() && !exactMatch && (
         <button onClick={() => { onCreate(search); setSearch(''); }} style={{
@@ -427,11 +771,9 @@ function SetPlanTab({ catalog, staffOptions, onSetFlag, onSetCarryForward, onMov
         {visible.length === 0 ? (
           <div style={{ padding: '18px', textAlign: 'center', fontSize: 13, color: FAINT }}>No tasks match.</div>
         ) : visible.map((task, idx) => {
-          const meta = STATUS_META[task.status] || STATUS_META.ok;
           const isFlagged = task.status !== 'ok';
+          const meta = STATUS_META[task.status] || STATUS_META.ok;
           const isOpen = isFlagged && expanded.has(task.id);
-          const flagIdx = flaggedOrdered.findIndex(t => t.id === task.id);
-
           return (
             <div key={task.id} style={{ borderTop: idx === 0 ? 'none' : `1px solid ${HAIRLINE}`, borderLeft: isFlagged ? `3px solid ${meta.color}` : 'none' }}>
               <div style={{ padding: '11px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -441,16 +783,9 @@ function SetPlanTab({ catalog, staffOptions, onSetFlag, onSetCarryForward, onMov
                   style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', textAlign: 'left', cursor: isFlagged ? 'pointer' : 'default', padding: 0, fontFamily: FONT }}
                 >
                   <span style={{ fontSize: 14, fontWeight: 700, color: INK, flex: 1, minWidth: 0 }}>{task.name}</span>
-                  {task.catering && (
-                    <span style={{ fontSize: 9.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 6px', color: '#7C3AED', background: '#F3E8FF' }}>Catering</span>
-                  )}
-                  {task.assigned_to && (
-                    <span style={{ fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 999, padding: '2px 7px', color: assigneeColor(task.assigned_to).text, background: assigneeColor(task.assigned_to).bg }}>{task.assigned_to}</span>
-                  )}
                   {isFlagged && <span style={{ fontSize: 12, color: FAINT, flexShrink: 0 }}>{isOpen ? '▲' : '▼'}</span>}
                 </button>
               </div>
-
               <div style={{ display: 'flex', gap: 6, padding: '0 12px 11px' }}>
                 {['ok', 'low', 'urgent'].map(s => {
                   const active = task.status === s;
@@ -468,67 +803,9 @@ function SetPlanTab({ catalog, staffOptions, onSetFlag, onSetCarryForward, onMov
                   );
                 })}
               </div>
-
               {isOpen && (
                 <div style={{ padding: '0 12px 14px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
-                    <div>
-                      <span style={miniLabelStyle}>Qty</span>
-                      <input
-                        defaultValue={task.flag_qty ?? task.default_qty ?? ''}
-                        onBlur={e => onSetFlag(task, task.status, { qty: e.target.value })}
-                        placeholder="e.g. 2" inputMode="decimal" style={{ ...inputStyle, padding: '9px 10px' }}
-                      />
-                    </div>
-                    <div>
-                      <span style={miniLabelStyle}>Unit</span>
-                      <input
-                        defaultValue={task.flag_uom ?? task.default_uom ?? ''}
-                        onBlur={e => onSetFlag(task, task.status, { uom: e.target.value })}
-                        placeholder="e.g. kg" style={{ ...inputStyle, padding: '9px 10px' }}
-                      />
-                    </div>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <span style={miniLabelStyle}>Assigned to</span>
-                    <select
-                      value={task.assigned_to || ''}
-                      onChange={e => onSetFlag(task, task.status, { assignedTo: e.target.value })}
-                      style={{
-                        ...inputStyle, padding: '9px 10px', fontWeight: task.assigned_to ? 700 : 400,
-                        color: task.assigned_to ? assigneeColor(task.assigned_to).text : FAINT,
-                        background: task.assigned_to ? assigneeColor(task.assigned_to).bg : inputStyle.background,
-                        borderColor: task.assigned_to ? assigneeColor(task.assigned_to).text : '#E2E8F0',
-                      }}
-                    >
-                      <option value="">Unassigned</option>
-                      {staffOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div style={{ marginBottom: 10 }}>
-                    <span style={miniLabelStyle}>Note</span>
-                    <input
-                      defaultValue={task.note || ''}
-                      onBlur={e => onSetFlag(task, task.status, { note: e.target.value })}
-                      placeholder="Optional" style={{ ...inputStyle, padding: '9px 10px' }}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: MUTED, fontWeight: 600, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={!!task.catering} onChange={e => onSetFlag(task, task.status, { catering: e.target.checked })} />
-                      Catering
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: MUTED, fontWeight: 600, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={!!task.carry_forward} onChange={e => onSetCarryForward(task, e.target.checked)} />
-                      Carry to tomorrow if not done
-                    </label>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      <button onClick={() => onMove(task, -1)} disabled={flagIdx <= 0} style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: 6, width: 26, height: 26, color: flagIdx <= 0 ? '#E2E8F0' : MUTED, cursor: flagIdx <= 0 ? 'default' : 'pointer' }}>▲</button>
-                      <button onClick={() => onMove(task, 1)} disabled={flagIdx === -1 || flagIdx >= flaggedOrdered.length - 1} style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: 6, width: 26, height: 26, color: (flagIdx === -1 || flagIdx >= flaggedOrdered.length - 1) ? '#E2E8F0' : MUTED, cursor: 'pointer' }}>▼</button>
-                    </div>
-                  </div>
+                  <FlagEditor task={task} staffOptions={staffOptions} onSetFlag={onSetFlag} onSetCarryForward={onSetCarryForward} />
                 </div>
               )}
             </div>
