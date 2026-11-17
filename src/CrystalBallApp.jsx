@@ -6,7 +6,7 @@ import {
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
 import { isoWeekLabel } from './isoWeek';
-import { CHANNEL_GROUPS, dayOfWeekIndex, buildDowAverages, forecastItemsForDate } from './forecastEngine';
+import { CHANNEL_GROUPS, dayOfWeekIndex, buildDowAverages, forecastItemsForDate, forecastOptionsFromSettings, DEFAULT_RECENCY_HALFLIFE_WEEKS } from './forecastEngine';
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -319,7 +319,7 @@ function ForecastTab({ orgId, user, items, dowAverages, resolver, skuById, setti
   const [date, setDate] = useState(addDays(todayStr(), 1));
   const [upliftInput, setUpliftInput] = useState(String(settings?.channel_uplift_pct ?? 0));
   const [savingUplift, setSavingUplift] = useState(false);
-  const [recencyInput, setRecencyInput] = useState(String(settings?.recency_halflife_weeks ?? 4));
+  const [recencyInput, setRecencyInput] = useState(String(settings?.recency_halflife_weeks ?? DEFAULT_RECENCY_HALFLIFE_WEEKS));
   const [savingRecency, setSavingRecency] = useState(false);
   const [collapsedForecast, setCollapsedForecast] = useState(() => new Set());
   const [collapsedPrep, setCollapsedPrep] = useState(() => new Set());
@@ -338,20 +338,35 @@ function ForecastTab({ orgId, user, items, dowAverages, resolver, skuById, setti
   }, [productionChannels]);
 
   async function loadForecastToProd() {
-    const targets = itemForecasts
-      .filter(f => f.forecast > 0 && f.item.site_id && inStoreChannelBySite.has(f.item.site_id))
-      .map(f => ({ itemId: f.item.id, channelId: inStoreChannelBySite.get(f.item.site_id), qty: Math.round(f.forecast) }));
-    const skipped = itemForecasts.filter(f => f.forecast > 0 && (!f.item.site_id || !inStoreChannelBySite.has(f.item.site_id))).length;
-    if (targets.length === 0) {
+    // Same rule as R-Prod's own planner: items switched off for production
+    // planning never get a quantity written for them.
+    const plannable = itemForecasts.filter(f => f.item.active !== false && f.item.needs_prod_planning !== false);
+    const candidates = plannable
+      .filter(f => f.forecast > 0 && f.item.site_id && inStoreChannelBySite.has(f.item.site_id));
+    const skipped = plannable.filter(f => f.forecast > 0 && (!f.item.site_id || !inStoreChannelBySite.has(f.item.site_id))).length;
+    if (candidates.length === 0) {
       toast.error('No forecasted items have a production site assigned yet (set one per item in R-Recipe).');
       return;
     }
     setLoadingToProd(true);
     try {
+      // A finalised (locked) day in R-Prod is never overwritten -- R-Prod
+      // hides its own pull button on locked days for the same reason.
+      const siteIds = [...new Set(candidates.map(f => f.item.site_id))];
+      const locks = await Promise.all(siteIds.map(id => db.getProductionDayLock(orgId, id, date)));
+      const lockedSites = new Set(siteIds.filter((id, i) => !!locks[i]));
+      const targets = candidates
+        .filter(f => !lockedSites.has(f.item.site_id))
+        .map(f => ({ itemId: f.item.id, channelId: inStoreChannelBySite.get(f.item.site_id), qty: Math.round(f.forecast) }));
+      if (targets.length === 0) {
+        toast.error('This day is finalised in R-Prod for every site -- unlock it there first.');
+        return;
+      }
       for (const t of targets) {
         await db.setProductionPlanQty(orgId, user?.id, { itemId: t.itemId, channelId: t.channelId, date, qty: t.qty });
       }
-      toast.success(`Loaded ${targets.length} item${targets.length === 1 ? '' : 's'} into R-Prod (In-Store)${skipped ? `, skipped ${skipped} with no site assigned` : ''}.`);
+      const lockedSkipped = candidates.length - targets.length;
+      toast.success(`Loaded ${targets.length} item${targets.length === 1 ? '' : 's'} into R-Prod (In-Store)${skipped ? `, skipped ${skipped} with no site assigned` : ''}${lockedSkipped ? `, skipped ${lockedSkipped} on a finalised day` : ''}.`);
     } catch (err) {
       toast.error('Failed to load into R-Prod: ' + (err.message || 'unknown error'));
     } finally {
@@ -375,7 +390,7 @@ function ForecastTab({ orgId, user, items, dowAverages, resolver, skuById, setti
   }
 
   useEffect(() => { setUpliftInput(String(settings?.channel_uplift_pct ?? 0)); }, [settings]);
-  useEffect(() => { setRecencyInput(String(settings?.recency_halflife_weeks ?? 4)); }, [settings]);
+  useEffect(() => { setRecencyInput(String(settings?.recency_halflife_weeks ?? DEFAULT_RECENCY_HALFLIFE_WEEKS)); }, [settings]);
 
   async function saveUplift() {
     const pct = parseFloat(upliftInput);
@@ -405,11 +420,11 @@ function ForecastTab({ orgId, user, items, dowAverages, resolver, skuById, setti
     }
   }
 
-  const uplift = 1 + (Number(settings?.channel_uplift_pct) || 0) / 100;
+  const { uplift, trend } = forecastOptionsFromSettings(settings);
 
   const itemForecasts = useMemo(
-    () => forecastItemsForDate(items, dowAverages, uplift, date, todayStr()),
-    [items, dowAverages, date, uplift]
+    () => forecastItemsForDate(items, dowAverages, uplift, date, todayStr(), { trend }),
+    [items, dowAverages, date, uplift, trend]
   );
 
   const ingredientTotals = useMemo(() => {
@@ -479,7 +494,7 @@ function ForecastTab({ orgId, user, items, dowAverages, resolver, skuById, setti
           <div
             className="flex items-center gap-2 rounded-xl pl-3 pr-2 py-1.5"
             style={{ background: 'color-mix(in srgb, var(--primary) 6%, white)' }}
-            title="How fast older sales stop counting, for both the average level and the trend line fitted through it: a sale one half-life ago counts half as much as one from today. Lower = reacts faster to recent trends; 0 = flat average of all history, no trend (old behaviour)"
+            title="How fast older sales stop counting: a sale one half-life ago counts half as much as one from today. Lower = reacts faster to recent changes; 0 = flat average of all history. Default 4 weeks."
           >
             <Clock size={13} style={{ color: 'var(--primary)' }} />
             <span className="text-xs font-semibold text-gray-600">Recency</span>
@@ -525,7 +540,7 @@ function ForecastTab({ orgId, user, items, dowAverages, resolver, skuById, setti
             <div className="flex items-end justify-between px-0.5">
               <div>
                 <h3 className="text-sm font-bold text-gray-900">Item Forecast</h3>
-                <p className="text-xs text-gray-400">Each channel's trend-projected avg. of past {DOW_LABELS[dayOfWeekIndex(date)]}s, added together × buffer</p>
+                <p className="text-xs text-gray-400">Each channel's recency-weighted avg. of past {DOW_LABELS[dayOfWeekIndex(date)]}s (days with no sales count as 0), added together × buffer</p>
               </div>
               <div className="flex items-center gap-3">
                 {itemForecastsByCategory.length > 0 && (
@@ -674,7 +689,7 @@ function ForecastTab({ orgId, user, items, dowAverages, resolver, skuById, setti
 // 7 days instead of one -- a "how much of each SKU will we get through this
 // week" view to weigh against standing order sizes.
 
-function WeeklyConsumptionTab({ items, dowAverages, uplift, resolver, skuById }) {
+function WeeklyConsumptionTab({ items, dowAverages, uplift, trend, resolver, skuById }) {
   // Defaults to the upcoming full ISO week (Mon-Sun), not whatever's left of
   // the current one -- this is an ordering-decision view, and "3 days left
   // in W36" is a lot less useful than a full W37. Prev/Next always shifts by
@@ -698,13 +713,13 @@ function WeeklyConsumptionTab({ items, dowAverages, uplift, resolver, skuById })
   const weeklyItemTotals = useMemo(() => {
     const totals = new Map(); // itemId -> forecast qty summed across the week
     weekDates.forEach(d => {
-      forecastItemsForDate(items, dowAverages, uplift, d, todayStr()).forEach(({ item, forecast }) => {
+      forecastItemsForDate(items, dowAverages, uplift, d, todayStr(), { trend }).forEach(({ item, forecast }) => {
         if (forecast <= 0) return;
         totals.set(item.id, (totals.get(item.id) || 0) + forecast);
       });
     });
     return totals;
-  }, [items, dowAverages, uplift, weekDates]);
+  }, [items, dowAverages, uplift, trend, weekDates]);
 
   const skuTotals = useMemo(() => {
     const totals = new Map(); // skuId -> base-uom qty for the week
@@ -875,20 +890,15 @@ export default function CrystalBallApp({ org, user }) {
   // past Tuesday counts equally, so a forecast for "next Tuesday" and one
   // for "the Tuesday after" are always identical (nothing in the model
   // varies week to week). 0 = old flat-average behaviour.
-  const halfLifeDays = (Number(settings?.recency_halflife_weeks) || 0) * 7;
-  // Each bucket accumulates the weighted sums a weighted-least-squares trend
-  // line needs (qty vs. weeksFromNow, weeksFromNow=0 is today, negative for
-  // past sales) rather than just a mean -- bucketPredict() fits and
-  // extrapolates from these, degrading to a flat recency-weighted average
-  // when there isn't enough data to trust a slope. This is why forecasts
-  // for different future weeks can now actually differ from each other,
-  // instead of every future Monday reusing the exact same number.
+  const { halfLifeDays, uplift, trend } = forecastOptionsFromSettings(settings);
+  // One point per trading day (zeros included) -- see buildDowAverages().
+  // The per-item trend line is off unless crystal_ball_settings.trend_enabled
+  // is set; with it off, every future Monday gets the same recency-weighted
+  // level, which backtested more accurately than extrapolating a slope.
   const dowAverages = useMemo(
     () => buildDowAverages(salesHistory, halfLifeDays),
     [salesHistory, halfLifeDays]
   );
-  const uplift = 1 + (Number(settings?.channel_uplift_pct) || 0) / 100;
-
   const TABS = [
     { id: 'forecast', label: 'Forecast' },
     { id: 'weekly', label: 'Week Ahead' },
@@ -930,7 +940,7 @@ export default function CrystalBallApp({ org, user }) {
           productionSites={productionSites} productionChannels={productionChannels} />
       )}
       {activeTab === 'weekly' && (
-        <WeeklyConsumptionTab items={forecastableItems} dowAverages={dowAverages} uplift={uplift} resolver={resolver} skuById={skuById} />
+        <WeeklyConsumptionTab items={forecastableItems} dowAverages={dowAverages} uplift={uplift} trend={trend} resolver={resolver} skuById={skuById} />
       )}
       {activeTab === 'history' && (
         <SalesHistoryTab orgId={orgId} items={items} salesHistory={salesHistory} onRefresh={load} />

@@ -7,7 +7,7 @@ import {
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
 import ProductionInsights from './ProductionInsights';
-import { buildDowAverages, forecastItemsForDate } from './forecastEngine';
+import { buildDowAverages, forecastItemsForDate, forecastOptionsFromSettings } from './forecastEngine';
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -1039,11 +1039,10 @@ export default function ProductionApp({ org, user }) {
         db.getSalesHistory(orgId),
         db.getCrystalBallSettings(orgId),
       ]);
-      const halfLifeDays = (Number(cbSettings?.recency_halflife_weeks) || 0) * 7;
-      const uplift = 1 + (Number(cbSettings?.channel_uplift_pct) || 0) / 100;
+      const { halfLifeDays, uplift, trend } = forecastOptionsFromSettings(cbSettings);
       const dowAverages = buildDowAverages(history, halfLifeDays);
       const siteItems = planningItems.filter(i => i.site_id === activeSiteId);
-      const targets = forecastItemsForDate(siteItems, dowAverages, uplift, date, todayStr()).filter(f => f.forecast > 0);
+      const targets = forecastItemsForDate(siteItems, dowAverages, uplift, date, todayStr(), { trend }).filter(f => f.forecast > 0);
       if (targets.length === 0) {
         toast.error("No Crystal Ball forecast yet for this site's items on this date.");
         return;

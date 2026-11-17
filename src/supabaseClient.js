@@ -1934,7 +1934,11 @@ export const db = {
         .from('sales_history')
         .select('*')
         .eq('org_id', orgId)
+        // Tie-break on id: ~70 rows share each sale_date, and paging by
+        // offset over a non-unique sort can skip or repeat rows at a
+        // page boundary.
         .order('sale_date', { ascending: true })
+        .order('id', { ascending: true })
         .range(page * pageSize, (page + 1) * pageSize - 1);
       if (error) throw error;
 
