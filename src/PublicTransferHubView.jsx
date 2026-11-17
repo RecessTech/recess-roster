@@ -4,7 +4,6 @@ import { supabase } from './supabaseClient';
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
 const TEAL = '#0F766E';
 const TEAL_DK = '#0B5A54';
-const PINK = '#BE185D';
 const NAME_STORAGE_KEY = 'transferHub_yourName';
 const UNIT_OPTIONS = ['Sleeve', 'Units', 'Cans', 'Tins', 'Bunch(s)', 'Dozen', 'kg', 'g'];
 const PRIORITY_RANK = { high: 0, low: 1 };
@@ -19,6 +18,39 @@ function sortByPriority(rows) {
 const CARD_RADIUS = 16;
 const CARD_SHADOW = '0 1px 2px rgba(15,23,42,0.04), 0 6px 20px -8px rgba(15,23,42,0.10)';
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+// Maps a stock_items category code onto a human label -- same mapping as
+// CateringApp's stockCategoryLabel, duplicated here since this view ships
+// standalone (no shared import graph with the rest of the app).
+const CATEGORY_LABELS = {
+  PTN: 'Protein', PHF: 'Produce & Fresh Herbs', DRY: 'Dry Goods & Grocery',
+  DAI: 'Dairy', BEV: 'Beverage', FZN: 'Frozen', PCK: 'Packaging', SNK: 'Snacks', CLN: 'Cleaning',
+};
+function categoryLabel(code) {
+  return CATEGORY_LABELS[code] || code || 'Uncategorized';
+}
+
+// Groups a long checklist into labelled category sections instead of one
+// undifferentiated wall of items -- sorts by category (stable within each
+// category, so admin-curated ordering survives) and marks the first row
+// of each cluster so the caller can render a divider there.
+function withCategoryDividers(items) {
+  const sorted = items
+    .map((item, i) => ({ item, i }))
+    .sort((a, b) => {
+      const ca = a.item.category || '';
+      const cb = b.item.category || '';
+      return ca === cb ? a.i - b.i : ca.localeCompare(cb);
+    })
+    .map(x => x.item);
+  let prevCategory = null;
+  return sorted.map((item, idx) => {
+    const cat = item.category || '';
+    const isNewCategory = idx === 0 || cat !== prevCategory;
+    prevCategory = cat;
+    return { item, isNewCategory, category: cat };
+  });
+}
 
 function timeAgo(iso) {
   if (!iso) return '';
@@ -60,10 +92,11 @@ const pillButtonStyle = (active, tint) => ({
   transition: 'background 0.15s, color 0.15s',
 });
 
-// Staff-facing, no login: check what's needed, request something, flag a
-// SKU as low, or mark a request fulfilled. See
-// supabase/functions/public-transfer-hub -- writes carry no real identity,
-// just whatever name someone types in below.
+// Staff-facing, no login: check what's needed, request something, or mark
+// a request fulfilled. See supabase/functions/public-transfer-hub --
+// writes carry no real identity, just whatever name someone types in
+// below. "Flag Low Stock" used to live here too; it's now the mobile
+// Stock Check page's job instead.
 
 export default function PublicTransferHubView({ token }) {
   const [data, setData] = useState(null);
@@ -71,7 +104,7 @@ export default function PublicTransferHubView({ token }) {
   const [error, setError] = useState(null);
   const [name, setName] = useState(loadStoredName);
 
-  const [activePanel, setActivePanel] = useState(null); // null | 'request' | 'flag'
+  const [activePanel, setActivePanel] = useState(null); // null | 'request' | 'sod'
   const [formLocationId, setFormLocationId] = useState(null);
   const [formSubject, setFormSubject] = useState('');
   const [formQuantity, setFormQuantity] = useState('');
@@ -81,11 +114,17 @@ export default function PublicTransferHubView({ token }) {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
 
-  const [flagLocationId, setFlagLocationId] = useState(null);
-  const [flagSubject, setFlagSubject] = useState('');
-  const [flagSubmitting, setFlagSubmitting] = useState(false);
-  const [flagError, setFlagError] = useState(null);
-  const [flagSuccess, setFlagSuccess] = useState(null);
+  // Start of Day Check -- a whole SKU group walked as a quick checklist
+  // (same picker-then-walk shape as Stock Check), rather than repeating
+  // the single-item request form per SKU. Deliberately no name field:
+  // this is meant to be a fast daily pass, not a tracked request.
+  const [sodStep, setSodStep] = useState('setup'); // 'setup' | 'checklist'
+  const [sodGroupId, setSodGroupId] = useState(null);
+  const [sodLocationId, setSodLocationId] = useState(null);
+  const [sodQuantities, setSodQuantities] = useState({});
+  const [sodUnits, setSodUnits] = useState({});
+  const [sodSubmitting, setSodSubmitting] = useState(false);
+  const [sodError, setSodError] = useState(null);
 
   const load = useCallback(async (extra) => {
     setError(null);
@@ -111,8 +150,8 @@ export default function PublicTransferHubView({ token }) {
   }, [data, formLocationId]);
 
   useEffect(() => {
-    if (!flagLocationId && data?.locations?.[0]) setFlagLocationId(data.locations[0].id);
-  }, [data, flagLocationId]);
+    if (!sodLocationId && data?.locations?.[0]) setSodLocationId(data.locations[0].id);
+  }, [data, sodLocationId]);
 
   function handleNameChange(v) {
     setName(v);
@@ -143,19 +182,74 @@ export default function PublicTransferHubView({ token }) {
   const activeItems = useMemo(() => (data?.items || []).filter(i => i.active !== false), [data]);
   const activeComponents = useMemo(() => (data?.components || []).filter(c => c.active !== false), [data]);
 
-  // Only a SKU actually carried at the chosen site can be flagged -- that's
-  // the stock_item_sites row the flag lives on, and only that row shows up
-  // in the admin's Stocktake for the site in question.
-  const flaggableItems = useMemo(() => {
-    if (!flagLocationId) return [];
-    const carriedIds = new Set((data?.carries || []).filter(c => c.location_id === flagLocationId).map(c => c.item_id));
-    return activeItems.filter(i => carriedIds.has(i.id));
-  }, [activeItems, data, flagLocationId]);
+  const sodGroups = useMemo(() => data?.groups || [], [data]);
+  const sodGroup = useMemo(() => sodGroups.find(g => g.id === sodGroupId) || null, [sodGroups, sodGroupId]);
+  const sodItems = sodGroup?.items || [];
+  const sodNeededCount = useMemo(
+    () => Object.values(sodQuantities).filter(v => Number(v) > 0).length,
+    [sodQuantities]
+  );
 
   function openPanel(panel) {
     setActivePanel(prev => (prev === panel ? null : panel));
     setFormError(null);
-    setFlagError(null);
+    setSodError(null);
+  }
+
+  function startSod() {
+    if (!sodGroupId || !sodLocationId) return;
+    setSodQuantities({});
+    setSodUnits(Object.fromEntries(sodItems.map(i => [i.id, 'Units'])));
+    setSodError(null);
+    setSodStep('checklist');
+  }
+
+  function setSodQty(itemId, qty) {
+    setSodQuantities(prev => ({ ...prev, [itemId]: qty }));
+  }
+
+  function setSodUnit(itemId, unit) {
+    setSodUnits(prev => ({ ...prev, [itemId]: unit }));
+  }
+
+  function backToSodSetup() {
+    setSodStep('setup');
+    setSodError(null);
+  }
+
+  function closeSod() {
+    setActivePanel(null);
+    setSodStep('setup');
+    setSodGroupId(null);
+    setSodQuantities({});
+    setSodUnits({});
+    setSodError(null);
+  }
+
+  async function submitSod() {
+    const entries = sodItems
+      .filter(i => Number(sodQuantities[i.id]) > 0)
+      .map(i => ({
+        ...(i.kind === 'component' ? { componentId: i.id } : { itemId: i.id }),
+        quantity: Number(sodQuantities[i.id]),
+        quantityUnit: sodUnits[i.id] || 'Units',
+      }));
+
+    if (entries.length === 0) {
+      setSodError('Add at least one item before submitting.');
+      return;
+    }
+
+    setSodSubmitting(true);
+    setSodError(null);
+    try {
+      await load({ action: 'create_batch', locationId: sodLocationId, entries });
+      closeSod();
+    } catch (e) {
+      setSodError(e.message || 'Could not submit the check.');
+    } finally {
+      setSodSubmitting(false);
+    }
   }
 
   async function handleSubmit(e) {
@@ -204,27 +298,8 @@ export default function PublicTransferHubView({ token }) {
     return load({ action: 'cancel', requestId, name });
   }
 
-  async function handleFlagSubmit(e) {
-    e.preventDefault();
-    setFlagError(null);
-    if (!flagLocationId || !flagSubject) {
-      setFlagError('Pick a site and a SKU.');
-      return;
-    }
-    const [, id] = flagSubject.split(':');
-    const item = flaggableItems.find(i => i.id === id);
-    setFlagSubmitting(true);
-    try {
-      await load({ action: 'flag_low', itemId: id, locationId: flagLocationId, name });
-      setFlagSubject('');
-      setActivePanel(null);
-      setFlagSuccess(`Flagged ${item?.name || 'that SKU'} as low — an admin will review it.`);
-      setTimeout(() => setFlagSuccess(null), 5000);
-    } catch (e) {
-      setFlagError(e.message || 'Could not flag that SKU.');
-    } finally {
-      setFlagSubmitting(false);
-    }
+  async function handleFlagNeedsOrdering(requestId, value) {
+    return load({ action: 'flag_needs_ordering', requestId, value, name });
   }
 
   if (loading) {
@@ -298,40 +373,33 @@ export default function PublicTransferHubView({ token }) {
           </div>
         </div>
 
-        {flagSuccess && (
-          <div style={{
-            background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 12, padding: '11px 14px',
-            marginBottom: 12, fontSize: 12.5, color: '#065F46', fontWeight: 600, display: 'flex', gap: 7,
-          }}>
-            <span>✓</span> {flagSuccess}
-          </div>
-        )}
-
-        {/* Actions -- New Request and Flag Low Stock share one card as a
-            compact two-up toolbar; tapping either expands its form in
-            place, closing the other so only one is open at a time. */}
+        {/* Two openers side by side: a one-off single-item request, or a
+            whole SKU group walked as a quick checklist (Start of Day
+            Check) -- the fast way to flag everything FOH needs at once
+            instead of repeating the single-item form per SKU. */}
         <div style={{ background: 'white', borderRadius: CARD_RADIUS, boxShadow: CARD_SHADOW, marginBottom: 12, overflow: 'hidden' }}>
           {activePanel === null && (
-            <div style={{ display: 'flex', gap: 1, background: '#EEF1F4' }}>
+            <div style={{ display: 'flex' }}>
               <button
                 onClick={() => openPanel('request')}
                 style={{
                   flex: 1, padding: '16px 10px', background: 'white', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                 }}
               >
-                <span style={{ fontSize: 19, color: TEAL, lineHeight: 1 }}>＋</span>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#1E293B' }}>New Request</span>
+                <span style={{ fontSize: 17, color: TEAL, lineHeight: 1 }}>＋</span>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: '#1E293B' }}>New Request</span>
               </button>
+              <div style={{ width: 1, background: '#F1F5F9', flexShrink: 0 }} />
               <button
-                onClick={() => openPanel('flag')}
+                onClick={() => openPanel('sod')}
                 style={{
                   flex: 1, padding: '16px 10px', background: 'white', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                 }}
               >
-                <span style={{ fontSize: 16, lineHeight: 1 }}>🚩</span>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#1E293B' }}>Flag Low Stock</span>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>☀️</span>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: '#1E293B' }}>Start of Day</span>
               </button>
             </div>
           )}
@@ -406,57 +474,153 @@ export default function PublicTransferHubView({ token }) {
             </form>
           )}
 
-          {activePanel === 'flag' && (
-            <form onSubmit={handleFlagSubmit} style={{ padding: 18 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 15, fontWeight: 800, color: '#1E293B' }}>🚩 What's running low?</span>
-                <button type="button" onClick={() => setActivePanel(null)} style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          {activePanel === 'sod' && (
+            <div style={{ padding: 18 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <span style={{ fontSize: 15, fontWeight: 800, color: '#1E293B' }}>☀️ Start of Day Check</span>
+                <button type="button" onClick={closeSod} style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
               </div>
 
-              <p style={{ fontSize: 12, color: '#94A3B8', margin: '0 0 14px', lineHeight: 1.4 }}>
-                This just flags it for review — it doesn't change anything in R-Stock, an admin makes the final call.
-              </p>
+              {sodStep === 'setup' && (
+                <>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={labelStyle}>Which site</label>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {data.locations.map(loc => (
+                        <button type="button" key={loc.id} onClick={() => setSodLocationId(loc.id)} style={pillButtonStyle(sodLocationId === loc.id, TEAL)}>
+                          {loc.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-              <div style={{ marginBottom: 12 }}>
-                <label style={labelStyle}>Which site</label>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {data.locations.map(loc => (
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={labelStyle}>Which checklist</label>
+                    {sodGroups.length === 0 ? (
+                      <div style={{ fontSize: 12.5, color: '#94A3B8' }}>No SKU groups set up yet &mdash; ask an admin to create one in R-Stock &rarr; Groups.</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', border: '1px solid #E5E9EF', borderRadius: 10, overflow: 'hidden' }}>
+                        {sodGroups.map((g, idx) => {
+                          const active = sodGroupId === g.id;
+                          return (
+                            <button
+                              type="button"
+                              key={g.id}
+                              onClick={() => setSodGroupId(g.id)}
+                              style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                                padding: '12px 14px', border: 'none', textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer',
+                                borderTop: idx === 0 ? 'none' : '1px solid #F1F5F9',
+                                background: active ? '#F0FDFA' : 'white',
+                              }}
+                            >
+                              <span style={{ minWidth: 0 }}>
+                                <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: '#1E293B' }}>{g.name}</span>
+                                <span style={{ display: 'block', fontSize: 11.5, color: '#94A3B8', marginTop: 1 }}>{g.items.length} item{g.items.length !== 1 ? 's' : ''}</span>
+                              </span>
+                              <span style={{
+                                width: 22, height: 22, flexShrink: 0, borderRadius: 999,
+                                background: active ? TEAL : '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              }}>
+                                {active && <span style={{ color: 'white', fontSize: 11, fontWeight: 800, lineHeight: 1 }}>✓</span>}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={startSod}
+                    disabled={!sodGroupId || !sodLocationId}
+                    style={{
+                      width: '100%', padding: '13px', borderRadius: 11, border: 'none', cursor: (!sodGroupId || !sodLocationId) ? 'default' : 'pointer',
+                      background: TEAL, color: 'white', fontSize: 15, fontWeight: 800, fontFamily: 'inherit',
+                      opacity: (!sodGroupId || !sodLocationId) ? 0.5 : 1,
+                    }}
+                  >
+                    Start Check
+                  </button>
+                </>
+              )}
+
+              {sodStep === 'checklist' && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div style={{ fontSize: 12.5, color: '#64748B' }}>
+                      {sodGroup?.name} &middot; {data.locations.find(l => l.id === sodLocationId)?.name}
+                    </div>
+                    <button type="button" onClick={backToSodSetup} style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                      &larr; Change
+                    </button>
+                  </div>
+
+                  <div style={{ marginBottom: 14 }}>
+                    {withCategoryDividers(sodItems).map(({ item, isNewCategory, category }, idx) => (
+                      <React.Fragment key={item.id}>
+                        {isNewCategory && (
+                          <div style={{ padding: idx === 0 ? '0 0 5px' : '14px 0 5px' }}>
+                            <span style={{ fontSize: 12.5, fontWeight: 800, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              {categoryLabel(category)}
+                            </span>
+                          </div>
+                        )}
+                        <div
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                            padding: '7px 0', borderTop: (idx === 0 || isNewCategory) ? 'none' : '1px solid #F1F5F9',
+                          }}
+                        >
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
+                            <div style={{ fontSize: 10.5, color: '#94A3B8', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(item.kind === 'component' ? 'Component' : item.sku) ? `${item.kind === 'component' ? 'Component' : item.sku} · ` : ''}{item.uom}</div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                            <select
+                              value={sodUnits[item.id] || 'Units'}
+                              onChange={e => setSodUnit(item.id, e.target.value)}
+                              style={{
+                                height: 30, boxSizing: 'border-box', fontSize: 11.5, fontWeight: 600, color: '#475569', borderRadius: 7, border: '1px solid #E5E9EF',
+                                background: '#FAFBFC', padding: '0 1px', fontFamily: 'inherit', width: 78, flexShrink: 0,
+                              }}
+                            >
+                              {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                            <QtyStepper value={sodQuantities[item.id] || 0} onChange={v => setSodQty(item.id, v)} accent={TEAL} />
+                          </div>
+                        </div>
+                      </React.Fragment>
+                    ))}
+                  </div>
+
+                  {sodError && <div style={{ fontSize: 12, color: '#DC2626', marginBottom: 10, fontWeight: 500 }}>{sodError}</div>}
+
+                  <div style={{ display: 'flex', gap: 8 }}>
                     <button
                       type="button"
-                      key={loc.id}
-                      onClick={() => { setFlagLocationId(loc.id); setFlagSubject(''); }}
-                      style={pillButtonStyle(flagLocationId === loc.id, PINK)}
+                      onClick={backToSodSetup}
+                      style={{ padding: '13px 16px', borderRadius: 11, border: '1px solid #E5E9EF', background: 'white', color: '#64748B', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
                     >
-                      {loc.name}
+                      Back
                     </button>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>SKU</label>
-                <SubjectPicker items={flaggableItems} components={[]} value={flagSubject} onChange={setFlagSubject} placeholder="Search SKUs carried at this site…" accent={PINK} />
-              </div>
-
-              <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Your name</label>
-                <input value={name} onChange={e => handleNameChange(e.target.value)} placeholder="So the review makes sense later" style={inputStyle} />
-              </div>
-
-              {flagError && <div style={{ fontSize: 12, color: '#DC2626', marginBottom: 10, fontWeight: 500 }}>{flagError}</div>}
-
-              <button
-                type="submit"
-                disabled={flagSubmitting}
-                style={{
-                  width: '100%', padding: '14px', borderRadius: 11, border: 'none', cursor: flagSubmitting ? 'default' : 'pointer',
-                  background: PINK, color: 'white', fontSize: 15, fontWeight: 800, fontFamily: 'inherit', opacity: flagSubmitting ? 0.6 : 1,
-                  boxShadow: flagSubmitting ? 'none' : '0 4px 12px -4px rgba(190,24,93,0.45)',
-                }}
-              >
-                {flagSubmitting ? 'Flagging…' : 'Flag as Low'}
-              </button>
-            </form>
+                    <button
+                      type="button"
+                      onClick={submitSod}
+                      disabled={sodSubmitting || sodNeededCount === 0}
+                      style={{
+                        flex: 1, padding: '13px', borderRadius: 11, border: 'none', cursor: (sodSubmitting || sodNeededCount === 0) ? 'default' : 'pointer',
+                        background: TEAL, color: 'white', fontSize: 15, fontWeight: 800, fontFamily: 'inherit',
+                        opacity: (sodSubmitting || sodNeededCount === 0) ? 0.5 : 1,
+                      }}
+                    >
+                      {sodSubmitting ? 'Submitting…' : `Submit (${sodNeededCount})`}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
 
@@ -485,6 +649,7 @@ export default function PublicTransferHubView({ token }) {
                     onFulfill={handleFulfill}
                     onUpdatePriority={handleUpdatePriority}
                     onDelete={handleDelete}
+                    onFlagNeedsOrdering={handleFlagNeedsOrdering}
                     isLast={ri === rows.length - 1}
                   />
                 ))}
@@ -497,6 +662,65 @@ export default function PublicTransferHubView({ token }) {
           Powered by Recess Roster
         </p>
       </div>
+    </div>
+  );
+}
+
+// Fast quantity entry for a checklist row -- tap +/- for the common case
+// (small whole-number adjustments), or tap the number itself to type an
+// exact value directly, rather than always needing the on-screen keyboard.
+function QtyStepper({ value, onChange, accent = TEAL }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const n = Number(value) || 0;
+
+  function step(delta) {
+    onChange(Math.max(0, Math.round((n + delta) * 100) / 100));
+  }
+  function startEdit() {
+    setDraft(n ? String(n) : '');
+    setEditing(true);
+  }
+  function commit() {
+    setEditing(false);
+    const parsed = parseFloat(draft);
+    onChange(Number.isFinite(parsed) && parsed >= 0 ? parsed : 0);
+  }
+
+  const btnStyle = (disabled) => ({
+    width: 30, height: 30, borderRadius: 8, border: '1px solid #E5E9EF', background: disabled ? '#F8FAFC' : 'white',
+    color: disabled ? '#CBD5E1' : accent, fontSize: 16, fontWeight: 700, lineHeight: 1, cursor: disabled ? 'default' : 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', flexShrink: 0,
+  });
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+      <button type="button" onClick={() => step(-1)} disabled={n <= 0} style={btnStyle(n <= 0)}>&minus;</button>
+      {editing ? (
+        <input
+          type="number" min="0" step="any" inputMode="decimal" autoFocus
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditing(false); }}
+          style={{
+            width: 34, textAlign: 'center', fontSize: 14, fontWeight: 800, color: '#1E293B',
+            border: `1px solid ${accent}`, borderRadius: 7, background: 'white', fontFamily: 'inherit', padding: '4px 2px',
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={startEdit}
+          style={{
+            width: 34, textAlign: 'center', fontSize: 14, fontWeight: 800, background: 'none', border: 'none',
+            color: n > 0 ? '#1E293B' : '#CBD5E1', cursor: 'pointer', fontFamily: 'inherit', padding: '4px 2px',
+          }}
+        >
+          {n}
+        </button>
+      )}
+      <button type="button" onClick={() => step(1)} style={btnStyle(false)}>+</button>
     </div>
   );
 }
@@ -576,12 +800,13 @@ function SubjectPicker({ items, components, value, onChange, placeholder = 'Sear
   );
 }
 
-function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLast }) {
+function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, onFlagNeedsOrdering, isLast }) {
   const [mode, setMode] = useState(null); // null | 'fulfil' | 'edit'
   const fallbackSource = locations.find(l => l.id !== row.requesting_location_id)?.id || locations[0]?.id || '';
   const [sourceLocationId, setSourceLocationId] = useState(fallbackSource);
   const [submitting, setSubmitting] = useState(false);
   const [rowError, setRowError] = useState(null);
+  const [flagging, setFlagging] = useState(false);
 
   // Held locally and only committed on "Done" -- committing on tap would
   // reorder the list (priority drives sort order) while the panel is still
@@ -634,6 +859,18 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
     }
   }
 
+  async function toggleNeedsOrdering() {
+    setFlagging(true);
+    setRowError(null);
+    try {
+      await onFlagNeedsOrdering(row.id, !row.needs_ordering);
+    } catch (e) {
+      setRowError(e.message || 'Could not update that request.');
+    } finally {
+      setFlagging(false);
+    }
+  }
+
   return (
     <div style={{ padding: '13px 16px', borderBottom: isLast ? 'none' : '1px solid #F1F5F9' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
@@ -646,6 +883,14 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
                 color: '#DC2626', background: '#FEF2F2', padding: '2px 7px', borderRadius: 999, flexShrink: 0,
               }}>
                 High
+              </span>
+            )}
+            {row.needs_ordering && (
+              <span style={{
+                fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em',
+                color: '#B45309', background: '#FFFBEB', padding: '2px 7px', borderRadius: 999, flexShrink: 0,
+              }}>
+                Needs Ordering
               </span>
             )}
           </div>
@@ -663,7 +908,7 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
       </div>
 
       {mode === null && (
-        <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+        <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button
             onClick={() => setMode('fulfil')}
             style={{
@@ -673,6 +918,21 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
             }}
           >
             <span>✓</span> Mark Fulfilled
+          </button>
+          <button
+            onClick={toggleNeedsOrdering}
+            disabled={flagging}
+            title={row.needs_ordering ? 'Unflag -- stock has arrived' : 'Flag as out of stock, needs ordering'}
+            style={{
+              padding: '7px 14px', borderRadius: 8, cursor: flagging ? 'default' : 'pointer', fontFamily: 'inherit',
+              fontSize: 12.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5,
+              border: row.needs_ordering ? 'none' : '1px solid #FDE68A',
+              background: row.needs_ordering ? '#B45309' : 'white',
+              color: row.needs_ordering ? 'white' : '#B45309',
+              opacity: flagging ? 0.6 : 1,
+            }}
+          >
+            <span>⚠</span> {row.needs_ordering ? 'Ordering Flagged' : 'Needs Ordering'}
           </button>
           <button
             onClick={openEdit}
@@ -686,6 +946,7 @@ function FulfilRow({ row, locations, onFulfill, onUpdatePriority, onDelete, isLa
           </button>
         </div>
       )}
+      {mode === null && rowError && <div style={{ marginTop: 8, fontSize: 11.5, color: '#DC2626', fontWeight: 500 }}>{rowError}</div>}
 
       {mode === 'fulfil' && (
         <div style={{ marginTop: 10, padding: 12, background: '#F8FAFC', borderRadius: 12 }}>

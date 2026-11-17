@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
-  ArrowLeftRight, Package, MapPin, Search, Check, XCircle, Clock, User, Send, ClipboardList, History as HistoryIcon,
+  ArrowLeftRight, Package, MapPin, Search, Check, XCircle, Clock, User, Send, ClipboardList, History as HistoryIcon, AlertTriangle,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -282,9 +282,19 @@ function RequestTab({ items, components, locations, myOpenRequests, subjectOf, l
 // transfers can see the lot. Fulfilling is manual: pick which site is
 // sending the stock, no stock-on-hand check.
 
-function QueueRow({ row, subject, requestingLocation, locations, requesterEmail, onFulfill, onCancel }) {
+function QueueRow({ row, subject, requestingLocation, locations, requesterEmail, onFulfill, onCancel, onFlagNeedsOrdering }) {
   const fallbackSource = locations.find(l => l.id !== row.requesting_location_id)?.id || locations[0]?.id || '';
   const [sourceLocationId, setSourceLocationId] = useState(fallbackSource);
+  const [flagging, setFlagging] = useState(false);
+
+  async function toggleNeedsOrdering() {
+    setFlagging(true);
+    try {
+      await onFlagNeedsOrdering(row.id, !row.needs_ordering);
+    } finally {
+      setFlagging(false);
+    }
+  }
 
   return (
     <div className="px-4 py-3 flex items-center gap-3 flex-wrap">
@@ -294,6 +304,9 @@ function QueueRow({ row, subject, requestingLocation, locations, requesterEmail,
           <PriorityBadge priority={row.priority} />
           {subject.kind === 'component' && (
             <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Component</span>
+          )}
+          {row.needs_ordering && (
+            <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Needs Ordering</span>
           )}
         </div>
         <div className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
@@ -323,6 +336,18 @@ function QueueRow({ row, subject, requestingLocation, locations, requesterEmail,
           <Check size={13} /> Fulfil
         </button>
         <button
+          onClick={toggleNeedsOrdering}
+          disabled={flagging}
+          title={row.needs_ordering ? 'Unflag -- stock has arrived' : 'Flag as out of stock, needs ordering'}
+          className={`text-xs py-1.5 px-2.5 rounded-lg font-medium flex items-center gap-1 border transition-colors ${
+            row.needs_ordering
+              ? 'bg-amber-500 border-amber-500 text-white hover:bg-amber-600'
+              : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <AlertTriangle size={13} /> {row.needs_ordering ? 'Ordering Flagged' : 'Needs Ordering'}
+        </button>
+        <button
           onClick={() => onCancel(row.id)}
           className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
           title="Cancel request"
@@ -334,7 +359,7 @@ function QueueRow({ row, subject, requestingLocation, locations, requesterEmail,
   );
 }
 
-function QueueTab({ requests, subjectOf, locationById, locations, emailByUserId, onFulfill, onCancel }) {
+function QueueTab({ requests, subjectOf, locationById, locations, emailByUserId, onFulfill, onCancel, onFlagNeedsOrdering }) {
   const grouped = useMemo(() => {
     const groups = {};
     for (const r of requests) {
@@ -371,6 +396,7 @@ function QueueTab({ requests, subjectOf, locationById, locations, emailByUserId,
                 requesterEmail={emailByUserId.get(row.requested_by) || row.requested_by_name}
                 onFulfill={onFulfill}
                 onCancel={onCancel}
+                onFlagNeedsOrdering={onFlagNeedsOrdering}
               />
             ))}
           </div>
@@ -542,6 +568,19 @@ export default function TransferHubApp({ user, org }) {
     }
   }
 
+  async function handleFlagNeedsOrdering(requestId, value) {
+    setRequests(prev => prev.map(r => r.id === requestId
+      ? { ...r, needs_ordering: value, needs_ordering_at: value ? new Date().toISOString() : null, needs_ordering_by_name: value ? (user?.email || null) : null }
+      : r));
+    try {
+      await db.flagTransferNeedsOrdering(requestId, { value, flaggedByName: user?.email });
+    } catch (err) {
+      toast.error('Failed to update: ' + (err.message || 'unknown error'));
+      console.error(err);
+      loadData();
+    }
+  }
+
   const TABS = [
     { id: 'request', label: 'Request',      Icon: Send },
     { id: 'queue',   label: 'Action Queue', Icon: ClipboardList },
@@ -634,6 +673,7 @@ export default function TransferHubApp({ user, org }) {
           emailByUserId={emailByUserId}
           onFulfill={handleFulfill}
           onCancel={handleCancel}
+          onFlagNeedsOrdering={handleFlagNeedsOrdering}
         />
       )}
       {activeTab === 'history' && (

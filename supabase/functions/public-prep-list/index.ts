@@ -12,6 +12,22 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
+const MAX_FAILS_PER_IP = 5;
+const MAX_FAILS_PER_ORG = 40;
+const STATUSES = ['ok', 'low', 'urgent'];
+
+// Hardcoded for now, per Clark -- revisit if the team grows past these four.
+const STAFF_OPTIONS = ['Amrin', 'Slim', 'Matilda', 'Paddy'];
+
+function todayIn(timezone: string): string {
+  try {
+    return new Date().toLocaleDateString('en-CA', { timeZone: timezone });
+  } catch {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' });
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -32,7 +48,7 @@ serve(async (req) => {
     // Transfer Hub -- one link to distribute and regenerate.
     const { data: org, error: orgError } = await supabase
       .from('organisations')
-      .select('id, name')
+      .select('id, name, timezone, roster_view_pin, prep_last_reset_date')
       .eq('staff_hub_public_token', token)
       .single();
 
@@ -40,86 +56,199 @@ serve(async (req) => {
       return jsonResponse({ error: 'Invalid or expired link.' });
     }
 
-    if (action === 'flag') {
-      const { componentId, locationId, neededDate, name } = body;
+    const tz = org.timezone || 'Australia/Sydney';
+    const today = todayIn(tz);
 
-      if (!componentId || !locationId || !neededDate) {
-        return jsonResponse({ error: 'Pick a site, a component, and when it is needed.' }, 400);
+    // ── Lazy day reset, applied on the first request past local midnight
+    // (same pattern this app uses everywhere else for "today" -- no cron
+    // job needed). Any flagged task without carry_forward clears back to
+    // 'ok'; one with carry_forward survives this one reset, but the flag
+    // itself is consumed so it needs pressing again to survive the next.
+    if (org.prep_last_reset_date !== today) {
+      await supabase.from('prep_tasks').update({
+        status: 'ok', carry_forward: false, assigned_to: null, note: null, catering: false, done: false, flagged_at: null, priority: 2,
+      }).eq('org_id', org.id).neq('status', 'ok').eq('carry_forward', false);
+      await supabase.from('prep_tasks').update({ carry_forward: false }).eq('org_id', org.id).eq('carry_forward', true);
+
+      // Standing tasks (the 2kg of bacon) always come back urgent, highest
+      // priority, first in the list, at their default qty -- overriding
+      // whatever else is going on with them, since "every morning,
+      // doesn't change" means unconditionally, not just when nothing else
+      // flagged it first.
+      await supabase.from('prep_tasks').update({
+        status: 'urgent', priority: 1, flag_order: -1, flagged_at: new Date().toISOString(), done: false,
+      }).eq('org_id', org.id).eq('auto_include', true).eq('active', true);
+      const { data: autoTasks } = await supabase.from('prep_tasks').select('id, default_qty, default_uom').eq('org_id', org.id).eq('auto_include', true).eq('active', true);
+      for (const t of (autoTasks || [])) {
+        await supabase.from('prep_tasks').update({ flag_qty: t.default_qty, flag_uom: t.default_uom }).eq('id', t.id);
       }
 
-      // Any component in the org's list can be flagged -- both 'recipe' and
-      // 'prep' typed ones, since prep isn't only the type='prep' rows.
-      const { data: comp } = await supabase.from('recipe_components').select('id').eq('id', componentId).eq('org_id', org.id).single();
-      if (!comp) return jsonResponse({ error: 'Unknown component.' }, 400);
+      await supabase.from('organisations').update({ prep_last_reset_date: today }).eq('id', org.id);
+    }
 
-      const { data: loc } = await supabase.from('locations').select('id').eq('id', locationId).eq('org_id', org.id).single();
-      if (!loc) return jsonResponse({ error: 'Unknown site.' }, 400);
+    // ── Mark a flagged task done, or un-done. No PIN -- every staff member
+    // can tick things off; who did it doesn't matter, so nothing records
+    // an identity. The task stays on the Plan either way (struck through
+    // once done) -- it only actually clears at the next reset.
+    if (action === 'toggleComplete') {
+      const { itemId, done } = body;
+      const { data: item } = await supabase.from('prep_tasks').select('id').eq('id', itemId).eq('org_id', org.id).neq('status', 'ok').single();
+      if (!item) return jsonResponse({ error: 'That task is no longer on the plan.' }, 400);
 
-      // Bulk-prepped, one-off asks: re-flagging the same component at the
-      // same site while it's already open just refreshes it (new date, new
-      // name, new timestamp) rather than piling up a duplicate row. The
-      // partial unique index backs this as a race-safety net, but Postgres
-      // ON CONFLICT can't target a partial index through PostgREST's plain
-      // upsert, so the check-then-write happens explicitly here instead.
-      const { data: existing } = await supabase.from('component_prep_flags').select('id').eq('component_id', componentId).eq('location_id', locationId).eq('status', 'open').maybeSingle();
+      const { error: updateError } = await supabase.from('prep_tasks').update({ done: !!done }).eq('id', itemId);
+      if (updateError) return jsonResponse({ error: updateError.message }, 400);
 
-      const row = {
-        needed_date: neededDate,
-        flagged_at: new Date().toISOString(),
-        flagged_by_name: (name || '').trim() || null,
-        updated_at: new Date().toISOString(),
+      // The client applies this optimistically -- just confirm, skip the
+      // full catalog/plan refetch below.
+      return jsonResponse({ ok: true });
+    }
+
+    // ── Everything below is admin-only: re-check the shared roster PIN on
+    // every call (stateless, same brute-force lockout as Day Roster/My
+    // Roster -- see staff_pin_attempts).
+    const isAdminAction = ['unlock', 'createTask', 'setFlag', 'reorderFlags', 'setCarryForward'].includes(action);
+    let pinOk = false;
+    if (isAdminAction) {
+      const { pin } = body;
+      if (typeof pin !== 'string' || !/^\d{4}$/.test(pin)) return jsonResponse({ error: 'Enter the 4-digit PIN.', code: 'bad_pin' });
+
+      const ip = (req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || 'unknown').split(',')[0].trim();
+      const since = new Date(Date.now() - LOCKOUT_WINDOW_MS).toISOString();
+      const [{ count: ipFails }, { count: orgFails }] = await Promise.all([
+        supabase.from('staff_pin_attempts').select('id', { count: 'exact', head: true }).eq('org_id', org.id).eq('ip', ip).gte('created_at', since),
+        supabase.from('staff_pin_attempts').select('id', { count: 'exact', head: true }).eq('org_id', org.id).gte('created_at', since),
+      ]);
+      if ((ipFails ?? 0) >= MAX_FAILS_PER_IP || (orgFails ?? 0) >= MAX_FAILS_PER_ORG) {
+        return jsonResponse({ error: 'Too many incorrect attempts. Try again in 15 minutes, or ask your manager.', code: 'locked' });
+      }
+
+      if (!org.roster_view_pin || org.roster_view_pin !== pin) {
+        await supabase.from('staff_pin_attempts').insert({ org_id: org.id, ip });
+        await supabase.from('staff_pin_attempts').delete().lt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+        const left = Math.max(0, MAX_FAILS_PER_IP - (ipFails ?? 0) - 1);
+        return jsonResponse({ error: left > 0 ? `Incorrect PIN. ${left} ${left === 1 ? 'try' : 'tries'} left.` : 'Incorrect PIN.', code: 'bad_pin' });
+      }
+      pinOk = true;
+    }
+
+    if (action === 'createTask' && pinOk) {
+      const { name, defaultQty, defaultUom } = body;
+      const trimmed = (name || '').trim();
+      if (!trimmed) return jsonResponse({ error: 'Name a task.' }, 400);
+
+      const { data: maxRow } = await supabase.from('prep_tasks').select('sort_order').eq('org_id', org.id).order('sort_order', { ascending: false }).limit(1).maybeSingle();
+      const { data: created, error: createError } = await supabase.from('prep_tasks').insert({
+        org_id: org.id, name: trimmed,
+        default_qty: defaultQty === '' || defaultQty == null ? null : Number(defaultQty),
+        default_uom: (defaultUom || '').trim() || null,
+        sort_order: (maxRow?.sort_order ?? -1) + 1,
+      }).select('id, name, default_qty, default_uom, auto_include, status, flag_qty, flag_uom, assigned_to, note, catering, done, carry_forward, priority, flag_order').single();
+      if (createError) return jsonResponse({ error: createError.message }, 400);
+
+      return jsonResponse({ task: created });
+    }
+
+    // Flag (or clear) a task: sets its status plus the instance fields
+    // that go with it. Clearing back to 'ok' also drops carry_forward and
+    // done -- there's nothing to carry or tick once it's not flagged.
+    if (action === 'setFlag' && pinOk) {
+      const { taskId, status, qty, uom, assignedTo, note, catering, priority } = body;
+      if (!STATUSES.includes(status)) return jsonResponse({ error: 'Unknown status.' }, 400);
+
+      const update: Record<string, unknown> = {
+        status,
+        // Qty is deliberately optional -- '' / null / undefined all mean
+        // "no quantity", not "default to 0".
+        flag_qty: qty === '' || qty == null ? null : Number(qty),
+        flag_uom: (uom || '').trim() || null,
+        assigned_to: (assignedTo || '').trim() || null,
+        note: (note || '').trim() || null,
+        catering: !!catering,
+        flagged_at: status === 'ok' ? null : new Date().toISOString(),
       };
+      if ([1, 2, 3].includes(priority)) update.priority = priority;
 
-      const { error: flagError } = existing
-        ? await supabase.from('component_prep_flags').update(row).eq('id', existing.id)
-        : await supabase.from('component_prep_flags').insert([{
-            org_id: org.id,
-            component_id: componentId,
-            location_id: locationId,
-            status: 'open',
-            ...row,
-          }]);
-      if (flagError) return jsonResponse({ error: flagError.message }, 400);
+      if (status === 'ok') {
+        update.carry_forward = false;
+        update.done = false;
+        update.priority = 2;
+      } else {
+        // Newly (re-)flagged tasks land at the back of the queue by
+        // default -- admin reorders from there with drag-and-drop.
+        const { data: existing } = await supabase.from('prep_tasks').select('status').eq('id', taskId).single();
+        if (existing?.status === 'ok') {
+          const { data: maxRow } = await supabase.from('prep_tasks').select('flag_order').eq('org_id', org.id).neq('status', 'ok').order('flag_order', { ascending: false }).limit(1).maybeSingle();
+          update.flag_order = (maxRow?.flag_order ?? -1) + 1;
+        }
+      }
 
-    } else if (action === 'complete') {
-      const { flagId, name } = body;
-
-      const { data: flag } = await supabase.from('component_prep_flags').select('id').eq('id', flagId).eq('org_id', org.id).eq('status', 'open').single();
-      if (!flag) return jsonResponse({ error: 'That item is no longer on the list.' }, 400);
-
-      const { error: updateError } = await supabase.from('component_prep_flags').update({
-        status: 'done',
-        completed_at: new Date().toISOString(),
-        completed_by_name: (name || '').trim() || null,
-        updated_at: new Date().toISOString(),
-      }).eq('id', flagId);
+      const { error: updateError } = await supabase.from('prep_tasks').update(update).eq('id', taskId).eq('org_id', org.id);
       if (updateError) return jsonResponse({ error: updateError.message }, 400);
     }
 
-    const { data: settings } = await supabase
-      .from('business_settings')
-      .select('business_name')
-      .eq('org_id', org.id)
-      .single();
+    if (action === 'setCarryForward' && pinOk) {
+      const { taskId, carryForward } = body;
+      const { error: updateError } = await supabase.from('prep_tasks').update({ carry_forward: !!carryForward }).eq('id', taskId).eq('org_id', org.id);
+      if (updateError) return jsonResponse({ error: updateError.message }, 400);
+    }
 
-    // Dashboard overview: open flags, and the locations/components needed
-    // to label them and build the "flag something" form. Every component
-    // in the org's list is flaggable here, not just type='prep' ones. No
-    // requester identity beyond whatever free-text name someone typed in --
-    // this link goes to every staff member, so there's no login to attach
-    // a real account to.
-    const [{ data: locations }, { data: components }, { data: flags }] = await Promise.all([
-      supabase.from('locations').select('id, name').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
-      supabase.from('recipe_components').select('id, name, uom, active').eq('org_id', org.id).order('sort_order'),
-      supabase.from('component_prep_flags').select('id, component_id, location_id, needed_date, status, flagged_at, flagged_by_name').eq('org_id', org.id).eq('status', 'open').order('needed_date', { ascending: true }).order('flagged_at', { ascending: false }),
-    ]);
+    // Drag-and-drop reorder: the client sends the full set of currently-
+    // flagged task ids in their new order (within one priority tier, or
+    // across the whole flagged list -- doesn't matter, flag_order is
+    // only ever used as a tiebreaker after priority), and every one of
+    // them gets rewritten to its index. Scoped to this org's flagged
+    // tasks only, so a stale/foreign id can't smuggle in an update.
+    if (action === 'reorderFlags' && pinOk) {
+      const order: string[] = Array.isArray(body.order) ? body.order : [];
+      const { data: flagged } = await supabase.from('prep_tasks').select('id').eq('org_id', org.id).neq('status', 'ok');
+      const validIds = new Set((flagged || []).map(t => t.id));
+      await Promise.all(
+        order.filter(id => validIds.has(id)).map((id, idx) =>
+          supabase.from('prep_tasks').update({ flag_order: idx }).eq('id', id)
+        )
+      );
+    }
 
-    return jsonResponse({
+    const { data: settings } = await supabase.from('business_settings').select('business_name').eq('org_id', org.id).maybeSingle();
+
+    // Plan view: everything currently flagged, ordered by the admin-set
+    // priority (1 highest) and then by drag position within a tier --
+    // already-done tasks sink to the bottom so the still-outstanding
+    // ones surface first. Status (Urgent/Running Low) is now purely a
+    // descriptive tag, not a sort key.
+    const { data: flaggedRows } = await supabase
+      .from('prep_tasks')
+      .select('id, name, status, flag_qty, flag_uom, assigned_to, note, catering, done, flagged_at, carry_forward, priority, flag_order')
+      .eq('org_id', org.id).eq('active', true).neq('status', 'ok');
+    const planItems = (flaggedRows || [])
+      .sort((a, b) => (Number(a.done) - Number(b.done)) || (a.priority - b.priority) || (a.flag_order - b.flag_order))
+      .map(r => ({
+        id: r.id, name: r.name, status: r.status, qty: r.flag_qty, uom: r.flag_uom,
+        assignedTo: r.assigned_to, note: r.note, catering: r.catering, done: r.done, flaggedAt: r.flagged_at,
+        carryForward: r.carry_forward, priority: r.priority,
+      }));
+
+    const responseBody: Record<string, unknown> = {
       businessName: settings?.business_name || org.name || 'Prep List',
-      locations: locations || [],
-      components: components || [],
-      flags: flags || [],
-    });
+      today,
+      planItems,
+      // Harmless to send unconditionally -- the staff tab doesn't need a
+      // PIN for anything, but the name list itself isn't sensitive.
+      staffOptions: STAFF_OPTIONS,
+    };
+
+    // The full catalog (including unflagged tasks, for the "walk every
+    // task" flagging screen) only goes out once the PIN has been verified.
+    if (pinOk) {
+      const { data: catalogRows } = await supabase
+        .from('prep_tasks')
+        .select('id, name, default_qty, default_uom, auto_include, status, flag_qty, flag_uom, assigned_to, note, catering, done, carry_forward, priority, flag_order')
+        .eq('org_id', org.id).eq('active', true)
+        .order('sort_order', { ascending: true }).order('name', { ascending: true });
+      responseBody.catalog = catalogRows || [];
+    }
+
+    return jsonResponse(responseBody);
 
   } catch (err) {
     console.error('public-prep-list error:', err);

@@ -2,9 +2,9 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import {
   Package, Plus, Trash2, Edit2, X, MapPin, Upload,
-  ClipboardList, Truck, AlertTriangle, XCircle, ChevronDown, ShoppingCart, History, Box, ArrowLeftRight, Search,
+  ClipboardList, Truck, AlertTriangle, ChevronDown, ChevronUp, ShoppingCart, History, Box, ArrowLeftRight, Search,
   TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Tag, User, Settings, GripVertical, ArrowUpDown, Check, Flag, Bot,
-  AlertCircle, Clock, CheckCircle2,
+  AlertCircle, Clock, CheckCircle2, Layers,
 } from 'lucide-react';
 import { db } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -326,6 +326,23 @@ function CategoryFilterMultiSelect({ value, onChange, categories }) {
 // whether the current tab's supplier groups are narrowed down to just
 // the ones assigned (via SupplierAssignmentsModal) to the logged-in
 // user. Disabled with a hint when they have no assignments yet.
+// A single, dedicated way to cut straight to what staff have flagged --
+// previously the only way to find them was to scroll the whole grouped
+// list looking for the (differently-coloured) flag badge on each row.
+function FlaggedOnlyToggle({ active, onToggle, count }) {
+  if (count === 0 && !active) return null;
+  return (
+    <button
+      onClick={onToggle}
+      title="Show only items staff have flagged as running low or urgent"
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${active ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'}`}
+    >
+      <Flag size={13} />
+      Flagged{count > 0 ? ` (${count})` : ''}
+    </button>
+  );
+}
+
 function MySuppliersToggle({ active, onToggle, hasAssignments, onManage }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -765,6 +782,7 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
   const [groupBy, setGroupBy] = useState('supplier');
   const [categoryFilters, setCategoryFilters] = useState([]);
   const [myOnly, setMyOnly] = useState(false);
+  const [flaggedOnly, setFlaggedOnly] = useState(false);
   const toggleGroup = key => setCollapsed(c => ({ ...c, [key]: !c[key] }));
 
   const availableCategories = useMemo(
@@ -787,8 +805,9 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
       .filter(r => !pinnedCategory || r.item.category === pinnedCategory)
       .filter(r => categoryFilters.length === 0 || categoryFilters.includes(r.item.category))
       .filter(r => !myOnly || mySuppliers.includes(r.supplier))
+      .filter(r => !flaggedOnly || r.staff_flag_level)
       .filter(r => !q || r.item.name.toLowerCase().includes(q) || (r.item.sku || '').toLowerCase().includes(q));
-  }, [sites, selectedLocationId, itemById, pinnedCategory, categoryFilters, myOnly, mySuppliers, search]);
+  }, [sites, selectedLocationId, itemById, pinnedCategory, categoryFilters, myOnly, flaggedOnly, mySuppliers, search]);
 
   const grouped = useMemo(() => {
     const groups = {};
@@ -828,7 +847,8 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
 
   const noStock  = siteRows.filter(r => r.current_status === 'no_stock').length;
   const lowStock = siteRows.filter(r => r.current_status === 'low_stock').length;
-  const staffFlagged = siteRows.filter(r => r.staff_flagged_low).length;
+  const staffFlaggedLow = siteRows.filter(r => r.staff_flag_level === 'low').length;
+  const staffFlaggedOrderSoon = siteRows.filter(r => r.staff_flag_level === 'order_soon').length;
 
   if (locations.length === 0) {
     return <EmptyState Icon={MapPin} title="No locations set up yet" hint="Add a site in the Locations tab first." />;
@@ -879,26 +899,35 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
                   )}
                   <tr className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors">
                     <td className="px-3 py-2">
-                      <div className="min-w-0">
-                        <span className="text-[15px] font-semibold text-gray-900 truncate block">{row.item.name}</span>
-                      </div>
-                      <div className="text-xs text-gray-400 truncate mb-1">{row.item.sku} · {row.item.uom}</div>
-                      <div className="flex items-center gap-1 flex-wrap">
-                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${LAST_ORDERED_TONE_CLASSES[tone].bg} ${LAST_ORDERED_TONE_CLASSES[tone].text}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone].dot}`} />
-                          {info.label}
-                        </span>
-                        {row.staff_flagged_low && (
+                      <div className="min-w-0 flex items-center gap-1.5">
+                        <span className="text-[15px] font-semibold text-gray-900 truncate flex-1 min-w-0">{row.item.name}</span>
+                        {/* The one badge on the row that staff put there themselves --
+                            kept as the sole bold, coloured tag so it's what the eye
+                            catches first. Same hue at two intensities communicates
+                            severity without adding another competing colour. */}
+                        {row.staff_flag_level && (
                           <button
                             onClick={() => onClearFlag(row.id)}
-                            title={`Flagged low by ${row.staff_flagged_by_name || 'a staff member'}${row.staff_flagged_at ? ' on ' + new Date(row.staff_flagged_at).toLocaleDateString('en-AU') : ''} -- click to clear`}
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap bg-pink-100 text-pink-700 hover:bg-pink-200 transition-colors"
+                            title={`Marked ${row.staff_flag_level === 'order_soon' ? 'urgent' : 'running low'} by ${row.staff_flagged_by_name || 'a staff member'}${row.staff_flagged_at ? ' on ' + new Date(row.staff_flagged_at).toLocaleDateString('en-AU') : ''} -- click to clear`}
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${
+                              row.staff_flag_level === 'order_soon'
+                                ? 'bg-rose-600 text-white hover:bg-rose-700'
+                                : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                            }`}
                           >
                             <Flag size={9} className="flex-shrink-0" />
-                            Flagged low
+                            {row.staff_flag_level === 'order_soon' ? 'Urgent' : 'Running Low'}
                             <X size={9} className="flex-shrink-0" />
                           </button>
                         )}
+                      </div>
+                      {/* Last-ordered recency is background context, not an alert --
+                          a plain muted line with just a tone dot reads as secondary
+                          instead of competing with the flag badge above. */}
+                      <div className="text-xs text-gray-400 truncate mb-1">{row.item.sku} · {row.item.uom}</div>
+                      <div className="inline-flex items-center gap-1.5 text-[10.5px] text-gray-400">
+                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${LAST_ORDERED_TONE_CLASSES[tone].dot}`} />
+                        {info.label}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-center">
@@ -939,32 +968,47 @@ function StocktakeTab({ items, sites, locations, selectedLocationId, onSelectLoc
           )}
           <GroupBySwitcher value={groupBy} onChange={setGroupBy} />
           <MySuppliersToggle active={myOnly} onToggle={() => setMyOnly(o => !o)} hasAssignments={mySuppliers.length > 0} onManage={onManageSuppliers} />
+          <FlaggedOnlyToggle active={flaggedOnly} onToggle={() => setFlaggedOnly(o => !o)} count={staffFlaggedOrderSoon + staffFlaggedLow} />
           <SearchInput value={search} onChange={setSearch} placeholder="Search items or SKU…" />
         </div>
       </div>
 
-      {noStock > 0 && (
-        <div className="flex items-center gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-          <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-            <XCircle size={14} className="text-red-600" />
-          </div>
-          <span className="text-sm font-medium text-red-700">{noStock} item{noStock !== 1 ? 's' : ''} with no stock</span>
-        </div>
-      )}
-      {lowStock > 0 && (
-        <div className="flex items-center gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-          <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-            <AlertTriangle size={14} className="text-amber-600" />
-          </div>
-          <span className="text-sm font-medium text-amber-700">{lowStock} item{lowStock !== 1 ? 's' : ''} running low</span>
-        </div>
-      )}
-      {staffFlagged > 0 && (
-        <div className="flex items-center gap-2.5 bg-pink-50 border border-pink-200 rounded-xl px-4 py-3">
-          <div className="w-7 h-7 rounded-full bg-pink-100 flex items-center justify-center flex-shrink-0">
-            <Flag size={14} className="text-pink-600" />
-          </div>
-          <span className="text-sm font-medium text-pink-700">{staffFlagged} item{staffFlagged !== 1 ? 's' : ''} flagged low by staff -- review below</span>
+      {/* One calm summary line instead of four stacked, differently-
+          coloured alert boxes -- each count keeps a tiny tone dot so the
+          at-a-glance read is still there, just without four competing
+          banners fighting for attention above the list. */}
+      {(noStock > 0 || lowStock > 0 || staffFlaggedOrderSoon > 0 || staffFlaggedLow > 0) && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {noStock > 0 && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-100 text-xs text-gray-600">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+              <span className="font-semibold text-gray-900">{noStock}</span> no stock
+            </span>
+          )}
+          {lowStock > 0 && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-100 text-xs text-gray-600">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+              <span className="font-semibold text-gray-900">{lowStock}</span> low stock
+            </span>
+          )}
+          {staffFlaggedOrderSoon > 0 && (
+            <button
+              onClick={() => setFlaggedOnly(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-100 text-xs text-gray-600 hover:bg-rose-50 hover:border-rose-200 transition-colors"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-600 flex-shrink-0" />
+              <span className="font-semibold text-gray-900">{staffFlaggedOrderSoon}</span> urgent flag{staffFlaggedOrderSoon !== 1 ? 's' : ''}
+            </button>
+          )}
+          {staffFlaggedLow > 0 && (
+            <button
+              onClick={() => setFlaggedOnly(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-100 text-xs text-gray-600 hover:bg-rose-50 hover:border-rose-200 transition-colors"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-300 flex-shrink-0" />
+              <span className="font-semibold text-gray-900">{staffFlaggedLow}</span> low flag{staffFlaggedLow !== 1 ? 's' : ''}
+            </button>
+          )}
         </div>
       )}
 
@@ -3083,6 +3127,290 @@ function ItemsTab({ items, sites, locations, orgId, onRefresh }) {
   );
 }
 
+// ── Groups Tab ───────────────────────────────────────────────────────────────
+// Admin-curated, named SKU checklists for the mobile Stock Check page (e.g.
+// "Bus Stop", "FOH") -- independent of category, since category is a broad
+// supplier/accounting code, not a role-based checklist.
+
+function GroupsTab({ groups, items, components, orgId, onRefresh }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [editingGroup, setEditingGroup] = useState(null);
+  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
+  const componentById = useMemo(() => new Map(components.map(c => [c.id, c])), [components]);
+
+  async function add() {
+    if (!name.trim()) { toast.error('Name is required'); return; }
+    setSaving(true);
+    try {
+      await db.createSkuGroup(orgId, name.trim());
+      toast.success('Group added');
+      setName('');
+      setShowAdd(false);
+      onRefresh();
+    } catch (err) {
+      toast.error('Failed to add group: ' + (err.message || 'unknown error'));
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleActive(group) {
+    try {
+      await db.updateSkuGroup(group.id, { active: !group.active });
+      onRefresh();
+    } catch (err) {
+      toast.error('Failed to update group: ' + (err.message || 'unknown error'));
+    }
+  }
+
+  async function rename(group) {
+    const next = window.prompt('Rename group', group.name);
+    if (next === null || !next.trim() || next.trim() === group.name) return;
+    try {
+      await db.updateSkuGroup(group.id, { name: next.trim() });
+      onRefresh();
+    } catch (err) {
+      toast.error('Failed to rename group: ' + (err.message || 'unknown error'));
+    }
+  }
+
+  async function remove(group) {
+    if (!window.confirm(`Delete "${group.name}"? Staff will no longer see this checklist.`)) return;
+    try {
+      await db.deleteSkuGroup(group.id);
+      toast.success('Group deleted');
+      onRefresh();
+    } catch (err) {
+      toast.error('Failed to delete group: ' + (err.message || 'unknown error'));
+    }
+  }
+
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">
+          {groups.length} group{groups.length !== 1 ? 's' : ''} — shown to staff on the mobile Stock Check page
+        </p>
+        <button onClick={() => setShowAdd(true)} className="btn-primary flex items-center gap-1.5">
+          <Plus size={14} />
+          New Group
+        </button>
+      </div>
+
+      {groups.length === 0 ? (
+        <EmptyState Icon={Layers} title="No groups yet" hint='Create a checklist like "Bus Stop" or "FOH" for staff to run through on the mobile Stock Check page.' />
+      ) : (
+        <div className="card overflow-hidden divide-y divide-gray-50">
+          {groups.map(group => (
+            <div key={group.id} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50/70 transition-colors">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 10%, white)' }}>
+                  <Layers size={15} style={{ color: 'var(--primary)' }} />
+                </div>
+                <div className="min-w-0">
+                  <div className={`text-sm font-medium truncate ${group.active ? 'text-gray-900' : 'text-gray-400 line-through'}`}>{group.name}</div>
+                  <div className="text-xs text-gray-400">{group.items.length} item{group.items.length !== 1 ? 's' : ''}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button onClick={() => setEditingGroup(group)} className="px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+                  Edit Items
+                </button>
+                <button onClick={() => rename(group)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors" title="Rename">
+                  <Edit2 size={13} />
+                </button>
+                <button onClick={() => toggleActive(group)} className="px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+                  {group.active ? 'Deactivate' : 'Activate'}
+                </button>
+                <button onClick={() => remove(group)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showAdd && (
+        <Modal title="New Group" onClose={() => setShowAdd(false)}>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Name</label>
+              <input
+                autoFocus value={name}
+                onChange={e => setName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && add()}
+                placeholder='e.g. "Bus Stop", "FOH"'
+                className="input-base"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={add} disabled={saving} className="btn-primary flex-1">
+                {saving ? 'Adding…' : 'Add'}
+              </button>
+              <button onClick={() => setShowAdd(false)} className="btn-secondary flex-1">Cancel</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {editingGroup && (
+        <GroupItemsModal
+          group={editingGroup}
+          items={items}
+          itemById={itemById}
+          components={components}
+          componentById={componentById}
+          onClose={() => setEditingGroup(null)}
+          onSaved={() => { setEditingGroup(null); onRefresh(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Full-replace editor for one group's ordered SKU list -- a search+add
+// picker above, the current ordered list (with up/down reorder and
+// remove) below. Nothing is written until Save, consistent with keeping
+// edits explicit rather than saving on every tap.
+function GroupItemsModal({ group, items, itemById, components, componentById, onClose, onSaved }) {
+  // A ref is { kind: 'item' | 'component', id } -- a group can mix stock
+  // SKUs with prepared recipe_components (e.g. BOH's Caesar Dressing).
+  const [orderedRefs, setOrderedRefs] = useState(() => group.items.map(gi => (
+    gi.component_id ? { kind: 'component', id: gi.component_id } : { kind: 'item', id: gi.item_id }
+  )));
+  const [query, setQuery] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const activeItems = useMemo(() => items.filter(i => i.active), [items]);
+  const activeComponents = useMemo(() => components.filter(c => c.active), [components]);
+  const selectedSet = useMemo(() => new Set(orderedRefs.map(r => `${r.kind}:${r.id}`)), [orderedRefs]);
+
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const itemPool = activeItems
+      .filter(i => !selectedSet.has(`item:${i.id}`))
+      .map(i => ({ kind: 'item', id: i.id, name: i.name, sku: i.sku }));
+    const componentPool = activeComponents
+      .filter(c => !selectedSet.has(`component:${c.id}`))
+      .map(c => ({ kind: 'component', id: c.id, name: c.name, sku: null }));
+    const pool = [...itemPool, ...componentPool];
+    if (!q) return pool.slice(0, 30);
+    return pool.filter(i => i.name.toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q)).slice(0, 30);
+  }, [activeItems, activeComponents, selectedSet, query]);
+
+  function addRef(kind, id) {
+    setOrderedRefs(prev => [...prev, { kind, id }]);
+  }
+  function removeRef(kind, id) {
+    setOrderedRefs(prev => prev.filter(r => !(r.kind === kind && r.id === id)));
+  }
+  function move(index, dir) {
+    setOrderedRefs(prev => {
+      const next = [...prev];
+      const target = index + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      await db.setSkuGroupItems(group.id, orderedRefs);
+      toast.success('Group updated');
+      onSaved();
+    } catch (err) {
+      toast.error('Failed to save group: ' + (err.message || 'unknown error'));
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title={`Edit "${group.name}"`} onClose={onClose} maxWidth="max-w-lg">
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Add a SKU or component</label>
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search by name or SKU…"
+              className="input-base pl-8"
+            />
+          </div>
+          {query && (
+            <div className="mt-1.5 max-h-40 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-50">
+              {results.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-gray-400">No matches</div>
+              ) : results.map(i => (
+                <button
+                  key={`${i.kind}:${i.id}`}
+                  type="button"
+                  onClick={() => { addRef(i.kind, i.id); setQuery(''); }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between gap-2"
+                >
+                  <span className="font-medium text-gray-900 truncate">{i.name}</span>
+                  <span className="text-xs text-gray-400 shrink-0">{i.kind === 'component' ? 'Component' : i.sku}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">
+            {orderedRefs.length} item{orderedRefs.length !== 1 ? 's' : ''} in this group
+          </label>
+          {orderedRefs.length === 0 ? (
+            <p className="text-xs text-gray-400 py-3">Search above to add SKUs or components.</p>
+          ) : (
+            <div className="border border-gray-100 rounded-lg divide-y divide-gray-50 max-h-72 overflow-y-auto">
+              {orderedRefs.map((ref, idx) => {
+                const subject = ref.kind === 'component' ? componentById.get(ref.id) : itemById.get(ref.id);
+                if (!subject) return null;
+                return (
+                  <div key={`${ref.kind}:${ref.id}`} className="flex items-center justify-between gap-2 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-gray-900 truncate">{subject.name}</div>
+                      <div className="text-xs text-gray-400">{ref.kind === 'component' ? 'Component' : subject.sku} · {subject.uom}</div>
+                    </div>
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <button onClick={() => move(idx, -1)} disabled={idx === 0} className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:hover:text-gray-400 transition-colors">
+                        <ChevronUp size={14} />
+                      </button>
+                      <button onClick={() => move(idx, 1)} disabled={idx === orderedRefs.length - 1} className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:hover:text-gray-400 transition-colors">
+                        <ChevronDown size={14} />
+                      </button>
+                      <button onClick={() => removeRef(ref.kind, ref.id)} className="p-1 text-gray-400 hover:text-red-500 transition-colors">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <button onClick={save} disabled={saving} className="btn-primary flex-1">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Locations Tab ────────────────────────────────────────────────────────────
 
 function LocationsTab({ locations, orgId, onRefresh }) {
@@ -3212,6 +3540,8 @@ export default function StockApp({ user, org }) {
   const [showSupplierMetadataModal, setShowSupplierMetadataModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedLocationId, setSelectedLocationId] = useState(null);
+  const [skuGroups, setSkuGroups] = useState([]);
+  const [recipeComponents, setRecipeComponents] = useState([]);
 
   useEffect(() => { loadData(); }, [org?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3219,7 +3549,7 @@ export default function StockApp({ user, org }) {
     if (!org?.id) return;
     setLoading(true);
     try {
-      const [locs, stockItems, itemSites, history, confirmations, assignments, metadata, members] = await Promise.all([
+      const [locs, stockItems, itemSites, history, confirmations, assignments, metadata, members, groups, components] = await Promise.all([
         db.getLocations(org.id),
         db.getStockItems(org.id),
         db.getStockItemSites(org.id),
@@ -3228,6 +3558,8 @@ export default function StockApp({ user, org }) {
         db.getSupplierAssignments(org.id),
         db.getSupplierMetadata(org.id),
         db.getOrgMembersWithEmail(org.id),
+        db.getSkuGroupsWithItems(org.id),
+        db.getRecipeComponents(org.id),
       ]);
       setLocations(locs);
       setItems(stockItems);
@@ -3237,6 +3569,8 @@ export default function StockApp({ user, org }) {
       setSupplierAssignments(assignments);
       setSupplierMetadata(metadata);
       setOrgMembers(members);
+      setSkuGroups(groups);
+      setRecipeComponents(components);
       setSelectedLocationId(prev => prev && locs.some(l => l.id === prev) ? prev : (locs.find(l => l.active)?.id || locs[0]?.id || null));
     } catch (err) {
       toast.error('Failed to load stock data: ' + (err.message || 'unknown error'));
@@ -3282,7 +3616,7 @@ export default function StockApp({ user, org }) {
   }
 
   async function handleClearFlag(siteRowId) {
-    setSites(prev => prev.map(s => s.id === siteRowId ? { ...s, staff_flagged_low: false, staff_flagged_at: null, staff_flagged_by_name: null } : s));
+    setSites(prev => prev.map(s => s.id === siteRowId ? { ...s, staff_flag_level: null, staff_flagged_at: null, staff_flagged_by_name: null } : s));
     try {
       await db.clearStockItemFlag(siteRowId);
     } catch (err) {
@@ -3334,6 +3668,7 @@ export default function StockApp({ user, org }) {
     { id: 'order-status', label: 'Order Status', Icon: Truck },
     { id: 'history',   label: 'History',   Icon: History },
     { id: 'insights',  label: 'Insights',  Icon: TrendingUp },
+    { id: 'groups',    label: 'Groups',    Icon: Layers },
     { id: 'locations', label: 'Locations', Icon: MapPin },
   ];
 
@@ -3482,6 +3817,15 @@ export default function StockApp({ user, org }) {
           selectedLocationId={selectedLocationId}
           onSelectLocation={setSelectedLocationId}
           lastOrderedByKey={lastOrderedByKey}
+        />
+      )}
+      {activeTab === 'groups' && (
+        <GroupsTab
+          groups={skuGroups}
+          items={items}
+          components={recipeComponents}
+          orgId={org.id}
+          onRefresh={loadData}
         />
       )}
       {activeTab === 'locations' && (

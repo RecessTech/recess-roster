@@ -114,6 +114,7 @@ export const db = {
         name: staff.name,
         email: staff.email || '',
         publicToken: staff.public_token || null,
+        pin: staff.pin || '',
         hourlyRate: staff.hourly_rate,
         weekendRate: staff.weekend_rate,
         employmentType,
@@ -661,6 +662,22 @@ export const db = {
     return data || [];
   },
 
+  // Every "can't work" / "limited hours" entry for the org from `fromDate` on,
+  // across all staff and weeks -- the Time off list. Past entries are only
+  // fetched when asked for (fromDate in the past).
+  async getTimeOff(orgId, fromDate) {
+    const { data, error } = await supabase
+      .from('staff_availability')
+      .select('*')
+      .eq('org_id', orgId)
+      .in('status', ['unavailable', 'partial'])
+      .gte('date', fromDate)
+      .order('date', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+  },
+
   async setAvailability(orgId, staffId, date, status, startTime = null, endTime = null, notes = null) {
     if (!status) {
       // Clear: delete the row rather than upserting null (status is NOT NULL in DB)
@@ -1145,12 +1162,12 @@ export const db = {
     return data;
   },
 
-  // Dismisses a staff-raised "running low" flag once an admin has reviewed
+  // Dismisses a staff-raised flag (either tier) once an admin has reviewed
   // it -- doesn't touch current_status, that's a separate, deliberate call.
   async clearStockItemFlag(siteRowId) {
     const { data, error } = await supabase
       .from('stock_item_sites')
-      .update({ staff_flagged_low: false, staff_flagged_at: null, staff_flagged_by_name: null, updated_at: new Date().toISOString() })
+      .update({ staff_flag_level: null, staff_flagged_at: null, staff_flagged_by_name: null, updated_at: new Date().toISOString() })
       .eq('id', siteRowId)
       .select()
       .single();
@@ -1197,6 +1214,71 @@ export const db = {
       .single();
     if (error) throw error;
     return data;
+  },
+
+  // ── Stock: SKU Groups ────────────────────────────────────────────────────────
+  // Admin-curated, named checklists for the mobile Stock Check page (e.g.
+  // "Bus Stop", "FOH") -- independent of stock_items.category, which is a
+  // broad supplier/accounting code, not a role-based checklist.
+
+  async getSkuGroupsWithItems(orgId) {
+    const { data, error } = await supabase
+      .from('sku_groups')
+      .select('*, sku_group_items(id, item_id, component_id, sort_order)')
+      .eq('org_id', orgId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data || []).map(g => ({
+      ...g,
+      items: (g.sku_group_items || []).sort((a, b) => a.sort_order - b.sort_order),
+      sku_group_items: undefined,
+    }));
+  },
+
+  async createSkuGroup(orgId, name) {
+    const { data, error } = await supabase
+      .from('sku_groups')
+      .insert([{ org_id: orgId, name }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateSkuGroup(groupId, updates) {
+    const { data, error } = await supabase
+      .from('sku_groups')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', groupId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteSkuGroup(groupId) {
+    const { error } = await supabase.from('sku_groups').delete().eq('id', groupId);
+    if (error) throw error;
+  },
+
+  // Full replace -- simpler than tracking individual add/remove/reorder
+  // calls from an admin UI that just manages one ordered list at a time.
+  // orderedRefs is [{ kind: 'item' | 'component', id }], mirroring how a
+  // group can mix stock SKUs with prepared recipe_components.
+  async setSkuGroupItems(groupId, orderedRefs) {
+    const { error: deleteError } = await supabase.from('sku_group_items').delete().eq('group_id', groupId);
+    if (deleteError) throw deleteError;
+    if (orderedRefs.length === 0) return [];
+    const rows = orderedRefs.map((ref, i) => ({
+      group_id: groupId,
+      item_id: ref.kind === 'component' ? null : ref.id,
+      component_id: ref.kind === 'component' ? ref.id : null,
+      sort_order: i,
+    }));
+    const { data, error } = await supabase.from('sku_group_items').insert(rows).select();
+    if (error) throw error;
+    return data || [];
   },
 
   // ── Stock: Order history ────────────────────────────────────────────────────
@@ -2110,6 +2192,47 @@ export const db = {
       .select()
       .single();
     if (error) throw error;
+    return data;
+  },
+
+  // Toggle, not a one-way flag -- the sending site's stock can arrive
+  // later, at which point whoever's actioning the queue un-flags it.
+  async flagTransferNeedsOrdering(requestId, { value, flaggedByName }) {
+    const { data, error } = await supabase
+      .from('transfer_requests')
+      .update({
+        needs_ordering: value,
+        needs_ordering_at: value ? new Date().toISOString() : null,
+        needs_ordering_by_name: value ? (flaggedByName || null) : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', requestId)
+      .select()
+      .single();
+    if (error) throw error;
+
+    // Carry the flag into Stocktake (R-Stock -> Stocktake) so it reads the
+    // same as a staff Stock Check "Urgent" tap -- this needs ordering at
+    // whichever site would have SUPPLIED the transfer, not the requesting
+    // site itself (e.g. Bourke requests, Crown orders in), so flag every
+    // other site that carries the item, not the requesting location. Only
+    // for stock SKUs, and only sites that actually carry it.
+    if (data?.stock_item_id) {
+      const { data: siteRows } = await supabase
+        .from('stock_item_sites')
+        .select('id')
+        .eq('item_id', data.stock_item_id)
+        .neq('location_id', data.requesting_location_id);
+      if (siteRows && siteRows.length > 0) {
+        await supabase.from('stock_item_sites').update({
+          staff_flag_level: value ? 'order_soon' : null,
+          staff_flagged_at: value ? new Date().toISOString() : null,
+          staff_flagged_by_name: value ? (flaggedByName || null) : null,
+          updated_at: new Date().toISOString(),
+        }).in('id', siteRows.map(r => r.id));
+      }
+    }
+
     return data;
   },
 

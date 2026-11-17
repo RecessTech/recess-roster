@@ -41,6 +41,8 @@ serve(async (req) => {
       return jsonResponse({ error: 'Invalid or expired link.' });
     }
 
+    let batchResult: { created: number; skipped: number } | null = null;
+
     if (action === 'create') {
       const { itemId, componentId, locationId, quantity, quantityUnit, priority, note, name } = body;
 
@@ -94,23 +96,6 @@ serve(async (req) => {
       }).eq('id', requestId);
       if (updateError) return jsonResponse({ error: updateError.message }, 400);
 
-    } else if (action === 'flag_low') {
-      const { itemId, locationId, name } = body;
-
-      // Only a SKU that's actually carried at that site (i.e. has a
-      // stock_item_sites row) can be flagged -- that row is what admin
-      // sees the flag on in Stocktake.
-      const { data: siteRow } = await supabase.from('stock_item_sites').select('id').eq('item_id', itemId).eq('location_id', locationId).eq('org_id', org.id).single();
-      if (!siteRow) return jsonResponse({ error: "That SKU isn't carried at that site." }, 400);
-
-      const { error: flagError } = await supabase.from('stock_item_sites').update({
-        staff_flagged_low: true,
-        staff_flagged_at: new Date().toISOString(),
-        staff_flagged_by_name: (name || '').trim() || null,
-        updated_at: new Date().toISOString(),
-      }).eq('id', siteRow.id);
-      if (flagError) return jsonResponse({ error: flagError.message }, 400);
-
     } else if (action === 'update_priority') {
       const { requestId, priority } = body;
       if (priority !== 'high' && priority !== 'low') {
@@ -125,6 +110,109 @@ serve(async (req) => {
         updated_at: new Date().toISOString(),
       }).eq('id', requestId);
       if (updateError) return jsonResponse({ error: updateError.message }, 400);
+
+    } else if (action === 'flag_needs_ordering') {
+      // Toggle, not a one-way flag -- the sending site's stock can arrive
+      // later, at which point whoever's actioning the queue un-flags it.
+      const { requestId, value, name } = body;
+
+      const { data: request } = await supabase.from('transfer_requests').select('id, stock_item_id, requesting_location_id').eq('id', requestId).eq('org_id', org.id).eq('status', 'open').single();
+      if (!request) return jsonResponse({ error: 'That request is no longer open.' }, 400);
+
+      const { error: updateError } = await supabase.from('transfer_requests').update({
+        needs_ordering: !!value,
+        needs_ordering_at: value ? new Date().toISOString() : null,
+        needs_ordering_by_name: value ? ((name || '').trim() || null) : null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', requestId);
+      if (updateError) return jsonResponse({ error: updateError.message }, 400);
+
+      // Carry the flag into Stocktake (R-Stock -> Stocktake) so it shows up
+      // the same way a staff Stock Check "Urgent" tap does -- a transfer
+      // blocked on an out-of-stock SKU is exactly the kind of thing
+      // Stocktake's urgent flag exists to surface. This needs ordering at
+      // whichever site would have SUPPLIED the transfer, not the
+      // requesting site itself -- e.g. Bourke requests, Crown orders in --
+      // so flag every other active site that carries the item, not
+      // requesting_location_id. Only for stock SKUs (components have no
+      // Stocktake row), and only sites that actually carry it -- same
+      // "skip, don't invent a row" rule public-stock-check's own flagging
+      // uses.
+      if (request.stock_item_id) {
+        const { data: siteRows } = await supabase.from('stock_item_sites').select('id').eq('item_id', request.stock_item_id).eq('org_id', org.id).neq('location_id', request.requesting_location_id);
+        if (siteRows && siteRows.length > 0) {
+          await supabase.from('stock_item_sites').update({
+            staff_flag_level: value ? 'order_soon' : null,
+            staff_flagged_at: value ? new Date().toISOString() : null,
+            staff_flagged_by_name: value ? ((name || '').trim() || null) : null,
+            updated_at: new Date().toISOString(),
+          }).in('id', siteRows.map((r: any) => r.id));
+        }
+      }
+
+    } else if (action === 'create_batch') {
+      // Start of Day Check -- FOH (or any site) walks a whole SKU group
+      // and submits a request for every item they actually need in one
+      // go, instead of repeating the single-item form per SKU. Always
+      // 'low' priority: this is a routine daily pass, not an urgent ask
+      // -- staff can bump an individual request to High afterwards from
+      // the normal request list if something's actually time-critical.
+      const { locationId, name, entries } = body;
+
+      if (!Array.isArray(entries) || entries.length === 0) {
+        return jsonResponse({ error: 'Nothing to submit.' }, 400);
+      }
+
+      const { data: loc } = await supabase.from('locations').select('id').eq('id', locationId).eq('org_id', org.id).single();
+      if (!loc) return jsonResponse({ error: 'Unknown site.' }, 400);
+
+      let skipped = 0;
+      const candidateRows: any[] = [];
+      for (const entry of entries) {
+        const { itemId, componentId, quantity, quantityUnit } = entry || {};
+        const qty = Number(quantity);
+        if ((!itemId && !componentId) || !Number.isFinite(qty) || qty <= 0) { skipped++; continue; }
+        candidateRows.push({
+          org_id: org.id,
+          stock_item_id: itemId || null,
+          component_id: componentId || null,
+          requesting_location_id: locationId,
+          quantity: qty,
+          quantity_unit: (quantityUnit || '').trim() || null,
+          priority: 'low',
+          note: null,
+          requested_by_name: (name || '').trim() || null,
+        });
+      }
+
+      let created = 0;
+      if (candidateRows.length > 0) {
+        // One bulk membership check per kind instead of a query per row --
+        // this is a whole SKU group's worth of entries (a couple dozen),
+        // not a single item.
+        const itemIds = candidateRows.filter(r => r.stock_item_id).map(r => r.stock_item_id);
+        const componentIds = candidateRows.filter(r => r.component_id).map(r => r.component_id);
+        const [{ data: validItems }, { data: validComponents }] = await Promise.all([
+          itemIds.length > 0
+            ? supabase.from('stock_items').select('id').eq('org_id', org.id).in('id', itemIds)
+            : Promise.resolve({ data: [] }),
+          componentIds.length > 0
+            ? supabase.from('recipe_components').select('id').eq('org_id', org.id).in('id', componentIds)
+            : Promise.resolve({ data: [] }),
+        ]);
+        const validItemIds = new Set((validItems || []).map((i: any) => i.id));
+        const validComponentIds = new Set((validComponents || []).map((c: any) => c.id));
+        const toInsert = candidateRows.filter(r => r.stock_item_id ? validItemIds.has(r.stock_item_id) : validComponentIds.has(r.component_id));
+        skipped += candidateRows.length - toInsert.length;
+
+        if (toInsert.length > 0) {
+          const { error: insertError } = await supabase.from('transfer_requests').insert(toInsert);
+          if (insertError) return jsonResponse({ error: insertError.message }, 400);
+          created = toInsert.length;
+        }
+      }
+
+      batchResult = { created, skipped };
 
     } else if (action === 'cancel') {
       const { requestId, name } = body;
@@ -154,7 +242,7 @@ serve(async (req) => {
     // identity beyond whatever free-text name someone typed in -- this
     // link goes to every staff member, so there's no login to attach a
     // real account to.
-    const [{ data: locations }, { data: items }, { data: components }, { data: requests }, { data: carries }] = await Promise.all([
+    const [{ data: locations }, { data: items }, { data: components }, { data: requests }, { data: groups }] = await Promise.all([
       supabase.from('locations').select('id, name').eq('org_id', org.id).eq('active', true).order('sort_order').order('created_at'),
       // Not filtered to active -- an existing open request may reference an
       // item since deactivated, and it still needs to resolve for display.
@@ -164,11 +252,27 @@ serve(async (req) => {
       supabase.from('recipe_components').select('id, name, uom, active').eq('org_id', org.id).order('sort_order'),
       // Priority ascending puts 'high' before 'low' alphabetically -- the
       // only two values, so this stays correct without a custom order.
-      supabase.from('transfer_requests').select('id, stock_item_id, component_id, requesting_location_id, quantity, quantity_unit, priority, note, requested_at, requested_by_name').eq('org_id', org.id).eq('status', 'open').order('priority', { ascending: true }).order('requested_at', { ascending: false }),
-      // Which SKUs are actually carried at which site -- only those can be
-      // flagged as running low, since flagging writes to this same row.
-      supabase.from('stock_item_sites').select('item_id, location_id').eq('org_id', org.id),
+      supabase.from('transfer_requests').select('id, stock_item_id, component_id, requesting_location_id, quantity, quantity_unit, priority, note, requested_at, requested_by_name, needs_ordering, needs_ordering_at, needs_ordering_by_name').eq('org_id', org.id).eq('status', 'open').order('priority', { ascending: true }).order('requested_at', { ascending: false }),
+      // Same admin-curated SKU groups as Stock Check (R-Stock -> Groups) --
+      // Start of Day Check walks one of these instead of making staff pick
+      // items one at a time out of the full catalog.
+      supabase.from('sku_groups')
+        .select('id, name, sort_order, sku_group_items(item_id, component_id, sort_order, stock_items(id, name, sku, uom, active, category), recipe_components(id, name, uom, active, category))')
+        .eq('org_id', org.id)
+        .eq('active', true)
+        .order('sort_order', { ascending: true }),
     ]);
+
+    const cleanGroups = (groups || []).map((g: any) => ({
+      id: g.id,
+      name: g.name,
+      items: (g.sku_group_items || [])
+        .filter((gi: any) => (gi.stock_items && gi.stock_items.active) || (gi.recipe_components && gi.recipe_components.active))
+        .sort((a: any, b: any) => a.sort_order - b.sort_order)
+        .map((gi: any) => gi.stock_items
+          ? { id: gi.stock_items.id, kind: 'item', name: gi.stock_items.name, sku: gi.stock_items.sku, uom: gi.stock_items.uom, category: gi.stock_items.category }
+          : { id: gi.recipe_components.id, kind: 'component', name: gi.recipe_components.name, sku: null, uom: gi.recipe_components.uom, category: gi.recipe_components.category }),
+    })).filter((g: any) => g.items.length > 0);
 
     return jsonResponse({
       businessName: settings?.business_name || org.name || 'Transfer Hub',
@@ -176,7 +280,8 @@ serve(async (req) => {
       items: items || [],
       components: components || [],
       requests: requests || [],
-      carries: carries || [],
+      groups: cleanGroups,
+      ...(batchResult ? { success: true, ...batchResult } : {}),
     });
 
   } catch (err) {
