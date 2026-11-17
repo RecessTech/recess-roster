@@ -256,6 +256,7 @@ export default function PublicPrepListView({ token }) {
   function syncFromResult(result) {
     if (result.catalog) setCatalog(result.catalog);
     if (result.planItems) setData(prev => prev && { ...prev, planItems: result.planItems });
+    if ('headline' in result) setData(prev => prev && { ...prev, headline: result.headline });
   }
 
   // Optimistic patch applied right away for instant feedback, covering
@@ -307,6 +308,18 @@ export default function PublicPrepListView({ token }) {
       syncFromResult(result);
     } catch (e) {
       setSaveError(e.message || 'Could not save that change.');
+    }
+  }
+
+  async function setHeadline(headline) {
+    const trimmed = headline.trim() || null;
+    setData(prev => prev && { ...prev, headline: trimmed });
+    setSaveError(null);
+    try {
+      const result = await call({ action: 'setHeadline', pin, headline: trimmed || '' });
+      syncFromResult(result);
+    } catch (e) {
+      setSaveError(e.message || 'Could not save that headline.');
     }
   }
 
@@ -422,6 +435,7 @@ export default function PublicPrepListView({ token }) {
         <div style={{ background: '#ffffff', borderLeft: '1px solid #E2E8F0', borderRight: '1px solid #E2E8F0', borderBottom: '1px solid #E2E8F0', borderRadius: '0 0 14px 14px', padding: '18px 18px 20px' }}>
           {tab === 'plan' ? (
             <PlanTab
+              headline={data.headline}
               items={planItems}
               onToggle={toggleComplete}
               error={error}
@@ -443,6 +457,8 @@ export default function PublicPrepListView({ token }) {
               onCreate={createTask}
               saveError={saveError}
               onSignOut={signOutAdmin}
+              headline={data.headline}
+              onSetHeadline={setHeadline}
             />
           )}
         </div>
@@ -576,7 +592,7 @@ function FlagEditor({ task, staffOptions, onSetFlag, onSetCarryForward }) {
 // onto this list in the first place -- it carries no meaning once it's
 // here, so Plan never shows it. Priority is what actually orders and
 // matters, so Plan groups by priority the same way Set Plan does.
-function PlanTab({ items, onToggle, error, canEdit, editingId, onRequestEdit, staffOptions, onSetFlag, onSetCarryForward, saveError }) {
+function PlanTab({ headline, items, onToggle, error, canEdit, editingId, onRequestEdit, staffOptions, onSetFlag, onSetCarryForward, saveError }) {
   const groups = useMemo(() => {
     const byP = { 1: [], 2: [], 3: [] };
     items.forEach(i => (byP[i.priority] || byP[2]).push(i));
@@ -585,6 +601,14 @@ function PlanTab({ items, onToggle, error, canEdit, editingId, onRequestEdit, st
 
   return (
     <>
+      {headline && (
+        <div style={{
+          background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, padding: '10px 12px',
+          marginBottom: 14, fontSize: 13, color: '#1E40AF', fontWeight: 600, lineHeight: 1.4,
+        }}>
+          📌 {headline}
+        </div>
+      )}
       {error && <div style={{ fontSize: 12.5, color: RED, fontWeight: 500, marginBottom: 10 }}>{error}</div>}
       {saveError && <div style={{ fontSize: 12.5, color: RED, fontWeight: 500, marginBottom: 10 }}>{saveError}</div>}
 
@@ -747,9 +771,10 @@ function PriorityGroup({ priority, tasks, staffOptions, onSetFlag, onSetCarryFor
   );
 }
 
-function SetPlanTab({ catalog, staffOptions, onSetFlag, onSetCarryForward, onReorder, onCreate, saveError, onSignOut }) {
+function SetPlanTab({ catalog, staffOptions, onSetFlag, onSetCarryForward, onReorder, onCreate, saveError, onSignOut, headline, onSetHeadline }) {
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState(() => new Set());
+  const [headlineInput, setHeadlineInput] = useState(headline || '');
 
   function toggleExpanded(id) {
     setExpanded(prev => {
@@ -781,6 +806,17 @@ function SetPlanTab({ catalog, staffOptions, onSetFlag, onSetCarryForward, onReo
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
         <button onClick={onSignOut} style={{ background: 'none', border: 'none', color: MUTED, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: FONT }}>Lock</button>
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <span style={miniLabelStyle}>Headline (shown at top of Plan)</span>
+        <input
+          value={headlineInput}
+          onChange={e => setHeadlineInput(e.target.value)}
+          onBlur={() => onSetHeadline(headlineInput)}
+          placeholder="e.g. Check all labels before dispatch"
+          style={inputStyle}
+        />
       </div>
 
       {saveError && <div style={{ fontSize: 12.5, color: RED, fontWeight: 500, marginBottom: 10 }}>{saveError}</div>}
