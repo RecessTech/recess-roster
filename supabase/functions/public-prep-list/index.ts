@@ -48,7 +48,7 @@ serve(async (req) => {
     // Transfer Hub -- one link to distribute and regenerate.
     const { data: org, error: orgError } = await supabase
       .from('organisations')
-      .select('id, name, timezone, roster_view_pin, prep_last_reset_date')
+      .select('id, name, timezone, roster_view_pin, prep_last_reset_date, prep_headline')
       .eq('staff_hub_public_token', token)
       .single();
 
@@ -106,7 +106,7 @@ serve(async (req) => {
     // ── Everything below is admin-only: re-check the shared roster PIN on
     // every call (stateless, same brute-force lockout as Day Roster/My
     // Roster -- see staff_pin_attempts).
-    const isAdminAction = ['unlock', 'createTask', 'setFlag', 'reorderFlags', 'setCarryForward'].includes(action);
+    const isAdminAction = ['unlock', 'createTask', 'setFlag', 'reorderFlags', 'setCarryForward', 'setHeadline'].includes(action);
     let pinOk = false;
     if (isAdminAction) {
       const { pin } = body;
@@ -192,6 +192,16 @@ serve(async (req) => {
       if (updateError) return jsonResponse({ error: updateError.message }, 400);
     }
 
+    // A free-text note set from Set Plan, shown at the top of the Plan tab
+    // for whoever's reading it today (e.g. "Check all labels before
+    // dispatch"). Blank clears it -- Plan then shows nothing.
+    let headline = org.prep_headline || null;
+    if (action === 'setHeadline' && pinOk) {
+      headline = (body.headline || '').trim() || null;
+      const { error: updateError } = await supabase.from('organisations').update({ prep_headline: headline }).eq('id', org.id);
+      if (updateError) return jsonResponse({ error: updateError.message }, 400);
+    }
+
     // Drag-and-drop reorder: the client sends the full set of currently-
     // flagged task ids in their new order (within one priority tier, or
     // across the whole flagged list -- doesn't matter, flag_order is
@@ -232,6 +242,7 @@ serve(async (req) => {
       businessName: settings?.business_name || org.name || 'Prep List',
       today,
       planItems,
+      headline,
       // Harmless to send unconditionally -- the staff tab doesn't need a
       // PIN for anything, but the name list itself isn't sensitive.
       staffOptions: STAFF_OPTIONS,
