@@ -35,14 +35,16 @@ const MAX_TREND_DELTA_FRACTION = 0.5;
 // points, or with all points landing in the same week (no x variance
 // to fit a slope against), this degrades to the flat recency-weighted
 // mean (slope forced to 0), same as before trend support existed.
-export function bucketPredict(bucket, weeksFromNow) {
+// Trend is OFF by default (crystal_ball_settings.trend_enabled): a line
+// fitted per item x weekday added more noise than signal in backtests.
+export function bucketPredict(bucket, weeksFromNow, { trend = DEFAULT_TREND_ENABLED } = {}) {
   if (!bucket) return { value: 0, samples: 0 };
   const [rawCount, sw, swx, swy, swxx, swxy] = bucket;
   if (sw <= 0) return { value: 0, samples: rawCount };
   const xbar = swx / sw;
   const ybar = swy / sw;
   const sxx = swxx - sw * xbar * xbar;
-  const slope = (rawCount >= MIN_TREND_SAMPLES && sxx > 1e-6)
+  const slope = (trend && rawCount >= MIN_TREND_SAMPLES && sxx > 1e-6)
     ? (swxy - sw * xbar * ybar) / sxx
     : 0;
   const intercept = ybar - slope * xbar; // fitted value at weeksFromNow = 0 (today)
@@ -52,36 +54,83 @@ export function bucketPredict(bucket, weeksFromNow) {
   return { value: Math.max(0, intercept + clampedDelta), samples: rawCount };
 }
 
+// Defaults used when crystal_ball_settings has no value (or the column
+// doesn't exist yet). A 4-week half-life with no per-item trend line was
+// the most accurate setup when backtested on Sep--Nov 2026 sales.
+export const DEFAULT_RECENCY_HALFLIFE_WEEKS = 4;
+export const DEFAULT_TREND_ENABLED = false;
+
+// Turns a crystal_ball_settings row (possibly null, possibly missing
+// columns) into the options every caller passes to the engine, so the
+// Forecast tab, Week Ahead and R-Prod's pull button can't drift apart.
+export function forecastOptionsFromSettings(settings) {
+  const hl = settings?.recency_halflife_weeks;
+  const halfLifeWeeks = hl === null || hl === undefined || hl === '' || isNaN(Number(hl))
+    ? DEFAULT_RECENCY_HALFLIFE_WEEKS
+    : Math.max(0, Number(hl));
+  const trend = typeof settings?.trend_enabled === 'boolean' ? settings.trend_enabled : DEFAULT_TREND_ENABLED;
+  const uplift = 1 + (Number(settings?.channel_uplift_pct) || 0) / 100;
+  return { halfLifeWeeks, halfLifeDays: halfLifeWeeks * 7, trend, uplift };
+}
+
 // Historical day-of-week average qty, per item, PER CHANNEL GROUP -- keeping
 // groups separate (rather than one bucket per item) is what lets them be
 // added together instead of diluting each other into one blended avg.
 //
+// One data point per TRADING DAY, not per sales row:
+// - rows for the same item/date/group (e.g. UberEats + DoorDash + ClassPass)
+//   are summed into that day's total first, not averaged as separate points;
+// - a trading day (any date with any sales at all) on which the item sold
+//   nothing in that group counts as 0. Skipping those days made slow items
+//   look 25-55% busier than they were. Zeros only count from the first
+//   date the item sold in that group, so a newly launched item (or a newly
+//   added delivery app) isn't dragged down by days before it existed.
+//   Days the shop was closed have no sales rows at all, so they're never
+//   counted as zeros.
+//
 // Recency-weighted: a sale one half-life ago counts half as much as one
-// from today, two half-lives ago a quarter, etc. -- 0 = old flat-average
-// behaviour. Each bucket accumulates the weighted sums a weighted-least-
-// squares trend line needs (qty vs. weeksFromNow, weeksFromNow=0 is today,
-// negative for past sales) rather than just a mean -- bucketPredict() fits
-// and extrapolates from these, degrading to a flat recency-weighted average
-// when there isn't enough data to trust a slope.
+// from today, two half-lives ago a quarter, etc. -- 0 = flat average.
+// Each bucket accumulates the weighted sums a weighted-least-squares trend
+// line needs (qty vs. weeksFromNow, weeksFromNow=0 is today, negative for
+// past sales); bucketPredict() uses them for the level, and for a trend
+// line only when the caller turns trend on.
 export function buildDowAverages(salesHistory, halfLifeDays) {
+  const dayTotals = new Map();   // `${itemId}|${groupKey}` -> Map(date -> qty)
+  const tradingDates = new Set();
+  salesHistory.forEach(row => {
+    if (!row || !row.sale_date || !row.item_id) return;
+    tradingDates.add(row.sale_date);
+    const groupKey = CHANNEL_TO_GROUP.get(row.channel) || 'instore';
+    const key = `${row.item_id}|${groupKey}`;
+    let byDate = dayTotals.get(key);
+    if (!byDate) { byDate = new Map(); dayTotals.set(key, byDate); }
+    byDate.set(row.sale_date, (byDate.get(row.sale_date) || 0) + (Number(row.qty) || 0));
+  });
+  const sortedDates = [...tradingDates].sort();
+
   const buckets = new Map(); // `${itemId}:${dow}:${groupKey}` -> [rawCount, sw, swx, swy, swxx, swxy]
   const now = Date.now();
-  salesHistory.forEach(row => {
-    const groupKey = CHANNEL_TO_GROUP.get(row.channel) || 'instore';
-    const dow = dayOfWeekIndex(row.sale_date);
-    const key = `${row.item_id}:${dow}:${groupKey}`;
-    const daysAgo = Math.max(0, (now - new Date(row.sale_date + 'T12:00:00').getTime()) / 86400000);
-    const weight = halfLifeDays > 0 ? Math.pow(0.5, daysAgo / halfLifeDays) : 1;
-    const x = -daysAgo / 7;
-    const y = Number(row.qty) || 0;
-    const entry = buckets.get(key) || [0, 0, 0, 0, 0, 0];
-    entry[0] += 1;
-    entry[1] += weight;
-    entry[2] += weight * x;
-    entry[3] += weight * y;
-    entry[4] += weight * x * x;
-    entry[5] += weight * x * y;
-    buckets.set(key, entry);
+  dayTotals.forEach((byDate, key) => {
+    const [itemId, groupKey] = key.split('|');
+    let firstDate = null;
+    byDate.forEach((qty, d) => { if (firstDate === null || d < firstDate) firstDate = d; });
+    for (const d of sortedDates) {
+      if (d < firstDate) continue;
+      const y = byDate.get(d) || 0;
+      const dow = dayOfWeekIndex(d);
+      const bKey = `${itemId}:${dow}:${groupKey}`;
+      const daysAgo = Math.max(0, (now - new Date(d + 'T12:00:00').getTime()) / 86400000);
+      const weight = halfLifeDays > 0 ? Math.pow(0.5, daysAgo / halfLifeDays) : 1;
+      const x = -daysAgo / 7;
+      const entry = buckets.get(bKey) || [0, 0, 0, 0, 0, 0];
+      entry[0] += 1;
+      entry[1] += weight;
+      entry[2] += weight * x;
+      entry[3] += weight * y;
+      entry[4] += weight * x * x;
+      entry[5] += weight * x * y;
+      buckets.set(bKey, entry);
+    }
   });
   return buckets;
 }
@@ -92,13 +141,13 @@ export function buildDowAverages(salesHistory, halfLifeDays) {
 // is the caller's own local-timezone "today" (e.g. its todayStr()) -- kept
 // as a parameter rather than computed here so this never drifts from the
 // UTC date near local midnight.
-export function forecastItemsForDate(items, dowAverages, uplift, dateStr, todayDateStr) {
+export function forecastItemsForDate(items, dowAverages, uplift, dateStr, todayDateStr, { trend = DEFAULT_TREND_ENABLED } = {}) {
   const dow = dayOfWeekIndex(dateStr);
   const weeksFromNow = (new Date(dateStr + 'T12:00:00').getTime() - new Date(todayDateStr + 'T12:00:00').getTime()) / (7 * 86400000);
   return items.map(item => {
     const groupStats = CHANNEL_GROUPS.map(g => {
       const bucket = dowAverages.get(`${item.id}:${dow}:${g.key}`);
-      const { value: avg, samples } = bucketPredict(bucket, weeksFromNow);
+      const { value: avg, samples } = bucketPredict(bucket, weeksFromNow, { trend });
       return { ...g, avg, samples };
     });
     const baseTotal = groupStats.reduce((s, g) => s + g.avg, 0);
