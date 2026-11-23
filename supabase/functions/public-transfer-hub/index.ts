@@ -12,6 +12,14 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+function todayIn(timezone: string): string {
+  try {
+    return new Date().toLocaleDateString('en-CA', { timeZone: timezone });
+  } catch {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' });
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -33,12 +41,29 @@ serve(async (req) => {
     // there's exactly one link to distribute and regenerate.
     const { data: org, error: orgError } = await supabase
       .from('organisations')
-      .select('id, name')
+      .select('id, name, timezone, stock_check_last_reset_date')
       .eq('staff_hub_public_token', token)
       .single();
 
     if (orgError || !org) {
       return jsonResponse({ error: 'Invalid or expired link.' });
+    }
+
+    // Lazy day reset for the shared staff_flag_level signal (see
+    // public-stock-check for the full rationale) -- duplicated here
+    // rather than only in Stock Check's function, since Transfer Hub's
+    // own Flag Low Stock writes the very same field and might be the
+    // first thing opened after local midnight.
+    const tz = org.timezone || 'Australia/Sydney';
+    const today = todayIn(tz);
+    if (org.stock_check_last_reset_date !== today) {
+      await supabase.from('stock_item_sites').update({
+        staff_flag_level: null, staff_flagged_at: null, staff_flagged_by_name: null,
+      }).eq('org_id', org.id).not('staff_flag_level', 'is', null);
+      await supabase.from('component_sites').update({
+        staff_flag_level: null, staff_flagged_at: null, staff_flagged_by_name: null,
+      }).eq('org_id', org.id).not('staff_flag_level', 'is', null);
+      await supabase.from('organisations').update({ stock_check_last_reset_date: today }).eq('id', org.id);
     }
 
     let batchResult: { created: number; skipped: number } | null = null;
